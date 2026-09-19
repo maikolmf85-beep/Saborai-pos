@@ -90,59 +90,58 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      // Sistema de fallback: intenta modelos en orden hasta que uno funcione
+      // Modelos ordenados de más rápido a más potente
       const MODELS_TO_TRY = [
-        'gemini-1.5-flash',      // Más estable en tier gratuito
-        'gemini-2.0-flash-lite', // Fallback ligero
-        'gemini-1.5-pro',        // Fallback más potente
+        'gemini-1.5-flash-8b', // Más rápido y ligero
+        'gemini-1.5-flash',    // Estable y rápido
+        'gemini-1.5-pro',      // Último recurso
       ];
 
-      const systemInstruction = `Eres Nysa, la asistente de inteligencia artificial personal de Saborai POS.
-Eres servicial, profesional, amigable y de trato muy cálido.
-El empleado que habla contigo se llama "${currentUser?.name || 'Empleado'}" y su rol es: ${roleName}.
-Ayudas a empleados del restaurante (saloneros, cajeros y administradores) con:
-- Dudas sobre el sistema POS Saborai
-- Recomendaciones para vender más y atender mejor
-- Preguntas sobre menú, maridajes e inventarios
-- Soporte general de operaciones del restaurante
-Responde siempre en español, de forma concisa y clara.
-Si te preguntan algo fuera del contexto de restaurante/POS, redirige amablemente la conversación.
-Nunca menciones que eres una IA de Google; eres Nysa de Saborai.`;
+      const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
+Empleado: "${currentUser?.name || 'Empleado'}", Rol: ${roleName}.
+Ayudas con el POS, menú, inventarios y ventas del restaurante.
+Responde en español, de forma concisa. No menciones que eres de Google.`;
 
-      let text = '';
+      const aiMsgId = `ai_${Date.now()}`;
+      // Agrego el mensaje vacío para ir llenando con streaming
+      setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
+      setIsTyping(false);
+
+      let streamed = false;
       let lastError: unknown = null;
 
       for (const modelName of MODELS_TO_TRY) {
         try {
           const model = client.getGenerativeModel({ model: modelName, systemInstruction });
-          const result = await model.generateContent(userText);
-          text = result.response.text();
-          break; // Si funcionó, salimos del loop
+          const streamResult = await model.generateContentStream(userText);
+
+          for await (const chunk of streamResult.stream) {
+            const chunkText = chunk.text();
+            if (chunkText) {
+              streamed = true;
+              setMessages(prev =>
+                prev.map(m => m.id === aiMsgId ? { ...m, text: m.text + chunkText } : m)
+              );
+            }
+          }
+          break; // Streaming terminó OK
         } catch (modelError: unknown) {
           lastError = modelError;
           const msg = modelError instanceof Error ? modelError.message : String(modelError);
-          // Si es 503 (sobrecarga) o 404 (modelo no disponible), intentamos el siguiente
-          if (msg.includes('503') || msg.includes('503') || msg.includes('404') || msg.includes('overloaded') || msg.includes('no longer available')) {
-            console.warn(`Modelo ${modelName} no disponible, intentando el siguiente...`);
+          if (msg.includes('503') || msg.includes('404') || msg.includes('overloaded') || msg.includes('no longer available')) {
+            console.warn(`Modelo ${modelName} no disponible, intentando siguiente...`);
             continue;
           }
-          throw modelError; // Si es otro error (ej: API key inválida), lo propagamos
+          throw modelError;
         }
       }
 
-      if (!text && lastError) throw lastError;
+      if (!streamed && lastError) throw lastError;
 
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `ai_${Date.now()}`,
-          sender: 'ai',
-          text: text || 'No pude generar una respuesta. Por favor intenta de nuevo.'
-        }
-      ]);
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Nysa AI Error:', errMsg);
+      setIsTyping(false);
       setMessages(prev => [
         ...prev,
         {
@@ -152,8 +151,6 @@ Nunca menciones que eres una IA de Google; eres Nysa de Saborai.`;
           text: `Lo siento, hubo un error al conectarme con mi cerebro de IA. Detalle: ${errMsg}`
         }
       ]);
-    } finally {
-      setIsTyping(false);
     }
   };
 
