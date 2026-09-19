@@ -16,6 +16,7 @@ import { cashShiftService } from './services/cashShiftService';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { AICopilotChat } from './components/AICopilotChat';
 import { AuthScreen } from './components/AuthScreen';
+import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile } from './types';
 import { localDB } from './services/db';
@@ -58,6 +59,17 @@ export function App() {
       localStorage.setItem('saborai_tenant', JSON.stringify(updated));
     } catch {}
   };
+
+  const [appDomain, setAppDomain] = useState<'LANDING' | 'POS' | 'ADMIN'>(() => {
+    const hostname = window.location.hostname;
+    if (hostname === 'saborai.site' || hostname === 'www.saborai.site') {
+      return 'LANDING';
+    } else if (hostname === 'admin.saborai.site') {
+      return 'ADMIN';
+    }
+    // Default to POS for pos.saborai.site, localhost, or any vercel preview URL
+    return 'POS';
+  });
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('pos');
   const [tables, setTables] = useState<Table[]>(initialTables);
@@ -295,7 +307,38 @@ export function App() {
     // sync handled by localDB
   };
 
-  // If not authenticated, require login or registration
+  // If LANDING domain, completely bypass auth and POS UI
+  if (appDomain === 'LANDING') {
+    return (
+      <div className="h-screen w-screen overflow-y-auto bg-[#fafaf9]">
+        <LandingPage 
+          onStartDemo={handleStartDemo} 
+          onEnterPOS={() => {
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+              setAppDomain('POS'); // Local dev override
+            } else {
+              window.location.href = 'https://pos.saborai.site';
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
+  // If ADMIN domain, completely bypass auth and POS UI (can add its own auth later)
+  if (appDomain === 'ADMIN') {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <SuperAdminBackoffice 
+          currentTenant={tenant}
+          onSelectTenant={(t) => handleUpdateTenant(t)}
+          onOpenNotion={() => setIsNotionModalOpen(true)}
+        />
+      </div>
+    );
+  }
+
+  // If POS domain, but not authenticated, require login or registration
   if (!currentUser) {
     return (
       <>
@@ -365,7 +408,7 @@ export function App() {
         {/* Main Dynamic Operational Content */}
         <main className="flex-1 h-full min-h-0 overflow-y-auto">
         
-        {/* Landing Page (Public / Onboarding) */}
+        {/* Landing Page (Public / Onboarding) - Only reachable locally if forced via activeTab */}
         {activeTab === 'landing' && (
           <LandingPage 
             onStartDemo={handleStartDemo} 
