@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-main text-primary font-sans;
+  }
+}
+
+/* ======================================================== */
+/* ESTILOS DE IMPRESIÓN PARA TICKETERAS TÉRMICAS POS (80MM / 58MM) */
+/* ======================================================== */
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  
+  /* Ocultar todos los elementos de la interfaz por defecto */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Hacer visibles únicamente los tiquetes imprimibles */
+  .printable-invoice, .printable-invoice *,
+  .printable-zreport, .printable-zreport * {
+    visibility: visible !important;
+  }
+
+  .printable-invoice,
+  .printable-zreport {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace !important;
+  }
+
+  /* Formato para Bobina Estándar de 80mm */
+  .printable-invoice.paper-80mm,
+  .printable-zreport.paper-80mm,
+  .printable-invoice:not(.paper-58mm),
+  .printable-zreport:not(.paper-58mm) {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    padding: 2mm 3mm 16mm 3mm !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  /* Formato para Bobina Estrecha de 58mm */
+  .printable-invoice.paper-58mm,
+  .printable-zreport.paper-58mm {
+    width: 54mm !important;
+    max-width: 54mm !important;
+    padding: 2mm 2mm 14mm 2mm !important;
+    font-size: 9.5px !important;
+    line-height: 1.2 !important;
+  }
+
+  /* Forzar alto contraste térmico sin manchas grises */
+  .printable-invoice *,
+  .printable-zreport * {
+    color: #000000 !important;
+    text-shadow: none !important;
+  }
+
+  .printable-invoice div,
+  .printable-invoice span,
+  .printable-zreport div,
+  .printable-zreport span,
+  .printable-zreport p {
+    background-color: transparent !important;
+    border-color: #000000 !important;
+  }
+
+  /* Elementos a excluir durante la impresión */
+  .no-print,
+  button,
+  nav,
+  header {
+    display: none !important;
+  }
+}

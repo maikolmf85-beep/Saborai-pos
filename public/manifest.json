@@ -1,0 +1,16 @@
+{
+  "short_name": "Saborai POS",
+  "name": "Saborai POS - Gastronomía Inteligente",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#fcfeff",
+  "theme_color": "#3b3733",
+  "display": "standalone",
+  "orientation": "portrait"
+}
