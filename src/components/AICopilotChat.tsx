@@ -43,11 +43,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll al último mensaje cada vez que cambian los mensajes
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-  
+  // messages debe declararse ANTES del useEffect que lo referencia
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'msg_1',
@@ -55,6 +51,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       text: '¡Hola! Soy Nysa, tu asistente personal de Saborai. Estoy aquí para guiarte y hacer que la gestión de tu restaurante sea un éxito. ¿En qué te puedo ayudar hoy?'
     }
   ]);
+
+  // Auto-scroll al último mensaje cada vez que cambian los mensajes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const apiReady = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'tu_api_key_aqui' && GEMINI_API_KEY.trim() !== '';
 
