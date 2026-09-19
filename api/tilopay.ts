@@ -30,9 +30,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Leer variables de entorno (Nunca expuestas al frontend)
   const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY;
-  const TILOPAY_API_SECRET = process.env.TILOPAY_API_SECRET;
+  const TILOPAY_API_USER = process.env.TILOPAY_API_USER;
+  const TILOPAY_API_PASSWORD = process.env.TILOPAY_API_PASSWORD;
   
-  if (!TILOPAY_API_KEY || !TILOPAY_API_SECRET) {
+  if (!TILOPAY_API_KEY || !TILOPAY_API_USER || !TILOPAY_API_PASSWORD) {
     console.error('Missing Tilopay credentials in environment variables.');
     return res.status(500).json({ error: 'El servidor no está configurado correctamente para procesar pagos.' });
   }
@@ -48,7 +49,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // const response = await fetch('https://api.tilopay.com/api/v1/tokenize', {
       //   method: 'POST',
       //   headers: {
-      //     'Authorization': `Basic ${Buffer.from(TILOPAY_API_KEY + ':' + TILOPAY_API_SECRET).toString('base64')}`,
+      //     'apikey': TILOPAY_API_KEY,
+      //     'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
       //     'Content-Type': 'application/json'
       //   },
       //   body: JSON.stringify(cardData)
