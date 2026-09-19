@@ -96,11 +96,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      // Modelos ordenados de más rápido a más potente
+      // Modelos ordenados de más rápido a más potente (serie actual 2025-2026)
       const MODELS_TO_TRY = [
-        'gemini-1.5-flash-8b', // Más rápido y ligero
-        'gemini-1.5-flash',    // Estable y rápido
-        'gemini-1.5-pro',      // Último recurso
+        'gemini-2.0-flash-lite', // Más rápido y ligero de la serie actual
+        'gemini-2.5-flash',      // Rápido y capaz
+        'gemini-3.6-flash',      // Recomendado por la propia API de Google
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
