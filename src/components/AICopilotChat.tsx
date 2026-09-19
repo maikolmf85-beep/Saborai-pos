@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { 
@@ -41,6 +41,12 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll al último mensaje cada vez que cambian los mensajes
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
   
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -216,6 +222,8 @@ Responde en español, de forma concisa. No menciones que eres de Google.`;
             <span>Nysa está pensando...</span>
           </div>
         )}
+        {/* Ancla invisible al final del chat para el auto-scroll */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* Suggested Quick Prompts */}
