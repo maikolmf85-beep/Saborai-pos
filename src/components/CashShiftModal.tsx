@@ -612,7 +612,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     maxLength={4}
                     value={openingPin}
                     onChange={(e) => setOpeningPin(e.target.value)}
-                    placeholder={`PIN de ${openingCashier?.name.split(' ')[0] || 'usuario'} (prueba: ${openingCashier?.pin || '1234'})`}
+                    placeholder={`PIN de ${openingCashier?.name.split(' ')[0] || 'usuario'}`}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                   />
                 </div>

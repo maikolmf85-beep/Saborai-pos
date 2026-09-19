@@ -569,10 +569,6 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                   {selectedStaff ? selectedStaff.name : 'Selecciona un colaborador'}
                 </div>
 
-                {/* Demo PIN hint */}
-                <div className="text-[10px] text-stone-400 mt-0.5">
-                  PIN registrado: <strong className="text-stone-700 font-mono">{selectedStaff?.pin || '1234'}</strong>
-                </div>
               </div>
 
               {/* PIN Dots Display */}
