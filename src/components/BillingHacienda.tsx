@@ -28,6 +28,7 @@ interface BillingHaciendaProps {
   onEmitInvoice?: (invoice: ElectronicInvoiceCR) => void;
   onSaveTable?: (updatedTable: Table) => void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
+  onOpenHaciendaHistory?: () => void;
   onNotify?: (notif: PosNotification) => void;
 }
 
@@ -36,6 +37,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   selectedTable,
   onSaveTable,
   onOpenCashShift,
+  onOpenHaciendaHistory,
   onNotify
 }) => {
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
@@ -357,6 +359,18 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
         {/* Header Right Actions: Turno & Caja button + Paper Width Selector */}
         <div className="flex items-center gap-2">
+          {onOpenHaciendaHistory && (
+            <button
+              type="button"
+              onClick={onOpenHaciendaHistory}
+              className="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-200/80 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Ver Historial de Facturas Emitidas a Hacienda"
+            >
+              <Building2 className="w-3.5 h-3.5 text-[#588157]" />
+              <span className="hidden sm:inline">DGT</span>
+            </button>
+          )}
+
           {onOpenCashShift && (
             <div className="flex items-center gap-1.5">
               <button

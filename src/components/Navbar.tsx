@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
-export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing';
+export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -78,35 +78,35 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
   }
 
   return (
-    <div className="relative group flex items-center justify-center w-full my-0.5">
+    <div className="relative flex items-center justify-start w-full my-0.5 px-1.5 sm:px-2">
       <button
         id={id}
         type="button"
         onClick={onClick}
-        className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-200 cursor-pointer relative group-hover:scale-105 active:scale-95 ${styleClasses} ${className}`}
+        className={`w-full h-11 rounded-2xl flex items-center justify-start px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
+        title={label}
       >
-        {icon}
-        {badge}
-      </button>
-
-      {/* Modern Minimalist Tooltip on Hover (Sliding from left to right) */}
-      <div className="absolute left-full ml-3 px-3 py-1.5 bg-stone-900/95 text-white text-xs font-bold rounded-xl shadow-2xl border border-stone-700/80 pointer-events-none opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 z-50 whitespace-nowrap flex flex-col items-start gap-0.5 backdrop-blur-md">
-        <div className="flex items-center gap-1.5">
-          <span>{label}</span>
-          {isActive && (
-            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#a9b994] text-stone-950 font-black uppercase">
-              Activo
+        <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
+          {icon}
+          {badge}
+        </div>
+        
+        <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-bold">{label}</span>
+            {isActive && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#a9b994] text-stone-950 font-black uppercase">
+                Activo
+              </span>
+            )}
+          </div>
+          {sublabel && (
+            <span className="text-[10px] text-stone-400 mt-0.5 block truncate w-full text-left">
+              {sublabel}
             </span>
           )}
         </div>
-        {sublabel && (
-          <span className="text-[10px] font-medium text-stone-400">
-            {sublabel}
-          </span>
-        )}
-        {/* Pointer Arrow */}
-        <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-stone-900 border-l border-b border-stone-700/80 rotate-45" />
-      </div>
+      </button>
     </div>
   );
 };
@@ -132,35 +132,41 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <aside 
-      className="w-16 sm:w-[68px] h-screen bg-stone-950 text-white flex flex-col justify-between items-center py-3 px-1.5 sm:px-2 border-r border-stone-800/80 shadow-2xl z-40 shrink-0 select-none backdrop-blur-xl relative"
+      className="group/sidebar absolute top-0 left-0 w-16 sm:w-[68px] hover:w-[280px] transition-all duration-300 h-screen bg-stone-950/95 text-white flex flex-col justify-between items-start py-3 border-r border-stone-800/80 shadow-2xl z-50 overflow-hidden backdrop-blur-xl"
       aria-label="Navegación vertical SaborAI POS"
+      onMouseEnter={() => {}}
+      onMouseLeave={() => {}}
     >
       {/* Top Group: Brand Logo & Operational Modules */}
-      <div className="w-full flex flex-col items-center">
+      <div className="w-full flex flex-col items-start">
         
         {/* Brand Isotype / Logo */}
-        <div className="relative group flex items-center justify-center w-full mb-2">
+        <div className="relative flex items-center justify-start w-full mb-2 px-1.5 sm:px-2">
           <button
             type="button"
             onClick={() => setActiveTab('pos')}
-            className="w-11 h-11 rounded-2xl flex items-center justify-center bg-stone-900 border border-stone-800 hover:border-[#a9b994]/80 transition-all duration-200 cursor-pointer shadow-sm group-hover:scale-105 active:scale-95 overflow-hidden"
+            className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-stone-900 border border-stone-800 hover:border-[#a9b994]/80 transition-all duration-200 cursor-pointer shadow-sm overflow-hidden"
             title="SaborAI POS"
           >
-            <BrandLogo variant="isotype" size="sm" />
+            <div className="w-6 h-6 flex items-center justify-center shrink-0">
+              <BrandLogo variant="isotype" size="sm" />
+            </div>
+            
+            <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
+              <span className="font-extrabold text-[#a9b994] text-sm">SaborAI POS</span>
+              <span className="text-[10px] text-stone-400 mt-0.5 truncate w-full text-left">
+                {tenant.name}
+              </span>
+            </div>
           </button>
-
-          {/* Floating Tooltip */}
-          <div className="absolute left-full ml-3 px-3 py-1.5 bg-stone-900/95 text-white text-xs font-bold rounded-xl shadow-2xl border border-stone-700/80 pointer-events-none opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200 z-50 whitespace-nowrap flex flex-col items-start gap-0.5 backdrop-blur-md">
-            <span className="font-extrabold text-[#a9b994]">SaborAI POS</span>
-            <span className="text-[10px] text-stone-400">{tenant.name} • {tenant.status === 'ACTIVE' ? 'Suscripción Activa' : 'Período de Gracia'}</span>
-            <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 bg-stone-900 border-l border-b border-stone-700/80 rotate-45" />
-          </div>
         </div>
 
-        <div className="w-7 h-[1px] bg-stone-800/80 my-1.5" />
+        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+          <div className="w-full h-[1px] bg-stone-800/80" />
+        </div>
 
         {/* Operational Modules Navigation */}
-        <div className="w-full flex flex-col items-center gap-0.5">
+        <div className="w-full flex flex-col items-start gap-0.5">
           {/* Mesas y Salones */}
           <NavVerticalItem
             id="nav-tab-pos"
@@ -181,6 +187,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             isActive={activeTab === 'kds'}
           />
 
+          {/* Menú y Catálogo */}
+          {user?.role === 'ADMIN' && (
+            <NavVerticalItem
+              id="nav-tab-menu"
+              onClick={() => setActiveTab('menu')}
+              icon={<Sparkles className="w-5 h-5" />}
+              label="Menú y Catálogo"
+              sublabel="Administra platillos y precios"
+              isActive={activeTab === 'menu'}
+            />
+          )}
+
           {/* Caja & Facturación */}
           <NavVerticalItem
             id="nav-tab-billing"
@@ -192,12 +210,15 @@ export const Navbar: React.FC<NavbarProps> = ({
           />
         </div>
 
-        <div className="w-7 h-[1px] bg-stone-800/80 my-1.5" />
+        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+          <div className="w-full h-[1px] bg-stone-800/80" />
+        </div>
 
         {/* Cash Drawer & Shift Management */}
-        <div className="w-full flex flex-col items-center gap-0.5">
+        <div className="w-full flex flex-col items-start gap-0.5">
           {/* Turno & Caja Status */}
-          {onOpenCashShift && (
+          {/* Turno & Caja Status */}
+          {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && onOpenCashShift && (
             <NavVerticalItem
               id="nav-shift-btn"
               onClick={() => onOpenCashShift('status')}
@@ -217,7 +238,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           {/* Cerrar Turno Direct Button (Visible when shift is open) */}
-          {isShiftOpen && onOpenCashShift && (
+          {/* Cerrar Turno Direct Button (Visible when shift is open) */}
+          {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && isShiftOpen && onOpenCashShift && (
             <NavVerticalItem
               id="nav-close-shift-btn"
               onClick={() => onOpenCashShift('close')}
@@ -229,28 +251,34 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
 
           {/* Régimen Tributario */}
-          <NavVerticalItem
-            id="nav-regime-btn"
-            onClick={onOpenSettings}
-            icon={<Landmark className="w-5 h-5" />}
-            label={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado" : "Régimen Tradicional"}
-            sublabel={tenant.taxRegime === 'SIMPLIFIED' ? "0% IVA al consumidor • 10% Servicio Ley 4946" : "13% IVA • 10% Servicio Ley 4946"}
-            badge={
-              <span 
-                className={`absolute bottom-2 right-2 w-2 h-2 rounded-full ${
-                  tenant.taxRegime === 'SIMPLIFIED' ? 'bg-emerald-400' : 'bg-stone-500'
-                }`} 
-              />
-            }
-          />
+          {/* Régimen Tributario */}
+          {user?.role === 'ADMIN' && (
+            <NavVerticalItem
+              id="nav-regime-btn"
+              onClick={onOpenSettings}
+              icon={<Landmark className="w-5 h-5" />}
+              label={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado" : "Régimen Tradicional"}
+              sublabel={tenant.taxRegime === 'SIMPLIFIED' ? "0% IVA al consumidor • 10% Servicio Ley 4946" : "13% IVA • 10% Servicio Ley 4946"}
+              badge={
+                <span 
+                  className={`absolute bottom-2 right-2 w-2 h-2 rounded-full ${
+                    tenant.taxRegime === 'SIMPLIFIED' ? 'bg-emerald-400' : 'bg-stone-500'
+                  }`} 
+                />
+              }
+            />
+          )}
         </div>
 
-        <div className="w-7 h-[1px] bg-stone-800/80 my-1.5" />
+        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+          <div className="w-full h-[1px] bg-stone-800/80" />
+        </div>
 
         {/* User Management & Quick Switch */}
-        <div className="w-full flex flex-col items-center gap-0.5">
+        <div className="w-full flex flex-col items-start gap-0.5">
           {/* Registrar Colaborador / Usuario */}
-          {onOpenStaffModal && (
+          {/* Registrar Colaborador / Usuario */}
+          {user?.role === 'ADMIN' && onOpenStaffModal && (
             <NavVerticalItem
               id="nav-register-user-btn"
               onClick={onOpenStaffModal}
@@ -280,7 +308,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Bottom Group: Tools, AI, Status & Logout */}
-      <div className="w-full flex flex-col items-center gap-0.5 mt-auto">
+      <div className="w-full flex flex-col items-start gap-0.5 mt-auto">
         
         {/* Copilot IA */}
         <NavVerticalItem
@@ -318,15 +346,20 @@ export const Navbar: React.FC<NavbarProps> = ({
         />
 
         {/* Settings */}
-        <NavVerticalItem
-          id="nav-settings-btn"
-          onClick={onOpenSettings}
-          icon={<SettingsIcon className="w-5 h-5" />}
-          label="Ajustes del Sistema"
-          sublabel="Impresoras térmicas, cajas, plano y DGT"
-        />
+        {/* Settings */}
+        {user?.role === 'ADMIN' && (
+          <NavVerticalItem
+            id="nav-settings-btn"
+            onClick={onOpenSettings}
+            icon={<SettingsIcon className="w-5 h-5" />}
+            label="Ajustes del Sistema"
+            sublabel="Impresoras térmicas, cajas, plano y DGT"
+          />
+        )}
 
-        <div className="w-7 h-[1px] bg-stone-800/80 my-1.5" />
+        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+          <div className="w-full h-[1px] bg-stone-800/80" />
+        </div>
 
         {/* Logout Button */}
         <NavVerticalItem

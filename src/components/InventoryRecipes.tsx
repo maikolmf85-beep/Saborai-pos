@@ -15,7 +15,7 @@ import {
 
 export const InventoryRecipes: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(sampleMenuItems);
-  const [selectedProduct, setSelectedProduct] = useState<MenuItem>(sampleMenuItems[0]);
+  const [selectedProduct, setSelectedProduct] = useState<MenuItem | null>(sampleMenuItems.length > 0 ? sampleMenuItems[0] : null);
   const [wasteQty, setWasteQty] = useState<number>(0);
   const [wasteReason, setWasteReason] = useState<string>('Vencimiento / Merma natural');
   const [recordedWasteSuccess, setRecordedWasteSuccess] = useState(false);
@@ -60,8 +60,12 @@ export const InventoryRecipes: React.FC = () => {
           </h3>
 
           <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-            {menuItems.map((prod) => {
-              const isSelected = selectedProduct.id === prod.id;
+            {menuItems.length === 0 ? (
+              <div className="p-6 text-center text-[#6b686d] text-sm border-2 border-dashed border-[#6b686d]/20 rounded-3xl">
+                No hay productos en el menú aún. Crea uno nuevo para configurar sus recetas.
+              </div>
+            ) : menuItems.map((prod) => {
+              const isSelected = selectedProduct?.id === prod.id;
               const hasLowStock = prod.ingredients.some(ing => ing.currentStock < 1000);
 
               return (
@@ -99,96 +103,100 @@ export const InventoryRecipes: React.FC = () => {
 
         {/* Right: Recipe Breakdown & Stock Subtraction Formula (7 cols) */}
         <div className="lg:col-span-7 space-y-6">
-          
-          <div className="p-6 rounded-3xl bg-[#fcfeff] border border-[#6b686d]/20 shadow-sm space-y-5">
-            <div className="flex items-start justify-between pb-4 border-b border-[#6b686d]/15">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#a9b994]">Escandallo de Platillo</span>
-                <h3 className="text-xl font-black text-[#3b3733] flex items-center gap-2">
-                  <span>{selectedProduct.imageIcon}</span>
-                  <span>{selectedProduct.name}</span>
-                </h3>
-                <p className="text-xs text-[#6b686d] mt-1">{selectedProduct.description}</p>
+          {selectedProduct ? (
+            <div className="p-6 rounded-3xl bg-[#fcfeff] border border-[#6b686d]/20 shadow-sm space-y-5">
+              <div className="flex items-start justify-between pb-4 border-b border-[#6b686d]/15">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#a9b994]">Escandallo de Platillo</span>
+                  <h3 className="text-xl font-black text-[#3b3733] flex items-center gap-2">
+                    <span>{selectedProduct.imageIcon}</span>
+                    <span>{selectedProduct.name}</span>
+                  </h3>
+                  <p className="text-xs text-[#6b686d] mt-1">{selectedProduct.description}</p>
+                </div>
+
+                <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#3b3733] text-[#fcfeff]">
+                  Estación: {selectedProduct.station}
+                </span>
               </div>
 
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-[#3b3733] text-[#fcfeff]">
-                Estación: {selectedProduct.station}
-              </span>
-            </div>
+              {/* Ingredients table */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b3733]">
+                  Fórmula de Insumos Descontados por Cada Venta:
+                </h4>
 
-            {/* Ingredients table */}
-            <div className="space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b3733]">
-                Fórmula de Insumos Descontados por Cada Venta:
-              </h4>
+                <div className="space-y-2">
+                  {selectedProduct.ingredients.map((ing, idx) => (
+                    <div key={idx} className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-bold text-[#3b3733] block">{ing.name}</span>
+                        <span className="text-[11px] text-[#6b686d]">
+                          Descuento por ración: <strong className="text-[#3b3733]">{ing.requiredQty} {ing.unit}</strong>
+                        </span>
+                      </div>
 
-              <div className="space-y-2">
-                {selectedProduct.ingredients.map((ing, idx) => (
-                  <div key={idx} className="p-3.5 rounded-2xl bg-gray-50 border border-gray-100 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-bold text-[#3b3733] block">{ing.name}</span>
-                      <span className="text-[11px] text-[#6b686d]">
-                        Descuento por ración: <strong className="text-[#3b3733]">{ing.requiredQty} {ing.unit}</strong>
-                      </span>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold uppercase text-[#6b686d] block">Stock Disponible:</span>
+                        <span className={`font-black text-xs ${ing.currentStock < 1000 ? 'text-amber-700' : 'text-emerald-700'}`}>
+                          {ing.currentStock.toLocaleString()} {ing.unit}
+                        </span>
+                      </div>
                     </div>
+                  ))}
+                </div>
+              </div>
 
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold uppercase text-[#6b686d] block">Stock Disponible:</span>
-                      <span className={`font-black text-xs ${ing.currentStock < 1000 ? 'text-amber-700' : 'text-emerald-700'}`}>
-                        {ing.currentStock.toLocaleString()} {ing.unit}
-                      </span>
-                    </div>
+              {/* Waste recording form */}
+              <div className="pt-4 border-t border-[#6b686d]/15 space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b3733] flex items-center gap-1.5">
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                  <span>Registrar Merma Directa</span>
+                </h4>
+
+                <form onSubmit={handleRecordWaste} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#6b686d] uppercase mb-1">Cantidad / Porciones</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={wasteQty || ''}
+                      onChange={(e) => setWasteQty(Number(e.target.value))}
+                      placeholder="1"
+                      className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] focus:outline-none"
+                    />
                   </div>
-                ))}
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#6b686d] uppercase mb-1">Motivo de Merma</label>
+                    <select
+                      value={wasteReason}
+                      onChange={(e) => setWasteReason(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] bg-white"
+                    >
+                      <option value="Vencimiento">Vencimiento de Insumo</option>
+                      <option value="Accidente">Accidente en Cocina</option>
+                      <option value="Calidad">No cumple estándar de calidad</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-end">
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-[#3b3733] text-[#fcfeff] rounded-xl text-xs font-bold hover:bg-[#25221f] transition-all"
+                    >
+                      {recordedWasteSuccess ? '¡Merma Asentada!' : 'Asentar Merma'}
+                    </button>
+                  </div>
+                </form>
               </div>
+
             </div>
-
-            {/* Waste recording form */}
-            <div className="pt-4 border-t border-[#6b686d]/15 space-y-3">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#3b3733] flex items-center gap-1.5">
-                <TrendingDown className="w-4 h-4 text-red-600" />
-                <span>Registrar Merma Directa</span>
-              </h4>
-
-              <form onSubmit={handleRecordWaste} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#6b686d] uppercase mb-1">Cantidad / Porciones</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={wasteQty || ''}
-                    onChange={(e) => setWasteQty(Number(e.target.value))}
-                    placeholder="1"
-                    className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-[#6b686d] uppercase mb-1">Motivo de Merma</label>
-                  <select
-                    value={wasteReason}
-                    onChange={(e) => setWasteReason(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] bg-white"
-                  >
-                    <option value="Vencimiento">Vencimiento de Insumo</option>
-                    <option value="Accidente">Accidente en Cocina</option>
-                    <option value="Calidad">No cumple estándar de calidad</option>
-                  </select>
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-[#3b3733] text-[#fcfeff] rounded-xl text-xs font-bold hover:bg-[#25221f] transition-all"
-                  >
-                    {recordedWasteSuccess ? '¡Merma Asentada!' : 'Asentar Merma'}
-                  </button>
-                </div>
-              </form>
+          ) : (
+            <div className="p-6 rounded-3xl bg-[#fcfeff] border border-[#6b686d]/20 shadow-sm flex items-center justify-center h-64 text-[#6b686d] text-sm">
+              Selecciona un producto para ver su receta o agrega productos en el Punto de Venta.
             </div>
-
-          </div>
-
+          )}
         </div>
 
       </div>

@@ -29,6 +29,9 @@ interface TableMapProps {
   onSplitBill: (table: Table) => void;
   isAdmin?: boolean;
   staffList?: UserProfile[];
+  tenant: import('../types').TenantInfo;
+  onUpdateTenant: (tenant: import('../types').TenantInfo) => void;
+  onUpdateTables?: (tables: Table[]) => void;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -37,12 +40,17 @@ export const TableMap: React.FC<TableMapProps> = ({
   onOpenOrder,
   onSplitBill,
   isAdmin = true,
-  staffList = []
+  staffList = [],
+  tenant,
+  onUpdateTenant,
+  onUpdateTables
 }) => {
+  const tenantZones = tenant.zones || [];
+  
   // Load saved positions from localStorage if available, or fall back to initialTablesList
   const [tables, setTables] = useState<Table[]>(() => {
     try {
-      const saved = localStorage.getItem('saborai_table_positions');
+      const saved = localStorage.getItem(`saborai_table_positions_${tenant.id}`);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -58,7 +66,7 @@ export const TableMap: React.FC<TableMapProps> = ({
     return initialTablesList;
   });
 
-  const [selectedZone, setSelectedZone] = useState<'Todas' | 'Principal' | 'Terraza' | 'Barra VIP'>('Todas');
+  const [selectedZone, setSelectedZone] = useState<string>('Todas');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -92,7 +100,11 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [newTableName, setNewTableName] = useState('');
   const [newTableSeats, setNewTableSeats] = useState<number>(4);
   const [newTableShape, setNewTableShape] = useState<'round' | 'square' | 'bar'>('round');
-  const [newTableZone, setNewTableZone] = useState<'Principal' | 'Terraza' | 'Barra VIP'>('Principal');
+  const [newTableZone, setNewTableZone] = useState<string>(tenantZones.length > 0 ? tenantZones[0] : '');
+
+  // Zone management state
+  const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
+  const [newZoneName, setNewZoneName] = useState('');
 
   // Dragging state (PointerEvents for mouse + touch support)
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -103,11 +115,11 @@ export const TableMap: React.FC<TableMapProps> = ({
   useEffect(() => {
     try {
       const positions = tables.map(t => ({ id: t.id, x: t.x, y: t.y, zone: t.zone }));
-      localStorage.setItem('saborai_table_positions', JSON.stringify(positions));
+      localStorage.setItem(`saborai_table_positions_${tenant.id}`, JSON.stringify(positions));
     } catch {
       // ignore storage error
     }
-  }, [tables]);
+  }, [tables, tenant.id]);
 
   const filteredTables = selectedZone === 'Todas' 
     ? tables 
@@ -198,7 +210,10 @@ export const TableMap: React.FC<TableMapProps> = ({
       y: posY,
     };
 
-    setTables(prev => [...prev, newTbl]);
+    const updatedTables = [...tables, newTbl];
+    setTables(updatedTables);
+    if (onUpdateTables) onUpdateTables(updatedTables);
+
     setSelectedTable(newTbl);
     setShowAddModal(false);
     setNewTableName('');
@@ -206,10 +221,41 @@ export const TableMap: React.FC<TableMapProps> = ({
 
   const handleDeleteTable = (tableId: string) => {
     if (window.confirm('¿Seguro que deseas eliminar esta mesa del plano?')) {
-      setTables(prev => prev.filter(t => t.id !== tableId));
+      const updatedTables = tables.filter(t => t.id !== tableId);
+      setTables(updatedTables);
+      if (onUpdateTables) onUpdateTables(updatedTables);
+
       if (selectedTable?.id === tableId) {
         setSelectedTable(null);
       }
+    }
+  };
+
+  const handleAddZone = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newZoneName.trim();
+    if (!cleanName || tenantZones.includes(cleanName)) return;
+
+    onUpdateTenant({
+      ...tenant,
+      zones: [...tenantZones, cleanName]
+    });
+    setNewZoneName('');
+  };
+
+  const handleDeleteZone = (zone: string) => {
+    const hasTables = tables.some(t => t.zone === zone);
+    if (hasTables) {
+      alert(`No puedes eliminar el salón "${zone}" porque tiene mesas asignadas. Elimina o mueve las mesas primero.`);
+      return;
+    }
+
+    if (window.confirm(`¿Seguro que deseas eliminar el salón "${zone}"?`)) {
+      onUpdateTenant({
+        ...tenant,
+        zones: tenantZones.filter(z => z !== zone)
+      });
+      if (selectedZone === zone) setSelectedZone('Todas');
     }
   };
 
@@ -244,6 +290,8 @@ export const TableMap: React.FC<TableMapProps> = ({
     });
 
     setTables(updated);
+    if (onUpdateTables) onUpdateTables(updated);
+
     const updatedTbl = updated.find(t => t.id === tableForPinAuth.id) || tableForPinAuth;
     setSelectedTable(updatedTbl);
     onOpenOrder(updatedTbl);
@@ -289,7 +337,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {(['Todas', 'Principal', 'Terraza', 'Barra VIP'] as const).map((zone) => (
+            {['Todas', ...tenantZones].map((zone) => (
               <button
                 key={zone}
                 onClick={() => setSelectedZone(zone)}
@@ -302,6 +350,16 @@ export const TableMap: React.FC<TableMapProps> = ({
                 {zone === 'Todas' ? 'Todas' : zone}
               </button>
             ))}
+            {isAdmin && (
+              <button
+                onClick={() => setIsZoneModalOpen(true)}
+                className="px-2 py-1 ml-1 rounded-lg text-[11px] font-bold text-[#a9b994] bg-[#a9b994]/10 hover:bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center gap-1 cursor-pointer transition-colors"
+                title="Gestionar Salones"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Salones</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -464,9 +522,9 @@ export const TableMap: React.FC<TableMapProps> = ({
                         isSelected ? 'ring-3 ring-stone-900 ring-offset-2' : ''
                       }`}
                     >
-                      {/* Table Number */}
-                      <span className="text-xs font-black leading-none">
-                        {table.number}
+                      {/* Table Name */}
+                      <span className="text-[9px] font-black leading-tight text-center px-1 overflow-hidden text-ellipsis line-clamp-2">
+                        {table.name}
                       </span>
 
                       {/* Small Status Dot or Price */}
@@ -479,10 +537,6 @@ export const TableMap: React.FC<TableMapProps> = ({
                       )}
                     </div>
 
-                    {/* Table Name Floating Badge */}
-                    <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap bg-stone-900/80 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.2 rounded-md shadow-xs pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                      {table.name}
-                    </div>
 
                     {/* Order Price Tag if occupied */}
                     {isOccupied && total > 0 && (
@@ -522,11 +576,8 @@ export const TableMap: React.FC<TableMapProps> = ({
                     {selectedTable.zone}
                   </span>
                   <h3 className="text-xl font-black text-stone-900 leading-tight">
-                    Mesa {selectedTable.number}
-                  </h3>
-                  <p className="text-xs text-stone-500 font-medium">
                     {selectedTable.name}
-                  </p>
+                  </h3>
                 </div>
 
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -687,12 +738,14 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <label className="block mb-1">Zona</label>
                   <select
                     value={newTableZone}
-                    onChange={(e) => setNewTableZone(e.target.value as any)}
+                    onChange={(e) => setNewTableZone(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 focus:outline-none"
+                    required
                   >
-                    <option value="Principal">Principal</option>
-                    <option value="Terraza">Terraza</option>
-                    <option value="Barra VIP">Barra VIP</option>
+                    {tenantZones.length === 0 && <option value="">(Sin salones)</option>}
+                    {tenantZones.map(zone => (
+                      <option key={zone} value={zone}>{zone}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -731,6 +784,84 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Gestión de Salones */}
+      {isZoneModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <h3 className="text-base font-bold text-stone-900">Gestión de Salones / Zonas</h3>
+              <button
+                onClick={() => setIsZoneModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <form onSubmit={handleAddZone} className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="block mb-1 text-xs font-semibold text-stone-700">Añadir Nuevo Salón</label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Patio Trasero"
+                    value={newZoneName}
+                    onChange={(e) => setNewZoneName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 text-sm"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!newZoneName.trim() || tenantZones.includes(newZoneName.trim())}
+                  className="px-4 py-2.5 rounded-xl bg-stone-900 text-white font-bold hover:bg-stone-800 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Agregar
+                </button>
+              </form>
+
+              <div className="pt-2">
+                <label className="block mb-2 text-xs font-semibold text-stone-700">Salones Configurados ({tenantZones.length})</label>
+                {tenantZones.length === 0 ? (
+                  <div className="p-4 rounded-xl border border-dashed border-stone-200 text-center text-stone-400 text-sm">
+                    No has creado ningún salón todavía. Crea uno para empezar a añadir mesas.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                    {tenantZones.map(zone => {
+                      const tableCount = tables.filter(t => t.zone === zone).length;
+                      return (
+                        <div key={zone} className="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200">
+                          <div>
+                            <span className="font-bold text-sm text-stone-900">{zone}</span>
+                            <span className="ml-2 text-xs text-stone-500">({tableCount} mesas)</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteZone(zone)}
+                            className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar salón"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-stone-100">
+              <button
+                onClick={() => setIsZoneModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-stone-100 text-stone-700 font-bold hover:bg-stone-200 cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         </div>
       )}

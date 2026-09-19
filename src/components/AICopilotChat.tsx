@@ -43,11 +43,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     {
       id: 'msg_1',
       sender: 'ai',
-      text: '¡Hola! Soy tu asistente Saborai Copilot IA. ¿En qué te puedo ayudar hoy? Puedo auditar códigos CABYS de Hacienda, recomendar maridajes para comensales, optimizar escandallos o proyectar ventas.'
+      text: '¡Hola! Soy Nysa, tu asistente personal de Saborai. Estoy aquí para guiarte y hacer que la gestión de tu restaurante sea un éxito. ¿En qué te puedo ayudar hoy?'
     }
   ]);
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
@@ -62,46 +62,40 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     setInputMessage('');
     setIsTyping(true);
 
-    setTimeout(() => {
-      setIsTyping(false);
-      let responseText = '';
-      let actionCard: Message['actionCard'] = undefined;
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: query, context: 'El usuario está en el POS buscando ayuda.' })
+      });
 
-      if (query.includes('cabys') || query.includes('hacienda') || query.includes('código')) {
-        responseText = 'He auditado el catálogo de productos contra la base de datos oficial del Banco Central y Ministerio de Hacienda:';
-        actionCard = {
-          type: 'cabys',
-          title: 'Auditoría CABYS Hacienda CR',
-          details: '100% de los códigos CABYS (ej. 2121100000100 para pescados frescos y 2111100000200 para cortes vacunos) están clasificados con la tarifa del 13% de IVA correcta.'
-        };
-      } else if (query.includes('maridaje') || query.includes('recomendar') || query.includes('vino')) {
-        responseText = 'Basado en el historial de pedidos y maridajes de alta rotación en el restaurante:';
-        actionCard = {
-          type: 'recipe',
-          title: 'Recomendación de Maridaje Inteligente',
-          details: 'Para el Corte Ribeye Angus 350g, el Coctel Pasión Tica con Guaro Cacique o Vino Tinto Malbec genera un 24% más de propina y satisfacción.'
-        };
-      } else if (query.includes('inventario') || query.includes('stock') || query.includes('carne')) {
-        responseText = 'Pronóstico de quiebre de inventario para este fin de semana:';
-        actionCard = {
-          type: 'sales',
-          title: 'Alerta Predictiva de Compras',
-          details: 'El Ribeye Angus madurado tiene 3.85 kg restantes. A este ritmo de ventas en Escazú, se agotará mañana a las 8:30 PM. Te sugiero ordenar 10 kg adicionales al proveedor.'
-        };
-      } else {
-        responseText = `Entendido. He procesado tu solicitud "${query}". Saborai Copilot mantiene sincronizada la facturación, los escandallos de cocina y el KDS en tiempo real.`;
+      if (!res.ok) {
+        throw new Error('Error en la respuesta del servidor');
       }
+
+      const data = await res.json();
 
       setMessages(prev => [
         ...prev,
         {
           id: `ai_${Date.now()}`,
           sender: 'ai',
-          text: responseText,
-          actionCard
+          text: data.text || 'Hubo un error al procesar mi respuesta. Por favor intenta de nuevo.',
         }
       ]);
-    }, 1000);
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `ai_${Date.now()}`,
+          sender: 'ai',
+          text: 'Lo siento mucho, actualmente no puedo conectarme con mi cerebro de IA. Verifica tu conexión a internet o asegúrate de que la API Key esté configurada en Vercel.',
+        }
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
   };
 
   const handlePromptClick = (promptText: string) => {
@@ -120,12 +114,12 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           <BrandLogo variant="isotype" size="sm" />
           <div>
             <h3 className="font-bold text-sm flex items-center gap-1.5">
-              <span>Saborai Copilot</span>
+              <span>Nysa AI</span>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#a9b994] text-[#3b3733] font-black uppercase">
-                IA Nativa
+                Asistente Personal
               </span>
             </h3>
-            <p className="text-[11px] text-[#a9b994]">Asistente de operaciones gastronómicas</p>
+            <p className="text-[11px] text-[#a9b994]">Siempre a tu lado</p>
           </div>
         </div>
 
@@ -170,7 +164,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         {isTyping && (
           <div className="flex items-center gap-2 text-xs text-[#6b686d] italic p-2">
             <Sparkles className="w-3.5 h-3.5 animate-spin text-[#a9b994]" />
-            <span>Saborai Copilot está razonando...</span>
+            <span>Nysa está pensando...</span>
           </div>
         )}
       </div>
@@ -201,7 +195,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       <form onSubmit={handleSendMessage} className="p-3 bg-[#fcfeff] border-t border-[#6b686d]/20 flex items-center gap-2">
         <input
           type="text"
-          placeholder="Pregúntale a Copilot o escribe una orden..."
+          placeholder="Pregúntale a Nysa lo que necesites..."
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#6b686d]/30 text-xs text-[#3b3733] focus:border-[#a9b994] focus:outline-none"

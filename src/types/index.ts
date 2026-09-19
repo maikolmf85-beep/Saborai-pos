@@ -16,6 +16,8 @@ export interface TenantInfo {
   monthlyFee: number;
   taxRegime?: TaxRegime;
   includeService10ByDefault?: boolean;
+  zones?: string[]; // Dynamic zones for the tenant
+  onboardingCompleted?: boolean;
 }
 
 export type UserRole = 'ADMIN' | 'SALONERO' | 'CAJERO' | 'SALONERO_CAJA' | 'WAITER';
@@ -50,6 +52,8 @@ export interface TableItem {
   taxRate: number; // 0.13, 0.04, 0.02, 0.01, 0
   category: 'Cocina' | 'Bar' | 'Cafetería' | 'Postres';
   recipeIngredients?: { ingredient: string; qty: number; unit: string }[];
+  kdsStatus?: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
+  kdsOrderId?: string;
 }
 
 export interface ActiveOrder {
@@ -67,7 +71,7 @@ export interface Table {
   seats: number;
   shape: 'square' | 'round' | 'bar';
   status: TableStatus;
-  zone: 'Principal' | 'Terraza' | 'Barra VIP';
+  zone: string;
   x: number;
   y: number;
   activeOrder?: ActiveOrder;

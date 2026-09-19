@@ -12,13 +12,16 @@ import { StaffModal } from './components/StaffModal';
 import { QuickWaiterSwitchModal } from './components/QuickWaiterSwitchModal';
 import { CashShiftModal } from './components/CashShiftModal';
 import { ZReportModal } from './components/ZReportModal';
+import { HaciendaHistoryModal } from './components/HaciendaHistoryModal';
 import { cashShiftService } from './services/cashShiftService';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { AICopilotChat } from './components/AICopilotChat';
 import { AuthScreen } from './components/AuthScreen';
+import { NysaOnboarding } from './components/NysaOnboarding';
 import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
+import { MenuEditor } from './components/MenuEditor';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
-import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile } from './types';
+import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { soundService } from './services/soundEffects';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -71,8 +74,64 @@ export function App() {
     return 'POS';
   });
 
+  // KDS Orders State
+  const [kdsOrders, setKdsOrders] = useState<KDSOrder[]>([]);
+
+  const handleUpdateKdsOrder = (orderId: string, status: KDSOrder['status']) => {
+    setKdsOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  };
+
+  const handleToggleKdsItem = (orderId: string, itemId: string) => {
+    setKdsOrders(prev => prev.map(order => {
+      if (order.id !== orderId) return order;
+      const updatedItems = order.items.map(it => it.id === itemId ? { ...it, completed: !it.completed } : it);
+      const allCompleted = updatedItems.length > 0 && updatedItems.every(it => it.completed);
+      let nextStatus = order.status;
+      if (allCompleted && order.status !== 'READY' && order.status !== 'SERVED') {
+        nextStatus = 'READY';
+      }
+      return { ...order, items: updatedItems, status: nextStatus };
+    }));
+  };
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('pos');
-  const [tables, setTables] = useState<Table[]>(initialTables);
+  
+  // Menu Catalog State
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('saborai_menu');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return sampleMenuItems;
+  });
+
+  const handleUpdateMenu = (updatedMenu: MenuItem[]) => {
+    setMenuItems(updatedMenu);
+    try {
+      localStorage.setItem('saborai_menu', JSON.stringify(updatedMenu));
+    } catch {}
+  };
+
+  const [tables, setTables] = useState<Table[]>(() => {
+    try {
+      const saved = localStorage.getItem('saborai_tables');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return initialTables;
+  });
+
+  const handleUpdateTables = (updatedTables: Table[]) => {
+    setTables(updatedTables);
+    try {
+      localStorage.setItem('saborai_tables', JSON.stringify(updatedTables));
+    } catch {}
+  };
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -85,6 +144,7 @@ export function App() {
   const [activeZReport, setActiveZReport] = useState<ZReportData | null>(null);
   const [activeConsolidatedZReport, setActiveConsolidatedZReport] = useState<ConsolidatedZReportData | null>(null);
   const [isZReportModalOpen, setIsZReportModalOpen] = useState(false);
+  const [isHaciendaHistoryOpen, setIsHaciendaHistoryOpen] = useState(false);
 
   const handleOpenCashShift = (tab: 'status' | 'movements' | 'close' | 'history' | 'registers' = 'status') => {
     setCashShiftInitialTab(tab);
@@ -101,48 +161,7 @@ export function App() {
       }
     } catch {}
 
-    return [
-      {
-        id: 'usr_admin_01',
-        name: 'Carlos Administrador',
-        email: 'carlos.gerencia@fuegopalmera.cr',
-        phone: '+506 8888-1000',
-        restaurantName: 'Restaurante Fuego & Palmera S.A.',
-        role: 'ADMIN',
-        active: true,
-        pin: '1111'
-      },
-      {
-        id: 'usr_salonero_01',
-        name: 'Kevin Murillo (Salonero)',
-        email: 'kevin.salon@fuegopalmera.cr',
-        phone: '+506 8888-2000',
-        restaurantName: 'Restaurante Fuego & Palmera S.A.',
-        role: 'SALONERO',
-        active: true,
-        pin: '2222'
-      },
-      {
-        id: 'usr_cajero_01',
-        name: 'Laura Mora (Cajera)',
-        email: 'laura.caja@fuegopalmera.cr',
-        phone: '+506 8888-3000',
-        restaurantName: 'Restaurante Fuego & Palmera S.A.',
-        role: 'CAJERO',
-        active: true,
-        pin: '3333'
-      },
-      {
-        id: 'usr_salonero_caja_01',
-        name: 'Esteban Rojas (Salonero c/ Caja)',
-        email: 'esteban.dual@fuegopalmera.cr',
-        phone: '+506 8888-4000',
-        restaurantName: 'Restaurante Fuego & Palmera S.A.',
-        role: 'SALONERO_CAJA',
-        active: true,
-        pin: '4444'
-      }
-    ];
+    return [];
   });
 
   const handleAddStaffMember = (newMember: UserProfile) => {
@@ -275,7 +294,53 @@ export function App() {
   };
 
   const handleSaveOrder = (updatedTable: Table) => {
-    setTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));
+    // 1. Process new items for KDS
+    if (updatedTable.activeOrder) {
+      const newKitchenItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && (i.category === 'Cocina' || !i.category));
+      const newBarItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && i.category === 'Bar');
+
+      const timestamp = new Date();
+      const serverName = updatedTable.activeOrder.server || 'Mesero';
+      
+      const newKdsOrders: KDSOrder[] = [];
+
+      if (newKitchenItems.length > 0) {
+        const orderId = `kds_c_${Date.now()}`;
+        newKitchenItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        newKdsOrders.push({
+          id: orderId,
+          tableNumber: updatedTable.number,
+          tableName: updatedTable.name,
+          server: serverName,
+          timestamp,
+          status: 'PENDING',
+          station: 'Cocina',
+          items: newKitchenItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
+        });
+      }
+
+      if (newBarItems.length > 0) {
+        const orderId = `kds_b_${Date.now()}`;
+        newBarItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        newKdsOrders.push({
+          id: orderId,
+          tableNumber: updatedTable.number,
+          tableName: updatedTable.name,
+          server: serverName,
+          timestamp,
+          status: 'PENDING',
+          station: 'Bar',
+          items: newBarItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
+        });
+      }
+
+      if (newKdsOrders.length > 0) {
+        setKdsOrders(prev => [...prev, ...newKdsOrders]);
+      }
+    }
+
+    // 2. Save table state
+    handleUpdateTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));
     setSelectedTableForOrder(updatedTable);
 
     // Save locally in IndexedDB
@@ -356,6 +421,24 @@ export function App() {
     );
   }
 
+  if (!tenant.onboardingCompleted) {
+    return (
+      <NysaOnboarding
+        tenant={tenant}
+        currentUser={currentUser}
+        onComplete={(updatedTenant, newStaff, newMenu) => {
+          handleUpdateTenant(updatedTenant);
+          if (newStaff.length > 0) {
+            newStaff.forEach(handleAddStaffMember);
+          }
+          if (newMenu.length > 0) {
+            handleUpdateMenu(newMenu);
+          }
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#fafaf9] text-stone-900 flex flex-row font-sans selection:bg-[#a9b994]/30">
       
@@ -384,6 +467,9 @@ export function App() {
         isShiftOpen={!!cashShiftService.getActiveShift()}
         activeRegisterName={cashShiftService.getCurrentRegister().name}
       />
+
+      {/* Spacer to push content because Navbar is absolute and overlays on hover */}
+      <div className="w-16 sm:w-[68px] h-full shrink-0 z-0 bg-stone-950/20 block"></div>
 
       {/* Main Workspace Container */}
       <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden relative">
@@ -422,7 +508,7 @@ export function App() {
             <OrderTaking
               table={selectedTableForOrder}
               tenant={tenant}
-              menuItems={sampleMenuItems}
+              menuItems={menuItems}
               onSaveOrder={handleSaveOrder}
               onBackToTables={() => setSelectedTableForOrder(null)}
               onDirectInvoice={() => setActiveTab('billing')}
@@ -438,13 +524,30 @@ export function App() {
               onSplitBill={handleSplitBill}
               isAdmin={currentUser.role === 'ADMIN'}
               staffList={staffList}
+              tenant={tenant}
+              onUpdateTenant={handleUpdateTenant}
+              onUpdateTables={handleUpdateTables}
             />
           )
         )}
 
         {/* Cocina & Bar (KDS) */}
         {activeTab === 'kds' && (
-          <KDSView onNotify={addNotification} />
+          <KDSView 
+            orders={kdsOrders}
+            onUpdateStatus={handleUpdateKdsOrder}
+            onToggleItemCompletion={handleToggleKdsItem}
+            onNotify={addNotification} 
+          />
+        )}
+
+        {/* Catálogo de Menú */}
+        {activeTab === 'menu' && currentUser.role === 'ADMIN' && (
+          <MenuEditor 
+            menuItems={menuItems} 
+            onUpdateMenu={handleUpdateMenu} 
+            taxRegime={tenant.taxRegime || 'TRADITIONAL'}
+          />
         )}
 
         {/* Caja & Facturación Electrónica CR v4.3 */}
@@ -452,9 +555,13 @@ export function App() {
           <BillingHacienda
             tenant={tenant}
             selectedTable={selectedTableForOrder || tables[0]}
-            onEmitInvoice={() => {}}
             onSaveTable={handleSaveOrder}
-            onOpenCashShift={(tab) => handleOpenCashShift(tab || 'status')}
+            onNotify={addNotification}
+            onOpenCashShift={(tab) => {
+              setCashShiftInitialTab(tab || 'status');
+              setIsCashShiftModalOpen(true);
+            }}
+            onOpenHaciendaHistory={() => setIsHaciendaHistoryOpen(true)}
           />
         )}
       </main>
@@ -544,6 +651,13 @@ export function App() {
         }}
         report={activeZReport}
         consolidatedReport={activeConsolidatedZReport}
+      />
+
+      {/* Hacienda History Modal */}
+      <HaciendaHistoryModal
+        isOpen={isHaciendaHistoryOpen}
+        onClose={() => setIsHaciendaHistoryOpen(false)}
+        tenant={tenant}
       />
 
       {/* Floating Saborai Copilot IA Button */}

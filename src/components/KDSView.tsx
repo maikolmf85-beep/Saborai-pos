@@ -16,10 +16,13 @@ import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
 
 interface KDSViewProps {
+  orders: KDSOrder[];
+  onUpdateStatus: (orderId: string, nextStatus: KDSOrder['status']) => void;
+  onToggleItemCompletion: (orderId: string, itemId: string) => void;
   onNotify?: (notif: PosNotification) => void;
 }
 
-export const KDSView: React.FC<KDSViewProps> = ({ onNotify }) => {
+export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onToggleItemCompletion, onNotify }) => {
   const [stationFilter, setStationFilter] = useState<'ALL' | 'Cocina' | 'Bar'>('ALL');
   const [viewMode, setViewMode] = useState<'TICKETS' | 'CONSOLIDATED'>('TICKETS');
   const [now, setNow] = useState(Date.now());
@@ -29,58 +32,6 @@ export const KDSView: React.FC<KDSViewProps> = ({ onNotify }) => {
     return () => clearInterval(interval);
   }, []);
   
-  const [orders, setOrders] = useState<KDSOrder[]>([
-    {
-      id: 'kds_1',
-      tableNumber: 1,
-      tableName: 'Mesa 1 - Ventanal',
-      server: 'Kevin Murillo',
-      timestamp: new Date(Date.now() - 14 * 60 * 1000), // 14 mins ago
-      status: 'IN_PREPARATION',
-      station: 'Cocina',
-      items: [
-        { id: 'i1', name: 'Ceviche Tico Clásico de Corvina', quantity: 2, notes: 'Sin cebolla para uno', completed: false },
-        { id: 'i2', name: 'Corte Ribeye Angus 350g a la Leña', quantity: 1, notes: 'Término medio 3/4', completed: false },
-      ]
-    },
-    {
-      id: 'kds_2',
-      tableNumber: 1,
-      tableName: 'Mesa 1 - Ventanal',
-      server: 'Kevin Murillo',
-      timestamp: new Date(Date.now() - 14 * 60 * 1000),
-      status: 'READY',
-      station: 'Bar',
-      items: [
-        { id: 'i3', name: 'Cóctel Pasión Tica (Guaro Cacique)', quantity: 2, completed: true },
-      ]
-    },
-    {
-      id: 'kds_3',
-      tableNumber: 6,
-      tableName: 'Barra VIP Banqueta 1-4',
-      server: 'Esteban Mora',
-      timestamp: new Date(Date.now() - 4 * 60 * 1000), // 4 mins ago
-      status: 'PENDING',
-      station: 'Bar',
-      items: [
-        { id: 'i4', name: 'Cóctel Pasión Tica (Guaro Cacique)', quantity: 3, completed: false },
-      ]
-    },
-    {
-      id: 'kds_4',
-      tableNumber: 3,
-      tableName: 'Mesa 3 - Rincón Íntimo',
-      server: 'Sofía Calderón',
-      timestamp: new Date(Date.now() - 22 * 60 * 1000), // 22 mins ago (Alert!)
-      status: 'IN_PREPARATION',
-      station: 'Cocina',
-      items: [
-        { id: 'i5', name: 'Gallo Pinto Gourmet con Lomo Saltado', quantity: 2, completed: false },
-      ]
-    }
-  ]);
-
   const handleUpdateStatus = (orderId: string, nextStatus: KDSOrder['status']) => {
     const targetOrder = orders.find(o => o.id === orderId);
 
@@ -102,22 +53,18 @@ export const KDSView: React.FC<KDSViewProps> = ({ onNotify }) => {
       }
     }
 
-    setOrders(orders.map(o => o.id === orderId ? { ...o, status: nextStatus, items: nextStatus === 'READY' ? o.items.map(it => ({...it, completed: true})) : o.items } : o));
+    onUpdateStatus(orderId, nextStatus);
   };
 
   const handleToggleItemCompletion = (orderId: string, itemId: string) => {
-    setOrders(orders.map(order => {
-      if (order.id !== orderId) return order;
-
-      const updatedItems = order.items.map(it => 
-        it.id === itemId ? { ...it, completed: !it.completed } : it
-      );
-      
+    onToggleItemCompletion(orderId, itemId);
+    
+    // Check if it should play sound (this is an approximation since we don't have the updated state synchronously)
+    const order = orders.find(o => o.id === orderId);
+    if (order) {
+      const updatedItems = order.items.map(it => it.id === itemId ? { ...it, completed: !it.completed } : it);
       const allCompleted = updatedItems.length > 0 && updatedItems.every(it => it.completed);
-      
-      let nextStatus = order.status;
       if (allCompleted && order.status !== 'READY' && order.status !== 'SERVED') {
-        nextStatus = 'READY';
         soundService.playOrderReadySound();
         if (onNotify) {
           onNotify({
@@ -132,49 +79,14 @@ export const KDSView: React.FC<KDSViewProps> = ({ onNotify }) => {
           });
         }
       }
-
-      return { ...order, items: updatedItems, status: nextStatus };
-    }));
-  };
-
-  const handleSimulateNewOrderArrival = () => {
-    const randomStation = Math.random() > 0.5 ? 'Cocina' : 'Bar';
-    soundService.playNewOrderSound(randomStation);
-
-    const newOrder: KDSOrder = {
-      id: `kds_${Date.now()}`,
-      tableNumber: Math.floor(1 + Math.random() * 6),
-      tableName: `Mesa ${Math.floor(1 + Math.random() * 6)} - Salón`,
-      server: 'Kevin Murillo',
-      timestamp: new Date(),
-      status: 'PENDING',
-      station: randomStation,
-      items: randomStation === 'Cocina' ? [
-        { id: `i_${Date.now()}_1`, name: 'Gallo Pinto Gourmet con Lomo Saltado', quantity: 1, notes: 'Huevo frito suave', completed: false }
-      ] : [
-        { id: `i_${Date.now()}_2`, name: 'Cóctel Pasión Tica (Guaro Cacique)', quantity: 2, completed: false }
-      ]
-    };
-
-    setOrders([newOrder, ...orders]);
-
-    if (onNotify) {
-      onNotify({
-        id: `arrival_${Date.now()}`,
-        type: 'NEW_ORDER',
-        title: `🔔 Nueva Comanda recibida en ${randomStation}`,
-        message: `${newOrder.tableName} (Salonero: ${newOrder.server})`,
-        station: randomStation,
-        tableNumber: newOrder.tableNumber,
-        server: newOrder.server,
-        timestamp: new Date()
-      });
     }
   };
 
+  const activeOrders = orders.filter(o => o.status !== 'SERVED');
+
   const filteredOrders = stationFilter === 'ALL'
-    ? orders
-    : orders.filter(o => o.station === stationFilter);
+    ? activeOrders
+    : activeOrders.filter(o => o.station === stationFilter);
 
   const getElapsedTimeInMinutes = (date: Date) => {
     return Math.floor((now - date.getTime()) / 60000);
@@ -238,17 +150,6 @@ export const KDSView: React.FC<KDSViewProps> = ({ onNotify }) => {
               <span>Consolidado</span>
             </button>
           </div>
-
-          {/* Test Sound Button */}
-          <button
-            type="button"
-            onClick={handleSimulateNewOrderArrival}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all border border-stone-200"
-            title="Probar sonido y llegada de nueva comanda a Cocina o Bar"
-          >
-            <Bell className="w-3.5 h-3.5 text-[#588157] animate-bounce" />
-            <span>Simular Llegada</span>
-          </button>
 
           {/* Station Filter Buttons */}
           <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-2xl border border-stone-200/80">

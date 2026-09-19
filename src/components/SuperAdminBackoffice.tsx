@@ -45,56 +45,7 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const [tenantsList, setTenantsList] = useState<TenantInfo[]>([
-    currentTenant,
-    {
-      id: 'tenant_saborai_cr_002',
-      name: 'Café & Bistro Escalante',
-      cedulaJuridica: '3-101-554433',
-      email: 'gerencia@bistroescalante.cr',
-      phone: '+506 2224-8899',
-      location: 'Barrio Escalante, San José',
-      plan: 'express',
-      status: 'ACTIVE',
-      currency: 'CRC',
-      monthlyFee: 22000,
-    },
-    {
-      id: 'tenant_saborai_cr_003',
-      name: 'Parrillada Don Fernando Guachipelín',
-      cedulaJuridica: '3-101-998877',
-      email: 'admin@donfernando.cr',
-      phone: '+506 2215-6677',
-      location: 'Guachipelín, Escazú',
-      plan: 'pro',
-      status: 'ACTIVE',
-      currency: 'CRC',
-      monthlyFee: 45000,
-    },
-    {
-      id: 'tenant_saborai_cr_004',
-      name: 'Grupo Gastronómico Tamarindo Sunset',
-      cedulaJuridica: '3-101-112233',
-      email: 'finanzas@tamarindosunset.cr',
-      phone: '+506 2653-1200',
-      location: 'Playa Tamarindo, Guanacaste (3 Sucursales)',
-      plan: 'multibranch',
-      status: 'ACTIVE',
-      currency: 'CRC',
-      monthlyFee: 255000, // 85k * 3
-    },
-    {
-      id: 'tenant_saborai_cr_005',
-      name: 'Marisquería El Timón Herediano',
-      cedulaJuridica: '3-101-774411',
-      email: 'eltimon@heredia.cr',
-      phone: '+506 2260-3322',
-      location: 'San Joaquín de Flores, Heredia',
-      plan: 'express',
-      status: 'PAST_DUE',
-      gracePeriodEndsAt: '25/09/2026',
-      currency: 'CRC',
-      monthlyFee: 22000,
-    }
+    currentTenant
   ]);
 
   // Derived metrics

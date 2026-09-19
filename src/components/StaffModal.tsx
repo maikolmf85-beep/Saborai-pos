@@ -337,7 +337,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                           </td>
 
                           <td className="px-4 py-3 font-mono text-stone-500 text-[11px]">
-                            {member.pin ? '••••' : '1234'}
+                            {currentUser?.role === 'ADMIN' ? (member.pin || '1234') : (member.pin ? '••••' : '1234')}
                           </td>
 
                           <td className="px-4 py-3 text-right">
