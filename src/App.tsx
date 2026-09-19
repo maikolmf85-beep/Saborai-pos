@@ -678,6 +678,7 @@ export function App() {
       <AICopilotChat
         isOpen={isCopilotOpen}
         onClose={() => setIsCopilotOpen(false)}
+        currentUser={currentUser}
       />
 
       {/* Real-time Audible & Visual Notification Toasts */}

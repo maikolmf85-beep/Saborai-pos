@@ -18,6 +18,7 @@ interface AICopilotChatProps {
   isOpen: boolean;
   onClose: () => void;
   onQuickAction?: (actionType: string) => void;
+  currentUser?: import('../types').UserProfile;
 }
 
 interface Message {
@@ -34,7 +35,8 @@ interface Message {
 export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   isOpen,
   onClose,
-  onQuickAction
+  onQuickAction,
+  currentUser
 }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -63,10 +65,13 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     setIsTyping(true);
 
     try {
+      const roleName = currentUser?.role === 'ADMIN' ? 'Administrador' : currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
+      const contextStr = `El usuario interactuando contigo se llama ${currentUser?.name || 'Empleado'} y su rol es: ${roleName}.`;
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: query, context: 'El usuario está en el POS buscando ayuda.' })
+        body: JSON.stringify({ message: query, context: contextStr })
       });
 
       if (!res.ok) {

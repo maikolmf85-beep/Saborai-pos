@@ -58,8 +58,8 @@ ${context || 'Operando con normalidad.'}
     const text = response.text();
 
     return res.status(200).json({ text });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in Gemini API:', error);
-    return res.status(500).json({ error: 'Error comunicándose con Nysa AI.' });
+    return res.status(500).json({ error: 'Error comunicándose con Nysa AI.', details: error.message || String(error) });
   }
 }
