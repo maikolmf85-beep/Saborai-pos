@@ -1,17 +1,11 @@
 import React, { useState } from 'react';
 import { BrandLogo } from './BrandLogos';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { 
   Sparkles, 
   X, 
-  Send, 
-  Bot, 
-  User, 
-  Utensils, 
-  FileCheck2, 
-  TrendingUp, 
-  CheckCircle2,
-  HelpCircle,
-  Lightbulb
+  Send,
+  AlertTriangle
 } from 'lucide-react';
 
 interface AICopilotChatProps {
@@ -25,11 +19,18 @@ interface Message {
   id: string;
   sender: 'ai' | 'user';
   text: string;
-  actionCard?: {
-    type: 'cabys' | 'recipe' | 'sales' | 'general';
-    title: string;
-    details: string;
-  };
+  isError?: boolean;
+}
+
+// La API Key de Gemini se lee de la variable de entorno VITE_GEMINI_API_KEY
+// Agrégala en Vercel: Settings → Environment Variables → VITE_GEMINI_API_KEY
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+
+function getNysaClient(): GoogleGenerativeAI | null {
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'tu_api_key_aqui' || GEMINI_API_KEY.trim() === '') {
+    return null;
+  }
+  return new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
 export const AICopilotChat: React.FC<AICopilotChatProps> = ({
@@ -49,53 +50,82 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     }
   ]);
 
+  const apiReady = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'tu_api_key_aqui' && GEMINI_API_KEY.trim() !== '';
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
+    const userText = inputMessage.trim();
+
     const userMsg: Message = {
       id: `usr_${Date.now()}`,
       sender: 'user',
-      text: inputMessage
+      text: userText
     };
 
     setMessages(prev => [...prev, userMsg]);
-    const query = inputMessage.toLowerCase();
     setInputMessage('');
     setIsTyping(true);
 
-    try {
-      const roleName = currentUser?.role === 'ADMIN' ? 'Administrador' : currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
-      const contextStr = `El usuario interactuando contigo se llama ${currentUser?.name || 'Empleado'} y su rol es: ${roleName}.`;
-
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: query, context: contextStr })
-      });
-
-      if (!res.ok) {
-        throw new Error('Error en la respuesta del servidor');
-      }
-
-      const data = await res.json();
-
+    if (!apiReady) {
+      setIsTyping(false);
       setMessages(prev => [
         ...prev,
         {
           id: `ai_${Date.now()}`,
           sender: 'ai',
-          text: data.text || 'Hubo un error al procesar mi respuesta. Por favor intenta de nuevo.',
+          isError: true,
+          text: '⚠️ La API Key de Gemini no está configurada. Para activarme, añade la variable VITE_GEMINI_API_KEY en los ajustes de Vercel (Settings → Environment Variables) y haz un Redeploy.'
         }
       ]);
-    } catch (error) {
-      console.error(error);
+      return;
+    }
+
+    try {
+      const client = getNysaClient();
+      if (!client) throw new Error('No se pudo inicializar el cliente de IA.');
+
+      const roleName =
+        currentUser?.role === 'ADMIN' ? 'Administrador' :
+        currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
+
+      const model = client.getGenerativeModel({
+        model: 'gemini-2.0-flash',
+        systemInstruction: `Eres Nysa, la asistente de inteligencia artificial personal de Saborai POS.
+Eres servicial, profesional, amigable y de trato muy cálido.
+El empleado que habla contigo se llama "${currentUser?.name || 'Empleado'}" y su rol es: ${roleName}.
+Ayudas a empleados del restaurante (saloneros, cajeros y administradores) con:
+- Dudas sobre el sistema POS Saborai
+- Recomendaciones para vender más y atender mejor
+- Preguntas sobre menú, maridajes e inventarios
+- Soporte general de operaciones del restaurante
+Responde siempre en español, de forma concisa y clara.
+Si te preguntan algo fuera del contexto de restaurante/POS, redirige amablemente la conversación.
+Nunca menciones que eres una IA de Google; eres Nysa de Saborai.`
+      });
+
+      const result = await model.generateContent(userText);
+      const text = result.response.text();
+
       setMessages(prev => [
         ...prev,
         {
           id: `ai_${Date.now()}`,
           sender: 'ai',
-          text: 'Lo siento mucho, actualmente no puedo conectarme con mi cerebro de IA. Verifica tu conexión a internet o asegúrate de que la API Key esté configurada en Vercel.',
+          text: text || 'No pude generar una respuesta. Por favor intenta de nuevo.'
+        }
+      ]);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error('Nysa AI Error:', errMsg);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `ai_${Date.now()}`,
+          sender: 'ai',
+          isError: true,
+          text: `Lo siento, hubo un error al conectarme con mi cerebro de IA. Detalle: ${errMsg}`
         }
       ]);
     } finally {
@@ -115,16 +145,17 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       {/* Copilot Header */}
       <div className="bg-[#3b3733] text-[#fcfeff] p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {/* Official Variant for Copilot Floating: Isotipo Bicromático */}
           <BrandLogo variant="isotype" size="sm" />
           <div>
             <h3 className="font-bold text-sm flex items-center gap-1.5">
               <span>Nysa AI</span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#a9b994] text-[#3b3733] font-black uppercase">
-                Asistente Personal
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${apiReady ? 'bg-[#a9b994] text-[#3b3733]' : 'bg-red-400 text-white'}`}>
+                {apiReady ? 'Asistente Personal' : 'Sin Configurar'}
               </span>
             </h3>
-            <p className="text-[11px] text-[#a9b994]">Siempre a tu lado</p>
+            <p className="text-[11px] text-[#a9b994]">
+              {apiReady ? 'Siempre a tu lado' : 'Configura VITE_GEMINI_API_KEY en Vercel'}
+            </p>
           </div>
         </div>
 
@@ -147,22 +178,14 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
               className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                 msg.sender === 'user'
                   ? 'bg-[#3b3733] text-[#fcfeff] rounded-br-none'
+                  : msg.isError
+                  ? 'bg-red-50 text-red-700 rounded-bl-none border border-red-200'
                   : 'bg-gray-100 text-[#3b3733] rounded-bl-none border border-gray-200'
               }`}
             >
+              {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
               {msg.text}
             </div>
-
-            {/* Action card if returned */}
-            {msg.actionCard && (
-              <div className="mt-2 max-w-[85%] p-3 rounded-2xl bg-[#a9b994]/20 border border-[#a9b994]/50 text-xs text-[#3b3733] space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#3b3733]" />
-                  <span>{msg.actionCard.title}</span>
-                </div>
-                <p className="text-[11px] text-[#6b686d]">{msg.actionCard.details}</p>
-              </div>
-            )}
           </div>
         ))}
 
@@ -177,10 +200,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       {/* Suggested Quick Prompts */}
       <div className="p-2 border-t border-[#6b686d]/15 bg-gray-50 flex items-center gap-1.5 overflow-x-auto text-[10px] scrollbar-none">
         <button
-          onClick={() => handlePromptClick('Validar códigos CABYS de Hacienda')}
+          onClick={() => handlePromptClick('¿Cómo agrego un producto al menú?')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium"
         >
-          🔍 Validar CABYS
+          🍽️ Agregar producto
         </button>
         <button
           onClick={() => handlePromptClick('Recomendar maridaje para Ribeye')}
@@ -189,10 +212,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           🍷 Sugerir Maridaje
         </button>
         <button
-          onClick={() => handlePromptClick('Proyectar quiebre de stock')}
+          onClick={() => handlePromptClick('¿Cómo cierro el turno correctamente?')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium"
         >
-          📦 Alerta Stock
+          🔄 Cerrar turno
         </button>
       </div>
 
@@ -200,7 +223,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       <form onSubmit={handleSendMessage} className="p-3 bg-[#fcfeff] border-t border-[#6b686d]/20 flex items-center gap-2">
         <input
           type="text"
-          placeholder="Pregúntale a Nysa lo que necesites..."
+          placeholder={apiReady ? "Pregúntale a Nysa lo que necesites..." : "Configura la API Key para activar Nysa..."}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#6b686d]/30 text-xs text-[#3b3733] focus:border-[#a9b994] focus:outline-none"
