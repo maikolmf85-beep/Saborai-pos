@@ -15,61 +15,74 @@ export interface TilopaySubscriptionResponse {
 
 class TilopayService {
   /**
-   * Simula la tokenización segura de una tarjeta de crédito
+   * Tokeniza una tarjeta de crédito a través del backend seguro
    * @param cardData 
-   * @returns un string con el token (o un error si la tarjeta es declinada explícitamente)
+   * @returns un string con el token (o lanza un error si la tarjeta es declinada)
    */
   public async tokenizeCard(cardData: TilopayCardData): Promise<string> {
-    return new Promise((resolve, reject) => {
-      // Simulate network latency (1.5 - 2.5s)
-      const delay = Math.floor(Math.random() * 1000) + 1500;
+    try {
+      const response = await fetch('/api/tilopay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'tokenize',
+          payload: cardData
+        })
+      });
 
-      setTimeout(() => {
-        // Mock error condition: CVV '999' forces a validation failure
-        if (cardData.cvv === '999') {
-          reject(new Error('Tarjeta declinada por el banco emisor (Fondos Insuficientes / CVV Inválido).'));
-          return;
-        }
+      const data = await response.json();
 
-        // Mock error condition: Card ending in '0000' forces block
-        if (cardData.cardNumber.replace(/\s+/g, '').endsWith('0000')) {
-          reject(new Error('Tarjeta bloqueada por sospecha de fraude.'));
-          return;
-        }
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al tokenizar la tarjeta.');
+      }
 
-        // Generate a mock token
-        const token = `tilo_tok_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-        resolve(token);
-      }, delay);
-    });
+      return data.token;
+    } catch (error: any) {
+      throw new Error(error.message || 'Error de conexión con el servicio de pagos.');
+    }
   }
 
   /**
-   * Simula la inscripción de una tarjeta tokenizada a un plan de suscripción mensual
+   * Inscribe una tarjeta tokenizada a un plan de suscripción mensual vía el backend seguro
    * @param planId El ID del plan (express, pro, enterprise)
    * @param token El token generado en el paso anterior
    * @param email Correo del cliente
    */
   public async createSubscription(planId: string, token: string, email: string): Promise<TilopaySubscriptionResponse> {
-    return new Promise((resolve) => {
-      const delay = Math.floor(Math.random() * 1000) + 1000;
+    try {
+      const response = await fetch('/api/tilopay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action: 'subscribe',
+          payload: { planId, token, email }
+        })
+      });
 
-      setTimeout(() => {
-        if (!token.startsWith('tilo_tok_')) {
-          resolve({
-            success: false,
-            error: 'Token de pago inválido.'
-          });
-          return;
-        }
+      const data = await response.json();
 
-        resolve({
-          success: true,
-          transactionId: `sub_txn_${Date.now()}`,
-          message: `Suscripción al plan '${planId}' procesada correctamente para ${email}.`
-        });
-      }, delay);
-    });
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error || 'Error al procesar la suscripción.'
+        };
+      }
+
+      return {
+        success: true,
+        transactionId: data.transactionId,
+        message: data.message
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Error de conexión con el servicio de pagos.'
+      };
+    }
   }
 }
 
