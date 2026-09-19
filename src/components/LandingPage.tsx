@@ -535,14 +535,26 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                     <span className="font-bold block">Plan Seleccionado:</span>
                     <span className="text-[#6b686d]">{selectedPlanModal.toUpperCase()}</span>
                   </div>
-                  <span className="text-sm font-black text-[#3b3733]">
-                    {selectedPlanModal === 'express' ? '₡22,000/mes' : selectedPlanModal === 'pro' ? '₡45,000/mes' : '₡85,000/mes'}
+                  <span className="text-sm font-black text-[#3b3733] text-right">
+                    {selectedPlanModal === 'express' ? '₡22,000/mes' : selectedPlanModal === 'pro' ? (
+                      <>
+                        <span className="block text-[#a9b994]">14 Días Gratis</span>
+                        <span className="text-xs text-[#6b686d]">Luego ₡45,000/mes</span>
+                      </>
+                    ) : '₡85,000/mes'}
                   </span>
                 </div>
 
                 <div className="p-3 rounded-xl border border-dashed border-[#6b686d]/40 text-xs text-[#6b686d] flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#a9b994] shrink-0" />
-                  <span>Ambiente Seguro Tilopay 2.0 (Suscripción tokenizada con 3D Secure).</span>
+                  <ShieldCheck className="w-6 h-6 text-[#a9b994] shrink-0" />
+                  <span>
+                    Ambiente Seguro Tilopay 2.0. 
+                    {selectedPlanModal === 'pro' && (
+                      <strong className="text-[#3b3733] block mt-1">
+                        Se requiere tarjeta para activar la prueba. No se realizarán cargos hoy.
+                      </strong>
+                    )}
+                  </span>
                 </div>
 
                 <button
