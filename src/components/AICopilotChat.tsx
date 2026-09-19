@@ -91,7 +91,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
       const model = client.getGenerativeModel({
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.6-flash',
         systemInstruction: `Eres Nysa, la asistente de inteligencia artificial personal de Saborai POS.
 Eres servicial, profesional, amigable y de trato muy cálido.
 El empleado que habla contigo se llama "${currentUser?.name || 'Empleado'}" y su rol es: ${roleName}.
