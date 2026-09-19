@@ -25,7 +25,7 @@ import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, M
 import { localDB } from './services/db';
 import { soundService } from './services/soundEffects';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
-import { Sparkles, WifiOff } from 'lucide-react';
+import { Sparkles, WifiOff, Lock } from 'lucide-react';
 
 export function App() {
   // Authentication & Session state
@@ -504,7 +504,29 @@ export function App() {
 
         {/* Punto de Venta: Mesas o Tomapedidos integrado */}
         {activeTab === 'pos' && (
-          selectedTableForOrder ? (
+          !cashShiftService.getActiveShift() ? (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-stone-50 animate-in fade-in duration-300">
+              <div className="w-24 h-24 bg-stone-200/50 rounded-full flex items-center justify-center mb-6">
+                <Lock className="w-12 h-12 text-stone-400" />
+              </div>
+              <h2 className="text-3xl font-black text-stone-800 mb-3 tracking-tight">Turno de Caja Cerrado</h2>
+              <p className="text-stone-500 max-w-md mx-auto mb-8 text-lg">
+                Es obligatorio abrir un turno de caja para poder comandar productos o tomar órdenes en las mesas.
+              </p>
+              {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(currentUser?.role || '') ? (
+                <button
+                  onClick={() => handleOpenCashShift('status')}
+                  className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-stone-800 transition-colors shadow-xl shadow-stone-900/20 active:scale-95"
+                >
+                  Abrir Turno Ahora
+                </button>
+              ) : (
+                <div className="px-6 py-4 bg-amber-100/50 text-amber-800 border border-amber-200 rounded-2xl font-bold text-sm shadow-sm">
+                  Solicita a un administrador o cajero que abra el turno
+                </div>
+              )}
+            </div>
+          ) : selectedTableForOrder ? (
             <OrderTaking
               table={selectedTableForOrder}
               tenant={tenant}
@@ -513,7 +535,7 @@ export function App() {
               onBackToTables={() => setSelectedTableForOrder(null)}
               onDirectInvoice={() => setActiveTab('billing')}
               onNotify={addNotification}
-              userRole={currentUser.role}
+              userRole={currentUser?.role || 'SALONERO'}
               onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
             />
           ) : (
@@ -522,7 +544,7 @@ export function App() {
               onSelectTable={handleSelectTable}
               onOpenOrder={handleOpenOrder}
               onSplitBill={handleSplitBill}
-              isAdmin={currentUser.role === 'ADMIN'}
+              isAdmin={currentUser?.role === 'ADMIN'}
               staffList={staffList}
               tenant={tenant}
               onUpdateTenant={handleUpdateTenant}
