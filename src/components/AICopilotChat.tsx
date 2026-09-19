@@ -90,9 +90,14 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      const model = client.getGenerativeModel({
-        model: 'gemini-3.6-flash',
-        systemInstruction: `Eres Nysa, la asistente de inteligencia artificial personal de Saborai POS.
+      // Sistema de fallback: intenta modelos en orden hasta que uno funcione
+      const MODELS_TO_TRY = [
+        'gemini-1.5-flash',      // Más estable en tier gratuito
+        'gemini-2.0-flash-lite', // Fallback ligero
+        'gemini-1.5-pro',        // Fallback más potente
+      ];
+
+      const systemInstruction = `Eres Nysa, la asistente de inteligencia artificial personal de Saborai POS.
 Eres servicial, profesional, amigable y de trato muy cálido.
 El empleado que habla contigo se llama "${currentUser?.name || 'Empleado'}" y su rol es: ${roleName}.
 Ayudas a empleados del restaurante (saloneros, cajeros y administradores) con:
@@ -102,11 +107,30 @@ Ayudas a empleados del restaurante (saloneros, cajeros y administradores) con:
 - Soporte general de operaciones del restaurante
 Responde siempre en español, de forma concisa y clara.
 Si te preguntan algo fuera del contexto de restaurante/POS, redirige amablemente la conversación.
-Nunca menciones que eres una IA de Google; eres Nysa de Saborai.`
-      });
+Nunca menciones que eres una IA de Google; eres Nysa de Saborai.`;
 
-      const result = await model.generateContent(userText);
-      const text = result.response.text();
+      let text = '';
+      let lastError: unknown = null;
+
+      for (const modelName of MODELS_TO_TRY) {
+        try {
+          const model = client.getGenerativeModel({ model: modelName, systemInstruction });
+          const result = await model.generateContent(userText);
+          text = result.response.text();
+          break; // Si funcionó, salimos del loop
+        } catch (modelError: unknown) {
+          lastError = modelError;
+          const msg = modelError instanceof Error ? modelError.message : String(modelError);
+          // Si es 503 (sobrecarga) o 404 (modelo no disponible), intentamos el siguiente
+          if (msg.includes('503') || msg.includes('503') || msg.includes('404') || msg.includes('overloaded') || msg.includes('no longer available')) {
+            console.warn(`Modelo ${modelName} no disponible, intentando el siguiente...`);
+            continue;
+          }
+          throw modelError; // Si es otro error (ej: API key inválida), lo propagamos
+        }
+      }
+
+      if (!text && lastError) throw lastError;
 
       setMessages(prev => [
         ...prev,
