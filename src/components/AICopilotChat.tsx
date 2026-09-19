@@ -96,11 +96,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      // Modelos ordenados de más rápido a más potente (serie actual 2025-2026)
+      // Modelos serie 3.x (los 2.0 y 2.5 fueron descontinuados en junio 2026)
       const MODELS_TO_TRY = [
-        'gemini-2.0-flash-lite', // Más rápido y ligero de la serie actual
-        'gemini-2.5-flash',      // Rápido y capaz
-        'gemini-3.6-flash',      // Recomendado por la propia API de Google
+        'gemini-3.6-flash', // Estable en producción
+        'gemini-3.7-flash', // Agosto 2026
+        'gemini-3.8-flash', // El más nuevo y capaz
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
@@ -109,7 +109,6 @@ Ayudas con el POS, menú, inventarios y ventas del restaurante.
 Responde en español, de forma concisa. No menciones que eres de Google.`;
 
       const aiMsgId = `ai_${Date.now()}`;
-      // Agrego el mensaje vacío para ir llenando con streaming
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
       setIsTyping(false);
 
@@ -130,15 +129,16 @@ Responde en español, de forma concisa. No menciones que eres de Google.`;
               );
             }
           }
-          break; // Streaming terminó OK
+          break; // OK
         } catch (modelError: unknown) {
           lastError = modelError;
           const msg = modelError instanceof Error ? modelError.message : String(modelError);
-          if (msg.includes('503') || msg.includes('404') || msg.includes('overloaded') || msg.includes('no longer available')) {
-            console.warn(`Modelo ${modelName} no disponible, intentando siguiente...`);
+          // Reintenta con el siguiente modelo ante cualquier error de servidor (4xx, 5xx)
+          if (/\[4\d\d\s*\]|\[5\d\d\s*\]|overloaded|not found|no longer available|unavailable|quota/i.test(msg)) {
+            console.warn(`Modelo ${modelName} falló (${msg.substring(0, 80)}), intentando siguiente...`);
             continue;
           }
-          throw modelError;
+          throw modelError; // Error de API key u otro crítico — no reintentamos
         }
       }
 
