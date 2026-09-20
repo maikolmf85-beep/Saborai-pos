@@ -441,16 +441,11 @@ export function App() {
   if (!subscription && !skipSubscriptionGate) {
     return (
       <WelcomeGate
-        onEnterDemo={() => {
-          const sub: SaboraiSubscription = { mode: 'DEMO', activatedAt: new Date().toISOString() };
+        onSubscriptionActivated={(sub, user, tenant) => {
           try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
           setSubscription(sub);
+          handleLoginSuccess(user, tenant);
         }}
-        onSubscriptionActivated={(sub) => {
-          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
-          setSubscription(sub);
-        }}
-        onAlreadyHaveAccount={() => setSkipSubscriptionGate(true)}
       />
     );
   }
@@ -479,21 +474,16 @@ export function App() {
     );
   }
 
-  // If POS domain, but not authenticated, require login or registration
+  // If POS domain, but not authenticated, show WelcomeGate again
   if (!currentUser) {
     return (
-      <>
-        <AuthScreen 
-          onLoginSuccess={handleLoginSuccess} 
-          onOpenNotion={() => setIsNotionModalOpen(true)} 
-        />
-        <NotionModal
-          isOpen={isNotionModalOpen}
-          onClose={() => setIsNotionModalOpen(false)}
-          currentUser={currentUser}
-          currentTenant={tenant}
-        />
-      </>
+      <WelcomeGate
+        onSubscriptionActivated={(sub, user, tenantData) => {
+          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+          setSubscription(sub);
+          handleLoginSuccess(user, tenantData);
+        }}
+      />
     );
   }
 
