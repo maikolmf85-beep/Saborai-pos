@@ -95,6 +95,19 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
   const [checkoutStatus, setCheckoutStatus] = useState<'IDLE' | 'TOKENIZING' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  
+  const [checkoutStep, setCheckoutStep] = useState<'REGISTRATION' | 'PAYMENT'>('REGISTRATION');
+  const [ownerEmailConfirm, setOwnerEmailConfirm] = useState('');
+
+  const handleContinueToPayment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (ownerEmail !== ownerEmailConfirm) {
+      setCheckoutError('Los correos electrónicos no coinciden.');
+      return;
+    }
+    setCheckoutError(null);
+    setCheckoutStep('PAYMENT');
+  };
 
   const handleSimulateTilopayCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -375,7 +388,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 </div>
 
                 <button
-                  onClick={() => setSelectedPlanModal(plan.id)}
+                  onClick={() => {
+                    setSelectedPlanModal(plan.id);
+                    setCheckoutStep('REGISTRATION');
+                    setCheckoutError(null);
+                  }}
                   className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 ${
                     plan.popular
                       ? 'bg-[#3b3733] text-[#fcfeff] hover:bg-[#282522] shadow-lg shadow-[#3b3733]/25'
@@ -408,7 +425,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 <CreditCard className="w-6 h-6 text-[#3b3733]" />
               </div>
               <div>
-                <h3 className="text-xl font-black text-[#3b3733]">Checkout Seguro Tilopay</h3>
+                <h3 className="text-xl font-black text-[#3b3733]">
+                  {checkoutStep === 'REGISTRATION' ? 'Paso 1: Tus Datos' : 'Paso 2: Pago Seguro'}
+                </h3>
                 <p className="text-xs text-[#6b686d]">Suscripción tokenizada en Costa Rica</p>
               </div>
             </div>
@@ -423,6 +442,62 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                   Webhook `transaction.success` verificado. Redirigiendo a tu nuevo Punto de Venta Saborai...
                 </p>
               </div>
+            ) : checkoutStep === 'REGISTRATION' ? (
+              <form onSubmit={handleContinueToPayment} className="space-y-4">
+                {checkoutError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-medium">
+                    ⚠️ {checkoutError}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Nombre del Restaurante</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej. Café & Bistro Escalante"
+                      value={restaurantName}
+                      onChange={(e) => setRestaurantName(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Correo Electrónico</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="gerencia@escalante.cr"
+                      value={ownerEmail}
+                      onChange={(e) => setOwnerEmail(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Confirmar Correo Electrónico</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="Vuelve a ingresar tu correo"
+                      value={ownerEmailConfirm}
+                      onChange={(e) => setOwnerEmailConfirm(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4">
+                  <button
+                    type="submit"
+                    className="w-full py-4 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2a2623] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <span>Continuar al Pago Seguro</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
             ) : (
               <form onSubmit={handleSimulateTilopayCheckout} className="space-y-4">
                 
@@ -433,33 +508,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 )}
 
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2">
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Nombre del Restaurante</label>
-                    <input
-                      type="text"
-                      required
-                      disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                      placeholder="Ej. Café & Bistro Escalante"
-                      value={restaurantName}
-                      onChange={(e) => setRestaurantName(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Correo Electrónico</label>
-                    <input
-                      type="email"
-                      required
-                      disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                      placeholder="gerencia@escalante.cr"
-                      value={ownerEmail}
-                      onChange={(e) => setOwnerEmail(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
-                    />
-                  </div>
-
-                  <div className="col-span-2 pt-4 border-t border-[#6b686d]/10">
+                  <div className="col-span-2 pt-2">
                     <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5 flex items-center gap-2">
                       <CreditCard className="w-4 h-4" /> Número de Tarjeta (Tilopay)
                     </label>
@@ -557,21 +606,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                   </span>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                  className="w-full py-4 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2a2623] transition-colors flex items-center justify-center gap-2 disabled:opacity-70 mt-4"
-                >
-                  {checkoutStatus === 'TOKENIZING' && <span className="animate-pulse">Tokenizando Tarjeta en Tilopay...</span>}
-                  {checkoutStatus === 'PROCESSING' && <span className="animate-pulse">Creando Suscripción...</span>}
-                  {checkoutStatus === 'SUCCESS' && <span>¡Suscripción Aprobada! ✓</span>}
-                  {(checkoutStatus === 'IDLE' || checkoutStatus === 'ERROR') && (
-                    <>
-                      <CreditCard className="w-4 h-4 text-[#a9b994]" />
-                      <span>Suscribirme de Forma Segura</span>
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center gap-3 mt-4 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setCheckoutStep('REGISTRATION')}
+                    disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
+                    className="py-4 px-4 bg-[#f0f3ec] text-[#6b686d] rounded-xl font-bold text-sm hover:bg-[#e4e9dd] transition-colors disabled:opacity-50"
+                  >
+                    Atrás
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
+                    className="flex-1 py-4 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2a2623] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
+                  >
+                    {checkoutStatus === 'TOKENIZING' && <span className="animate-pulse">Tokenizando...</span>}
+                    {checkoutStatus === 'PROCESSING' && <span className="animate-pulse">Creando...</span>}
+                    {checkoutStatus === 'SUCCESS' && <span>¡Aprobada! ✓</span>}
+                    {(checkoutStatus === 'IDLE' || checkoutStatus === 'ERROR') && (
+                      <>
+                        <CreditCard className="w-4 h-4 text-[#a9b994]" />
+                        <span>Suscribirme</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </form>
             )}
 
