@@ -151,7 +151,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       {/* Top Banner Notice */}
       <div className="bg-gradient-to-r from-[#3b3733] to-[#4b4742] text-[#fcfeff] py-2 px-4 text-center text-xs font-medium flex items-center justify-center gap-2">
         <Sparkles className="w-3.5 h-3.5 text-[#a9b994] animate-pulse" />
-        <span>¡Lanzamiento en Costa Rica! 14 días de prueba sin tarjeta de crédito. Pagos recurrentes seguros con Tilopay.</span>
+        <span>¡Lanzamiento en Costa Rica! 14 días de prueba gratis — tarjeta requerida, sin cobro hoy. Pagos recurrentes seguros con Tilopay.</span>
       </div>
 
       {/* Main Hero Header */}
@@ -184,7 +184,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             {/* Main Action CTAs */}
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
               <button
-                onClick={() => setSelectedPlanModal('pro')}
+                onClick={() => {
+                  setSelectedPlanModal('pro');
+                  setCheckoutStep('REGISTRATION');
+                  setCheckoutError(null);
+                }}
                 className="w-full sm:w-auto px-8 py-4 bg-[#3b3733] text-[#fcfeff] rounded-2xl font-bold text-base hover:bg-[#2e2a27] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-xl shadow-[#3b3733]/20 flex items-center justify-center gap-2.5 group"
               >
                 <span>Comenzar Prueba Gratis (14 Días)</span>
@@ -196,7 +200,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 className="w-full sm:w-auto px-8 py-4 bg-[#fcfeff] text-[#3b3733] border-2 border-[#3b3733] rounded-2xl font-bold text-base hover:bg-[#a9b994]/15 hover:border-[#a9b994] transition-all duration-200 flex items-center justify-center gap-2"
               >
                 <Store className="w-4 h-4 text-[#3b3733]" />
-                <span>Entrar al POS en Vivo</span>
+                <span>Probar Demo del POS</span>
               </button>
             </div>
 
