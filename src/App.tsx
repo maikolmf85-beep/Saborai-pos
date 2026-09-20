@@ -20,12 +20,13 @@ import { AuthScreen } from './components/AuthScreen';
 import { NysaOnboarding } from './components/NysaOnboarding';
 import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
 import { MenuEditor } from './components/MenuEditor';
+import { WelcomeGate, SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { soundService } from './services/soundEffects';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
-import { Sparkles, WifiOff, Lock } from 'lucide-react';
+import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
 
 export function App() {
   // Authentication & Session state
@@ -37,6 +38,16 @@ export function App() {
       return null;
     }
   });
+
+  const [subscription, setSubscription] = useState<SaboraiSubscription | null>(() => {
+    try {
+      const saved = localStorage.getItem('saborai_subscription');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [skipSubscriptionGate, setSkipSubscriptionGate] = useState(false);
 
   const [tenant, setTenant] = useState<TenantInfo>(() => {
     try {
@@ -241,6 +252,12 @@ export function App() {
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
     setCurrentUser(user);
     setTenant(loggedTenant);
+    // If logging in with existing account and no subscription record, treat as active
+    if (!subscription) {
+      const activeSub: SaboraiSubscription = { mode: 'ACTIVE', activatedAt: new Date().toISOString() };
+      try { localStorage.setItem('saborai_subscription', JSON.stringify(activeSub)); } catch {}
+      setSubscription(activeSub);
+    }
     // Add to staffList if not present
     setStaffList(prev => {
       const exists = prev.some(m => m.id === user.id || m.email === user.email);
@@ -277,6 +294,19 @@ export function App() {
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updatedTenant));
     } catch {}
+    // Save subscription from landing page checkout
+    if (!subscription) {
+      const trialEnd = new Date();
+      trialEnd.setDate(trialEnd.getDate() + 14);
+      const sub: SaboraiSubscription = {
+        mode: 'TRIAL',
+        plan,
+        trialEndsAt: trialEnd.toISOString(),
+        activatedAt: new Date().toISOString(),
+      };
+      try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+      setSubscription(sub);
+    }
     setActiveTab('pos');
   };
 
@@ -403,6 +433,52 @@ export function App() {
     );
   }
 
+  // Subscription gate — only for POS domain
+  const isTrialExpired = subscription?.mode === 'TRIAL' && subscription.trialEndsAt
+    ? new Date(subscription.trialEndsAt) < new Date()
+    : false;
+
+  if (!subscription && !skipSubscriptionGate) {
+    return (
+      <WelcomeGate
+        onEnterDemo={() => {
+          const sub: SaboraiSubscription = { mode: 'DEMO', activatedAt: new Date().toISOString() };
+          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+          setSubscription(sub);
+        }}
+        onSubscriptionActivated={(sub) => {
+          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+          setSubscription(sub);
+        }}
+        onAlreadyHaveAccount={() => setSkipSubscriptionGate(true)}
+      />
+    );
+  }
+
+  if (isTrialExpired) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-stone-950 via-stone-900 to-stone-900 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-20 h-20 bg-amber-900/20 border border-amber-700/30 rounded-full flex items-center justify-center mx-auto mb-6">
+          <span className="text-4xl">⏰</span>
+        </div>
+        <h2 className="text-3xl font-black text-white mb-3">Tu periodo de prueba finalizó</h2>
+        <p className="text-stone-400 max-w-sm mx-auto mb-8">
+          Los 14 días de prueba han concluido. Suscríbete a un plan para seguir usando Saborai POS.
+        </p>
+        <button
+          onClick={() => {
+            try { localStorage.removeItem('saborai_subscription'); } catch {}
+            setSubscription(null);
+            setSkipSubscriptionGate(false);
+          }}
+          className="px-8 py-4 bg-[#a9b994] text-stone-900 rounded-2xl font-bold text-sm hover:bg-[#bccaad] transition-all shadow-lg"
+        >
+          Renovar Suscripción
+        </button>
+      </div>
+    );
+  }
+
   // If POS domain, but not authenticated, require login or registration
   if (!currentUser) {
     return (
@@ -473,6 +549,26 @@ export function App() {
 
       {/* Main Workspace Container */}
       <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden relative">
+        {/* Demo Mode Banner */}
+        {subscription?.mode === 'DEMO' && activeTab !== 'landing' && (
+          <div className="bg-gradient-to-r from-stone-800 to-stone-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between shadow-sm shrink-0 gap-3">
+            <div className="flex items-center gap-2">
+              <Eye className="w-3.5 h-3.5 text-[#a9b994] shrink-0" />
+              <span><strong className="text-[#a9b994]">Modo Demo:</strong> Los datos no son permanentes. Regístrate para guardar tu información y acceder a todas las funciones.</span>
+            </div>
+            <button
+              onClick={() => {
+                try { localStorage.removeItem('saborai_subscription'); } catch {}
+                setSubscription(null);
+                setSkipSubscriptionGate(false);
+              }}
+              className="px-3 py-1 bg-[#a9b994] text-stone-900 rounded-lg text-[10px] font-bold hover:bg-[#bccaad] uppercase shrink-0 transition-colors"
+            >
+              Registrarme →
+            </button>
+          </div>
+        )}
+
         {/* Offline Mode Banner when disconnected */}
         {!isOnline && activeTab !== 'landing' && (
           <div className="bg-amber-400 text-amber-950 px-4 py-2 text-xs font-bold flex items-center justify-between shadow-xs animate-in slide-in-from-top duration-150 shrink-0">
