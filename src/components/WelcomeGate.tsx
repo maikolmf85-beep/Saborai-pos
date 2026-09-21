@@ -524,7 +524,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
           </div>
           <div>
             <h2 className="text-xl font-black text-white">Paso 2: Pago Seguro</h2>
-            <p className="text-xs text-stone-500">Tilopay · ₡0 durante los 14 días de prueba</p>
+            <p className="text-xs text-stone-500">Aceptamos Visa, Mastercard, AMEX · Procesado por Tilopay</p>
           </div>
         </div>
 
