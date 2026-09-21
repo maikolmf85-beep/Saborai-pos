@@ -29,6 +29,36 @@ interface WelcomeGateProps {
   onSubscriptionActivated: (sub: SaboraiSubscription, user: UserProfile, tenant: TenantInfo) => void;
 }
 
+/* ─── Shared UI primitives (outside component to prevent re-mount on render) ── */
+
+const FIELD_CLASS = "w-full px-4 py-3 rounded-xl bg-stone-800/60 border border-stone-700 text-white placeholder-stone-600 focus:border-[#a9b994] focus:outline-none text-sm transition-colors disabled:opacity-50";
+const LABEL_CLASS = "block text-xs font-bold text-stone-400 uppercase tracking-wider mb-1.5";
+
+const ErrorBox: React.FC<{ msg: string }> = ({ msg }) => (
+  <div className="p-3 bg-red-950/50 border border-red-800/50 rounded-xl text-xs text-red-400 mb-4">⚠️ {msg}</div>
+);
+
+const BackBtn: React.FC<{ onClick: () => void; label?: string; disabled?: boolean }> = ({
+  onClick, label = '← Volver', disabled = false
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className="text-stone-500 hover:text-stone-300 text-sm mb-6 flex items-center gap-1.5 transition-colors disabled:opacity-40"
+  >
+    {label}
+  </button>
+);
+
+const CardWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div className="min-h-screen bg-gradient-to-br from-stone-950 via-stone-900 to-[#1e2018] flex items-center justify-center p-4 sm:p-6">
+    <div className="bg-stone-900/70 border border-stone-700/40 rounded-3xl p-7 sm:p-9 max-w-md w-full shadow-2xl backdrop-blur-sm">
+      {children}
+    </div>
+  </div>
+);
+
 /* ─── Helper: create demo tenant & user ─────────────────────── */
 function buildDemoSession(email: string, restaurantName = 'Mi Restaurante Demo'): { user: UserProfile; tenant: TenantInfo } {
   const user: UserProfile = {
@@ -232,36 +262,6 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   };
 
   /* ─────────────────────────────────────────────────────────── */
-  /*  SHARED UI HELPERS                                          */
-  /* ─────────────────────────────────────────────────────────── */
-
-  const fieldClass = "w-full px-4 py-3 rounded-xl bg-stone-800/60 border border-stone-700 text-white placeholder-stone-600 focus:border-[#a9b994] focus:outline-none text-sm transition-colors disabled:opacity-50";
-  const labelClass = "block text-xs font-bold text-stone-400 uppercase tracking-wider mb-1.5";
-
-  const ErrorBox = ({ msg }: { msg: string }) => (
-    <div className="p-3 bg-red-950/50 border border-red-800/50 rounded-xl text-xs text-red-400 mb-4">⚠️ {msg}</div>
-  );
-
-  const BackBtn = ({ to, label = '← Volver', disabled = false }: { to: GateView; label?: string; disabled?: boolean }) => (
-    <button
-      type="button"
-      onClick={() => { resetError(); setIsProcessing(false); setView(to); }}
-      disabled={disabled}
-      className="text-stone-500 hover:text-stone-300 text-sm mb-6 flex items-center gap-1.5 transition-colors disabled:opacity-40"
-    >
-      {label}
-    </button>
-  );
-
-  const CardWrapper = ({ children }: { children: React.ReactNode }) => (
-    <div className="min-h-screen bg-gradient-to-br from-stone-950 via-stone-900 to-[#1e2018] flex items-center justify-center p-4 sm:p-6">
-      <div className="bg-stone-900/70 border border-stone-700/40 rounded-3xl p-7 sm:p-9 max-w-md w-full shadow-2xl backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 duration-300">
-        {children}
-      </div>
-    </div>
-  );
-
-  /* ─────────────────────────────────────────────────────────── */
   /*  VIEWS                                                      */
   /* ─────────────────────────────────────────────────────────── */
 
@@ -352,7 +352,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   if (view === 'DEMO_FORM') {
     return (
       <CardWrapper>
-        <BackBtn to="WELCOME" />
+        <BackBtn onClick={() => { resetError(); setView('WELCOME'); }} />
         <div className="flex items-center gap-3 mb-7">
           <div className="p-2 rounded-xl bg-stone-700/50 border border-stone-600">
             <Eye className="w-5 h-5 text-stone-300" />
@@ -367,7 +367,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
         <form onSubmit={handleDemoSubmit} className="space-y-5">
           <div>
-            <label className={labelClass}>Correo Electrónico</label>
+            <label className={LABEL_CLASS}>Correo Electrónico</label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
               <input
@@ -376,7 +376,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
                 placeholder="tucorreo@ejemplo.com"
                 value={demoEmail}
                 onChange={(e) => setDemoEmail(e.target.value)}
-                className={`${fieldClass} pl-10`}
+                className={`${FIELD_CLASS} pl-10`}
               />
             </div>
             <p className="text-xs text-stone-600 mt-1.5 ml-1">Solo necesitamos tu correo para identificar tu sesión demo.</p>
@@ -402,7 +402,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   if (view === 'TRIAL_STEP1') {
     return (
       <CardWrapper>
-        <BackBtn to="WELCOME" />
+        <BackBtn onClick={() => { resetError(); setView('WELCOME'); }} />
         <div className="flex items-center gap-3 mb-7">
           <div className="p-2 rounded-xl bg-[#a9b994]/15 border border-[#a9b994]/30">
             <Sparkles className="w-5 h-5 text-[#a9b994]" />
@@ -417,23 +417,23 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
         <form onSubmit={handleTrialStep1} className="space-y-4">
           <div>
-            <label className={labelClass}>Nombre del Restaurante</label>
-            <input type="text" required placeholder="Ej. Café & Bistro Escalante" value={restaurantName} onChange={(e) => setRestaurantName(e.target.value)} className={fieldClass} />
+            <label className={LABEL_CLASS}>Nombre del Restaurante</label>
+            <input type="text" required placeholder="Ej. Café & Bistro Escalante" value={restaurantName} onChange={(e) => setRestaurantName(e.target.value)} className={FIELD_CLASS} />
           </div>
           <div>
-            <label className={labelClass}>Teléfono</label>
-            <input type="tel" required placeholder="+506 8888-0000" value={trialPhone} onChange={(e) => setTrialPhone(e.target.value)} className={fieldClass} />
+            <label className={LABEL_CLASS}>Teléfono</label>
+            <input type="tel" required placeholder="+506 8888-0000" value={trialPhone} onChange={(e) => setTrialPhone(e.target.value)} className={FIELD_CLASS} />
           </div>
           <div>
-            <label className={labelClass}>Correo Electrónico</label>
-            <input type="email" required placeholder="gerencia@mirestaurante.cr" value={trialEmail} onChange={(e) => setTrialEmail(e.target.value)} className={fieldClass} />
+            <label className={LABEL_CLASS}>Correo Electrónico</label>
+            <input type="email" required placeholder="gerencia@mirestaurante.cr" value={trialEmail} onChange={(e) => setTrialEmail(e.target.value)} className={FIELD_CLASS} />
           </div>
           <div>
-            <label className={labelClass}>Confirmar Correo</label>
-            <input type="email" required placeholder="Vuelve a ingresar tu correo" value={trialEmailConfirm} onChange={(e) => setTrialEmailConfirm(e.target.value)} className={fieldClass} />
+            <label className={LABEL_CLASS}>Confirmar Correo</label>
+            <input type="email" required placeholder="Vuelve a ingresar tu correo" value={trialEmailConfirm} onChange={(e) => setTrialEmailConfirm(e.target.value)} className={FIELD_CLASS} />
           </div>
           <div>
-            <label className={labelClass}>Contraseña (mín. 6 caracteres)</label>
+            <label className={LABEL_CLASS}>Contraseña (mín. 6 caracteres)</label>
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
@@ -442,7 +442,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
                 placeholder="Tu contraseña de acceso"
                 value={trialPassword}
                 onChange={(e) => setTrialPassword(e.target.value)}
-                className={`${fieldClass} pr-10`}
+                className={`${FIELD_CLASS} pr-10`}
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-300">
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -462,7 +462,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   if (view === 'TRIAL_STEP2') {
     return (
       <CardWrapper>
-        <BackBtn to="TRIAL_STEP1" disabled={isProcessing} />
+        <BackBtn onClick={() => { resetError(); setIsProcessing(false); setView('TRIAL_STEP1'); }} disabled={isProcessing} />
         <div className="flex items-center gap-3 mb-7">
           <div className="p-2 rounded-xl bg-[#a9b994]/15 border border-[#a9b994]/30">
             <CreditCard className="w-5 h-5 text-[#a9b994]" />
@@ -477,26 +477,26 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
         <form onSubmit={handleTrialPayment} className="space-y-4">
           <div>
-            <label className={`${labelClass} flex items-center gap-1.5`}><CreditCard className="w-3.5 h-3.5" /> Número de Tarjeta</label>
-            <input type="text" required maxLength={19} placeholder="4000 1234 5678 9010" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} disabled={isProcessing} className={fieldClass} />
+            <label className={`${LABEL_CLASS} flex items-center gap-1.5`}><CreditCard className="w-3.5 h-3.5" /> Número de Tarjeta</label>
+            <input type="text" required maxLength={19} placeholder="4000 1234 5678 9010" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={labelClass}>Expira (MM / YY)</label>
+              <label className={LABEL_CLASS}>Expira (MM / YY)</label>
               <div className="flex items-center gap-2">
-                <input type="text" required maxLength={2} placeholder="MM" value={cardExpMonth} onChange={(e) => setCardExpMonth(e.target.value)} disabled={isProcessing} className={`${fieldClass} text-center`} />
+                <input type="text" required maxLength={2} placeholder="MM" value={cardExpMonth} onChange={(e) => setCardExpMonth(e.target.value)} disabled={isProcessing} className={`${FIELD_CLASS} text-center`} />
                 <span className="text-stone-500">/</span>
-                <input type="text" required maxLength={2} placeholder="YY" value={cardExpYear} onChange={(e) => setCardExpYear(e.target.value)} disabled={isProcessing} className={`${fieldClass} text-center`} />
+                <input type="text" required maxLength={2} placeholder="YY" value={cardExpYear} onChange={(e) => setCardExpYear(e.target.value)} disabled={isProcessing} className={`${FIELD_CLASS} text-center`} />
               </div>
             </div>
             <div>
-              <label className={labelClass}>CVV</label>
-              <input type="password" required maxLength={4} placeholder="•••" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} disabled={isProcessing} className={fieldClass} />
+              <label className={LABEL_CLASS}>CVV</label>
+              <input type="password" required maxLength={4} placeholder="•••" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
             </div>
           </div>
           <div>
-            <label className={labelClass}>Nombre en Tarjeta</label>
-            <input type="text" required placeholder="Como aparece en la tarjeta" value={cardName} onChange={(e) => setCardName(e.target.value)} disabled={isProcessing} className={fieldClass} />
+            <label className={LABEL_CLASS}>Nombre en Tarjeta</label>
+            <input type="text" required placeholder="Como aparece en la tarjeta" value={cardName} onChange={(e) => setCardName(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
           </div>
 
           <div className="p-4 rounded-xl bg-[#a9b994]/8 border border-[#a9b994]/25 flex items-center justify-between">
@@ -540,7 +540,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   /* ── LOGIN FORM ───────────────────────────────────────────── */
   return (
     <CardWrapper>
-      <BackBtn to="WELCOME" />
+      <BackBtn onClick={() => { resetError(); setView('WELCOME'); }} />
       <div className="flex items-center gap-3 mb-7">
         <div className="p-2 rounded-xl bg-stone-700/50 border border-stone-600">
           <Lock className="w-5 h-5 text-stone-300" />
@@ -555,7 +555,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
-          <label className={labelClass}>Correo Electrónico</label>
+          <label className={LABEL_CLASS}>Correo Electrónico</label>
           <div className="relative">
             <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
             <input
@@ -565,12 +565,12 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
               value={loginEmail}
               onChange={(e) => setLoginEmail(e.target.value)}
               disabled={isProcessing}
-              className={`${fieldClass} pl-10`}
+              className={`${FIELD_CLASS} pl-10`}
             />
           </div>
         </div>
         <div>
-          <label className={labelClass}>Contraseña</label>
+          <label className={LABEL_CLASS}>Contraseña</label>
           <div className="relative">
             <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
             <input
@@ -580,7 +580,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
               value={loginPassword}
               onChange={(e) => setLoginPassword(e.target.value)}
               disabled={isProcessing}
-              className={`${fieldClass} pl-10 pr-10`}
+              className={`${FIELD_CLASS} pl-10 pr-10`}
             />
             <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-500 hover:text-stone-300">
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
