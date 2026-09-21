@@ -213,53 +213,55 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
     }
   };
 
-  /* Login */
+  /* Login — validación estricta de email + contraseña */
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     resetError();
     setIsProcessing(true);
+
     setTimeout(() => {
       try {
-        const savedUser = localStorage.getItem('saborai_user');
-        const savedTenant = localStorage.getItem('saborai_tenant');
-        if (savedUser && savedTenant) {
-          const user = JSON.parse(savedUser);
-          const tenant = JSON.parse(savedTenant);
-          if (user.email.toLowerCase() === loginEmail.trim().toLowerCase()) {
-            setIsProcessing(false);
-            const sub: SaboraiSubscription = { mode: 'ACTIVE', email: user.email, activatedAt: new Date().toISOString() };
-            onSubscriptionActivated(sub, user, tenant);
-            return;
-          }
+        const savedUserRaw = localStorage.getItem('saborai_user');
+        const savedTenantRaw = localStorage.getItem('saborai_tenant');
+
+        if (!savedUserRaw || !savedTenantRaw) {
+          // No hay ningún usuario registrado en este dispositivo
+          setIsProcessing(false);
+          setError('No encontramos una cuenta en este dispositivo. Crea una cuenta primero.');
+          setView('TRIAL_STEP1');
+          return;
         }
-      } catch {}
-      /* Fallback: allow any email/password to demo (so existing accounts don't break) */
-      const fallbackUser: UserProfile = {
-        id: 'usr_legacy',
-        name: 'Administrador',
-        email: loginEmail.trim().toLowerCase(),
-        phone: '',
-        restaurantName: 'Mi Restaurante',
-        role: 'ADMIN',
-        active: true,
-      };
-      const fallbackTenant: TenantInfo = {
-        id: 'tenant_legacy',
-        name: 'Mi Restaurante',
-        cedulaJuridica: '3-101-000000',
-        email: loginEmail.trim().toLowerCase(),
-        phone: '',
-        location: 'Costa Rica',
-        plan: 'pro',
-        status: 'ACTIVE',
-        currency: 'CRC',
-        monthlyFee: 45000,
-      };
-      setIsProcessing(false);
-      const sub: SaboraiSubscription = { mode: 'ACTIVE', email: loginEmail, activatedAt: new Date().toISOString() };
-      onSubscriptionActivated(sub, fallbackUser, fallbackTenant);
-    }, 800);
+
+        const savedUser = JSON.parse(savedUserRaw);
+        const savedTenant = JSON.parse(savedTenantRaw);
+        const emailMatch = savedUser.email?.toLowerCase() === loginEmail.trim().toLowerCase();
+
+        if (!emailMatch) {
+          setIsProcessing(false);
+          setError('No existe una cuenta con ese correo. ¿Quieres crear una cuenta nueva?');
+          return;
+        }
+
+        // Email encontrado — verificar contraseña
+        const passwordMatch = savedUser.password && savedUser.password === loginPassword;
+        if (!passwordMatch) {
+          setIsProcessing(false);
+          setError('Contraseña incorrecta. Verifica tus datos e intenta nuevamente.');
+          return;
+        }
+
+        // Credenciales correctas ✅
+        setIsProcessing(false);
+        const sub: SaboraiSubscription = { mode: 'ACTIVE', email: savedUser.email, activatedAt: new Date().toISOString() };
+        onSubscriptionActivated(sub, savedUser, savedTenant);
+
+      } catch {
+        setIsProcessing(false);
+        setError('Error al verificar tus credenciales. Intenta nuevamente.');
+      }
+    }, 700);
   };
+
 
   /* ─────────────────────────────────────────────────────────── */
   /*  VIEWS                                                      */
@@ -551,7 +553,20 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         </div>
       </div>
 
-      {error && <ErrorBox msg={error} />}
+      {error && (
+        <div className="p-3.5 bg-red-950/50 border border-red-800/50 rounded-xl text-xs text-red-400 mb-4 space-y-2">
+          <p>⚠️ {error}</p>
+          {(error.includes('cuenta con ese correo') || error.includes('cuenta en este dispositivo')) && (
+            <button
+              type="button"
+              onClick={() => { resetError(); setView('TRIAL_STEP1'); }}
+              className="mt-1 w-full py-2 bg-[#a9b994] text-stone-900 rounded-lg font-bold text-xs hover:bg-[#bccaad] transition-colors"
+            >
+              Crear cuenta ahora →
+            </button>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
