@@ -150,9 +150,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       
       {/* ── Top announcement bar ─────────────────────────────── */}
       <header role="banner">
-        <div className="bg-gradient-to-r from-[#3b3733] to-[#4b4742] text-[#fcfeff] py-2 px-4 text-center text-xs font-medium flex items-center justify-center gap-2">
+        <div className="bg-gradient-to-r from-[#1e2018] to-[#3b3733] text-[#fcfeff] py-2 px-4 text-center text-xs font-medium flex items-center justify-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-[#a9b994] animate-pulse" aria-hidden="true" />
-          <span>¡Lanzamiento en Costa Rica! 14 días de prueba gratis &mdash; tarjeta requerida, sin cobro hoy. Pagos recurrentes seguros con Tilopay.</span>
+          <span><strong className="text-[#a9b994]">Saborai POS</strong> — El primer punto de venta en Costa Rica con Inteligencia Artificial nativa integrada. Prueba gratis 14 días.</span>
         </div>
 
         {/* ── Navigation ─────────────────────────────────────── */}
@@ -188,20 +188,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               <BrandLogo variant="full" size="lg" />
             </div>
 
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#a9b994]/20 border border-[#a9b994]/40 text-[#3b3733] text-xs font-semibold mb-6">
-              <Sparkles className="w-3.5 h-3.5 text-[#3b3733]" />
-              <span>Primer POS Gastronómico en Costa Rica con Inteligencia Artificial Nativa</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#a9b994]/30 to-[#a9b994]/10 border border-[#a9b994]/60 text-[#3b3733] text-xs font-bold mb-6 shadow-sm">
+              <Cpu className="w-3.5 h-3.5 text-[#3b3733]" />
+              <span className="uppercase tracking-wider">El primer POS gastronómico con IA nativa en Costa Rica</span>
             </div>
 
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-[#3b3733] leading-[1.1] mb-6">
-              La gastronomía del futuro, <br className="hidden sm:inline" />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#3b3733] via-[#6b686d] to-[#a9b994]">
-                automatizada y sin fricción.
+              El único POS que<br className="hidden sm:inline" />{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#3b3733] via-[#588157] to-[#a9b994]">
+                piensa junto a ti.
               </span>
             </h1>
 
             <p className="text-lg sm:text-xl text-[#6b686d] font-normal leading-relaxed mb-10 max-w-3xl">
-              Centraliza mesas, comandas KDS, inventario basado en recetas y facturación electrónica de Hacienda Costa Rica v4.3 en una plataforma SaaS hermosa, ultra rápida y Offline-First.
+              Saborai Copilot es la primera IA nativa integrada en un POS de Costa Rica. Predice quiebres de inventario, sugiere maridajes en tiempo real y audita tus facturas de Hacienda v4.3 automáticamente. Todo mientras tu equipo trabaja.
             </p>
 
             {/* Main Action CTAs */}
@@ -229,6 +229,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
             {/* Trust Badges */}
             <div className="mt-12 pt-8 border-t border-[#6b686d]/15 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs text-[#6b686d] font-medium">
+              <div className="flex items-center gap-2 text-[#3b3733] font-bold">
+                <Cpu className="w-4 h-4 text-[#588157]" />
+                <span>IA Nativa Integrada</span>
+              </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
                 <span>Pagos Recurrentes Tilopay CR</span>
@@ -252,6 +256,86 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         </div>
       </section>
 
+      {/* ── AI Showcase Section ───────────────────────────────── */}
+      <section aria-labelledby="ai-heading" id="ai" className="py-24 bg-gradient-to-br from-[#1e2018] via-[#2a2e22] to-[#3b3733] text-[#fcfeff] overflow-hidden relative">
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-0 left-1/3 w-96 h-96 bg-[#a9b994]/8 rounded-full blur-3xl" />
+          <div className="absolute bottom-0 right-1/4 w-64 h-64 bg-[#a9b994]/5 rounded-full blur-3xl" />
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
+          <div className="flex flex-col lg:flex-row items-center gap-16">
+            {/* Left: Messaging */}
+            <div className="flex-1 max-w-xl">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#a9b994]/20 border border-[#a9b994]/40 text-[#a9b994] text-xs font-bold uppercase tracking-wider mb-6">
+                <Cpu className="w-3.5 h-3.5" />
+                <span>Saborai Copilot IA — Exclusivo</span>
+              </div>
+              <h2 id="ai-heading" className="text-3xl sm:text-5xl font-black tracking-tight mb-6 leading-tight">
+                La primera IA que vive <span className="text-[#a9b994]">dentro</span> de tu POS.
+              </h2>
+              <p className="text-[#fcfeff]/70 text-base leading-relaxed mb-8">
+                Otros sistemas conectan un chatbot externo. Saborai Copilot es diferente: la IA está integrada en el núcleo del sistema, con acceso directo a tus comandas, inventario, ventas y recetas en tiempo real.
+              </p>
+              <div className="space-y-4">
+                {[
+                  { icon: '🧠', title: 'Predicción de quiebres de stock', desc: 'Antes de que se acabe el producto, el Copilot alerta al encargado con días de anticipación.' },
+                  { icon: '🍷', title: 'Sugerencias de maridaje en mesa', desc: 'El salonero recibe recomendaciones de vinos y cócteles en tiempo real según el pedido.' },
+                  { icon: '📋', title: 'Auditoría de códigos CABYS', desc: 'Detecta y sugiere correcciones de códigos CABYS para cumplir con Hacienda v4.3 sin errores.' },
+                  { icon: '📊', title: 'Análisis de rentabilidad por plato', desc: 'Identifica qué platos tienen mejor margen y cuáles están generando pérdidas ocultas.' },
+                ].map(({ icon, title, desc }) => (
+                  <div key={title} className="flex items-start gap-3.5">
+                    <span className="text-xl mt-0.5 shrink-0" aria-hidden="true">{icon}</span>
+                    <div>
+                      <p className="font-bold text-[#fcfeff] text-sm">{title}</p>
+                      <p className="text-[#fcfeff]/55 text-xs leading-relaxed mt-0.5">{desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => { setSelectedPlanModal('pro'); setCheckoutStep('REGISTRATION'); setCheckoutError(null); }}
+                aria-label="Probar Saborai Copilot IA gratis"
+                className="mt-10 inline-flex items-center gap-2.5 px-7 py-3.5 bg-[#a9b994] text-[#1e2018] rounded-2xl font-bold text-sm hover:bg-[#bccaad] active:scale-[0.98] transition-all shadow-lg shadow-[#a9b994]/20"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Probar el Copilot IA Gratis</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Right: Visual demo card */}
+            <div className="flex-1 max-w-sm w-full">
+              <div className="bg-[#fcfeff]/5 border border-[#a9b994]/20 rounded-3xl p-6 backdrop-blur-sm">
+                <div className="flex items-center gap-2.5 mb-5">
+                  <div className="w-8 h-8 rounded-xl bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center justify-center">
+                    <Sparkles className="w-4 h-4 text-[#a9b994]" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-[#fcfeff]">Saborai Copilot</p>
+                    <p className="text-[10px] text-[#fcfeff]/40">IA nativa activa</p>
+                  </div>
+                  <div className="ml-auto w-2 h-2 rounded-full bg-[#a9b994] animate-pulse" />
+                </div>
+                <div className="space-y-3">
+                  {[
+                    { role: 'sys', msg: '⚠️ El lomo de res estará agotado en ~2 días según el ritmo de ventas.' },
+                    { role: 'user', msg: 'Mesa 7 pidió el ribeye. ¿Qué vino le recomiendo?' },
+                    { role: 'sys', msg: '🍷 Sugiere el Malbec Reserva o el Carménère. Ambos están en inventario y maridán perfectamente con cortes rojos.' },
+                    { role: 'user', msg: 'Revisar el código CABYS del tiramisu' },
+                    { role: 'sys', msg: '✅ Código correcto: 2129090000. IVA aplicable: 13%. Sin observaciones.' },
+                  ].map((m, i) => (
+                    <div key={i} className={`text-xs px-3.5 py-2.5 rounded-xl leading-relaxed ${
+                      m.role === 'sys'
+                        ? 'bg-[#a9b994]/15 border border-[#a9b994]/25 text-[#fcfeff]/80'
+                        : 'bg-[#fcfeff]/8 border border-[#fcfeff]/10 text-[#fcfeff]/50 text-right'
+                    }`}>{m.msg}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── Features ─────────────────────────────────────────── */}
       <section aria-labelledby="features-heading" id="features" className="py-20 bg-[#fcfeff] border-b border-[#6b686d]/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -265,14 +349,17 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             
-            {/* Feature 1 */}
-            <div className="p-8 rounded-3xl bg-[#fcfeff] border border-[#6b686d]/20 hover:border-[#a9b994] transition-all duration-300 hover:shadow-xl hover:shadow-[#a9b994]/10 group">
-              <div className="w-12 h-12 rounded-2xl bg-[#a9b994]/25 flex items-center justify-center text-[#3b3733] mb-6 group-hover:bg-[#a9b994] transition-colors">
-                <Sparkles className="w-6 h-6 text-[#3b3733]" />
+            {/* Feature 1 — AI (featured, larger) */}
+            <div className="md:col-span-2 lg:col-span-1 p-8 rounded-3xl bg-gradient-to-br from-[#2a2e22] to-[#3b3733] text-[#fcfeff] border border-[#a9b994]/30 hover:border-[#a9b994] transition-all duration-300 hover:shadow-xl hover:shadow-[#a9b994]/15 group">
+              <div className="w-12 h-12 rounded-2xl bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center justify-center mb-6 group-hover:bg-[#a9b994]/30 transition-colors">
+                <Cpu className="w-6 h-6 text-[#a9b994]" />
               </div>
-              <h3 className="text-xl font-bold text-[#3b3733] mb-3">Saborai Copilot IA</h3>
-              <p className="text-sm text-[#6b686d] leading-relaxed">
-                Asistente inteligente con Function Calling para sugerir maridajes, auditar códigos CABYS y predecir quiebres de inventario antes de que ocurran.
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#a9b994]/20 border border-[#a9b994]/30 text-[#a9b994] text-[10px] font-bold uppercase tracking-wider mb-3">
+                <Sparkles className="w-2.5 h-2.5" /> Solo en Saborai
+              </div>
+              <h3 className="text-xl font-bold text-[#fcfeff] mb-3">Saborai Copilot — IA Nativa</h3>
+              <p className="text-sm text-[#fcfeff]/65 leading-relaxed">
+                La única IA integrada directamente en el POS. Predice quiebres de inventario, sugiere maridajes en mesa, audita códigos CABYS de Hacienda y analiza rentabilidad por plato — todo sin salir del sistema.
               </p>
             </div>
 
