@@ -148,13 +148,36 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   return (
     <div className="min-h-screen bg-[#fcfeff] text-[#3b3733]">
       
-      {/* Top Banner Notice */}
-      <div className="bg-gradient-to-r from-[#3b3733] to-[#4b4742] text-[#fcfeff] py-2 px-4 text-center text-xs font-medium flex items-center justify-center gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-[#a9b994] animate-pulse" />
-        <span>¡Lanzamiento en Costa Rica! 14 días de prueba gratis — tarjeta requerida, sin cobro hoy. Pagos recurrentes seguros con Tilopay.</span>
-      </div>
+      {/* ── Top announcement bar ─────────────────────────────── */}
+      <header role="banner">
+        <div className="bg-gradient-to-r from-[#3b3733] to-[#4b4742] text-[#fcfeff] py-2 px-4 text-center text-xs font-medium flex items-center justify-center gap-2">
+          <Sparkles className="w-3.5 h-3.5 text-[#a9b994] animate-pulse" aria-hidden="true" />
+          <span>¡Lanzamiento en Costa Rica! 14 días de prueba gratis &mdash; tarjeta requerida, sin cobro hoy. Pagos recurrentes seguros con Tilopay.</span>
+        </div>
 
-      {/* Main Hero Header */}
+        {/* ── Navigation ─────────────────────────────────────── */}
+        <nav aria-label="Navegación principal" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+          <a href="#" aria-label="Saborai POS — Ir al inicio">
+            <BrandLogo variant="full" size="sm" />
+          </a>
+          <div className="hidden sm:flex items-center gap-6 text-sm font-medium text-[#6b686d]">
+            <a href="#features" className="hover:text-[#3b3733] transition-colors">Funciones</a>
+            <a href="#pricing" className="hover:text-[#3b3733] transition-colors">Precios</a>
+            <a href="#faq" className="hover:text-[#3b3733] transition-colors">FAQ</a>
+          </div>
+          <button
+            onClick={() => { setSelectedPlanModal('pro'); setCheckoutStep('REGISTRATION'); setCheckoutError(null); }}
+            aria-label="Comenzar prueba gratuita de 14 días"
+            className="px-5 py-2.5 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2e2a27] transition-colors"
+          >
+            Prueba Gratis
+          </button>
+        </nav>
+      </header>
+
+      <main id="main-content">
+
+      {/* ── Main Hero ────────────────────────────────────────── */}
       <section className="relative overflow-hidden pt-12 pb-20 lg:pt-20 lg:pb-28 border-b border-[#6b686d]/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
@@ -229,15 +252,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         </div>
       </section>
 
-      {/* Core AI Disruptive Feature Grid */}
-      <section className="py-20 bg-[#fcfeff] border-b border-[#6b686d]/10">
+      {/* ── Features ─────────────────────────────────────────── */}
+      <section aria-labelledby="features-heading" id="features" className="py-20 bg-[#fcfeff] border-b border-[#6b686d]/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-3xl mx-auto mb-16">
-            <h2 className="text-xs font-bold uppercase tracking-widest text-[#a9b994] mb-3">Módulos de Nueva Generación</h2>
-            <p className="text-3xl sm:text-4xl font-black text-[#3b3733] tracking-tight">
+            <p className="text-xs font-bold uppercase tracking-widest text-[#a9b994] mb-3">Módulos de Nueva Generación</p>
+            <h2 id="features-heading" className="text-3xl sm:text-4xl font-black text-[#3b3733] tracking-tight">
               Diseñado exclusivamente para el ritmo frenético de los restaurantes.
-            </p>
+            </h2>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -313,15 +336,15 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         </div>
       </section>
 
-      {/* Pricing Section (Tilopay Costa Rica Plans) */}
-      <section className="py-24 bg-[#fcfeff]" id="pricing">
+      {/* ── Pricing ──────────────────────────────────────────── */}
+      <section aria-labelledby="pricing-heading" className="py-24 bg-[#fcfeff]" id="pricing">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           
           <div className="text-center max-w-3xl mx-auto mb-12">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#a9b994]/25 text-[#3b3733] text-xs font-bold uppercase tracking-wider mb-4">
+            <p className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#a9b994]/25 text-[#3b3733] text-xs font-bold uppercase tracking-wider mb-4">
               Tarifas Transparentes en Costa Rica
-            </div>
-            <h2 className="text-3xl sm:text-5xl font-black text-[#3b3733] tracking-tight mb-6">
+            </p>
+            <h2 id="pricing-heading" className="text-3xl sm:text-5xl font-black text-[#3b3733] tracking-tight mb-6">
               Elige el plan ideal para tu restaurante
             </h2>
             <p className="text-[#6b686d] text-base">
@@ -642,11 +665,82 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         </div>
       )}
 
-      {/* Footer */}
-      <footer className="py-12 bg-[#fcfeff] border-t border-[#6b686d]/15 text-center text-xs text-[#6b686d]">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <BrandLogo variant="full" size="sm" />
-          <p>© 2026 Saborai POS Costa Rica. Todos los derechos reservados. Cumplimiento Ministerio de Hacienda v4.3.</p>
+      {/* ── FAQ Section ──────────────────────────────────────── */}
+      <section aria-labelledby="faq-heading" id="faq" className="py-20 bg-[#fcfeff] border-t border-[#6b686d]/10">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <h2 id="faq-heading" className="text-3xl sm:text-4xl font-black text-[#3b3733] tracking-tight mb-4">Preguntas Frecuentes</h2>
+            <p className="text-[#6b686d] text-base">Todo lo que necesitas saber antes de comenzar.</p>
+          </div>
+          <dl className="space-y-6">
+            {[
+              {
+                q: '¿Saborai POS cumple con la facturación electrónica de Hacienda Costa Rica?',
+                a: 'Sí. Emitimos facturas en formato XML según la norma v4.3 del Ministerio de Hacienda, con clave de 50 dígitos y control de IVA diferenciado (13%, 4%, 2%, 1% y exento).'
+              },
+              {
+                q: '¿Cómo funcionan los pagos con Tilopay?',
+                a: 'Los datos de tarjeta son tokenizados de forma segura por Tilopay. Los cobros de suscripción son automáticos cada mes sin que tengas que hacer nada.'
+              },
+              {
+                q: '¿Puedo usar Saborai POS sin internet?',
+                a: 'Sí. Funciona en modo Offline mediante sincronización en red local. Tus operaciones continúan con normalidad y se sincronizan al recuperar la conexión.'
+              },
+              {
+                q: '¿Puedo cancelar mi suscripción en cualquier momento?',
+                a: 'Sí. No hay contratos de permanencia. Puedes cancelar cuando quieras desde tu panel de administración o contactando al soporte.'
+              }
+            ].map(({ q, a }, i) => (
+              <div key={i} className="border border-[#6b686d]/20 rounded-2xl p-6 hover:border-[#a9b994] transition-colors">
+                <dt className="font-bold text-[#3b3733] text-base mb-2">{q}</dt>
+                <dd className="text-[#6b686d] text-sm leading-relaxed">{a}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      </main>{/* end #main-content */}
+
+      {/* ── Footer ───────────────────────────────────────────── */}
+      <footer role="contentinfo" className="py-14 bg-[#3b3733] text-[#fcfeff]/70">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-10 mb-10">
+            {/* Brand */}
+            <div>
+              <div className="mb-3">
+                <BrandLogo variant="full" size="sm" />
+              </div>
+              <p className="text-xs leading-relaxed text-[#fcfeff]/50">
+                El primer software gastronómico con Inteligencia Artificial para restaurantes de Costa Rica.
+              </p>
+              <address className="not-italic mt-4 text-xs text-[#fcfeff]/40">
+                Costa Rica · Soporte vía WhatsApp
+              </address>
+            </div>
+            {/* Quick Links */}
+            <nav aria-label="Navegación del pie de página">
+              <p className="text-xs font-bold uppercase tracking-widest text-[#a9b994] mb-4">Navegación</p>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#features" className="hover:text-[#fcfeff] transition-colors">Funciones</a></li>
+                <li><a href="#pricing" className="hover:text-[#fcfeff] transition-colors">Precios</a></li>
+                <li><a href="#faq" className="hover:text-[#fcfeff] transition-colors">Preguntas Frecuentes</a></li>
+              </ul>
+            </nav>
+            {/* Legal */}
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-[#a9b994] mb-4">Legal</p>
+              <ul className="space-y-2 text-sm">
+                <li><span className="text-[#fcfeff]/50">Términos y Condiciones</span></li>
+                <li><span className="text-[#fcfeff]/50">Política de Privacidad</span></li>
+                <li><span className="text-[#fcfeff]/50">Política de Cookies</span></li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-[#fcfeff]/10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#fcfeff]/40">
+            <p>&copy; 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
+            <p>Cumplimiento Ministerio de Hacienda v4.3 · Pagos seguros Tilopay</p>
+          </div>
         </div>
       </footer>
 

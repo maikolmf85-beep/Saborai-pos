@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Bloquear rutas privadas del POS
+Disallow: /api/
+Disallow: /admin/
+
+# Sitemap
+Sitemap: https://pos.saborai.site/sitemap.xml

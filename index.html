@@ -1,30 +1,165 @@
 <!doctype html>
-<html lang="es">
+<html lang="es-CR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    
-    <!-- SEO & Metadata -->
-    <title>Saborai POS | Plataforma Gastronómica con Inteligencia Artificial en Costa Rica</title>
-    <meta name="description" content="Saborai POS es la primera plataforma gastronómica en Costa Rica impulsada por IA. Mapa de mesas, KDS, escandallos, facturación Hacienda v4.3 y pagos recurrentes con Tilopay." />
-    <meta name="keywords" content="POS Costa Rica, punto de venta restaurantes, facturación electrónica Hacienda v4.3, Tilopay, Saborai POS, KDS cocina" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+
+    <!-- ═══ Primary SEO ══════════════════════════════════════════════════ -->
+    <title>Saborai POS | Software de Punto de Venta para Restaurantes en Costa Rica</title>
+    <meta name="description" content="Saborai POS es el primer software gastronómico con Inteligencia Artificial para restaurantes en Costa Rica. Facturación electrónica Hacienda v4.3, KDS cocina y bar, control de recetas e inventario, impresoras térmicas y pagos recurrentes con Tilopay. Prueba gratis 14 días." />
+    <meta name="keywords" content="POS Costa Rica, punto de venta restaurantes Costa Rica, software restaurante Costa Rica, facturación electrónica Hacienda v4.3, Tilopay pagos, KDS cocina, sistema de comandas, software gastronómico, Saborai POS, inventario restaurante, escandallos, comanda electrónica" />
     <meta name="author" content="Saborai POS Costa Rica" />
-    
-    <!-- Open Graph / Facebook -->
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="canonical" href="https://pos.saborai.site/" />
+
+    <!-- ═══ Geo & Language ════════════════════════════════════════════════ -->
+    <meta name="geo.region" content="CR" />
+    <meta name="geo.country" content="Costa Rica" />
+    <meta name="language" content="Spanish" />
+    <meta name="content-language" content="es-CR" />
+
+    <!-- ═══ Open Graph / Facebook ════════════════════════════════════════ -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://saborai.site/" />
-    <meta property="og:title" content="Saborai POS | Software Gastronómico Inteligente en Costa Rica" />
-    <meta property="og:description" content="Automatiza tu restaurante con Saborai Copilot IA, facturación Hacienda v4.3 y pagos con Tilopay." />
-    
-    <!-- Fonts: Inter, Outfit, Plus Jakarta Sans, Comfortaa -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet">
-    
-    <!-- PWA Manifest & Theme Color -->
+    <meta property="og:url" content="https://pos.saborai.site/" />
+    <meta property="og:site_name" content="Saborai POS" />
+    <meta property="og:title" content="Saborai POS — Software Gastronómico Inteligente para Restaurantes en Costa Rica" />
+    <meta property="og:description" content="Automatiza tu restaurante con IA, facturación Hacienda v4.3, KDS, control de recetas y pagos con Tilopay. Prueba gratis 14 días." />
+    <meta property="og:image" content="https://pos.saborai.site/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Saborai POS — Software de punto de venta para restaurantes en Costa Rica" />
+    <meta property="og:locale" content="es_CR" />
+
+    <!-- ═══ Twitter / X Cards ════════════════════════════════════════════ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@SaboraiPOS" />
+    <meta name="twitter:creator" content="@SaboraiPOS" />
+    <meta name="twitter:title" content="Saborai POS — Software Gastronómico con IA para Costa Rica" />
+    <meta name="twitter:description" content="Facturación Hacienda v4.3, KDS, escandallos, comandas y pagos Tilopay. El POS más avanzado de Costa Rica." />
+    <meta name="twitter:image" content="https://pos.saborai.site/og-image.png" />
+    <meta name="twitter:image:alt" content="Saborai POS dashboard" />
+
+    <!-- ═══ Structured Data — Organization ═══════════════════════════════ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Saborai POS",
+      "description": "Software de punto de venta gastronómico con Inteligencia Artificial para restaurantes en Costa Rica. Incluye facturación electrónica Hacienda v4.3, KDS, control de recetas, inventario y pagos con Tilopay.",
+      "url": "https://pos.saborai.site",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web, Android, iOS",
+      "offers": [
+        {
+          "@type": "Offer",
+          "name": "Plan Express",
+          "price": "22000",
+          "priceCurrency": "CRC",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "billingIncrement": 1,
+            "unitCode": "MON"
+          }
+        },
+        {
+          "@type": "Offer",
+          "name": "Plan Pro Restaurante",
+          "price": "45000",
+          "priceCurrency": "CRC",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "billingIncrement": 1,
+            "unitCode": "MON"
+          }
+        },
+        {
+          "@type": "Offer",
+          "name": "Plan Multi-Sucursal",
+          "price": "85000",
+          "priceCurrency": "CRC",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "billingIncrement": 1,
+            "unitCode": "MON"
+          }
+        }
+      ],
+      "publisher": {
+        "@type": "Organization",
+        "name": "Saborai POS",
+        "url": "https://pos.saborai.site",
+        "logo": "https://pos.saborai.site/favicon.png",
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "contactType": "customer service",
+          "availableLanguage": "Spanish",
+          "areaServed": "CR"
+        }
+      },
+      "areaServed": {
+        "@type": "Country",
+        "name": "Costa Rica"
+      },
+      "inLanguage": "es-CR"
+    }
+    </script>
+
+    <!-- ═══ Structured Data — FAQPage ════════════════════════════════════ -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "¿Saborai POS cumple con la facturación electrónica de Hacienda Costa Rica?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. Saborai POS emite facturas electrónicas en formato XML según la normativa del Ministerio de Hacienda de Costa Rica versión 4.3, con clave de 50 dígitos y control de IVA diferenciado (13%, 4%, 2%, 1% y exento)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cómo funcionan los pagos con Tilopay en Saborai POS?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Saborai POS integra Tilopay para cobros con tarjetas de crédito y débito en Costa Rica. Los datos de tarjeta son tokenizados de forma segura y los cobros de suscripción son automáticos cada mes."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Puedo usar Saborai POS sin conexión a Internet?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Sí. Saborai POS funciona en modo Offline mediante sincronización en red local (Mesh) con IndexedDB y WebSockets locales. Tus operaciones continúan con normalidad y se sincronizan al recuperar la conexión."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "¿Cuánto cuesta Saborai POS en Costa Rica?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Saborai POS tiene 3 planes: Plan Express ₡22,000/mes, Plan Pro ₡45,000/mes y Plan Multi-Sucursal ₡85,000/mes por sucursal. Todos incluyen prueba gratuita de 14 días."
+          }
+        }
+      ]
+    }
+    </script>
+
+    <!-- ═══ Favicons & App Icons ══════════════════════════════════════════ -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
     <meta name="theme-color" content="#3b3733" />
+    <meta name="msapplication-TileColor" content="#3b3733" />
+
+    <!-- ═══ PWA Manifest ══════════════════════════════════════════════════ -->
     <link rel="manifest" href="/manifest.json" />
+
+    <!-- ═══ Performance: Preconnect & Fonts ══════════════════════════════ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;600;700&family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Playfair+Display:ital,wght@1,600;1,700&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-[#fcfeff] text-[#3b3733] antialiased selection:bg-[#a9b994]/30">
     <div id="root"></div>
