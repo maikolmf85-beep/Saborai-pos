@@ -165,44 +165,74 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       const response = await tilopayService.createSubscription('pro', token, trialEmail);
       if (response.success) {
         /* Build user & tenant */
-        const user: UserProfile = {
-          id: `usr_${Date.now()}`,
-          name: restaurantName.trim(),
-          email: trialEmail.trim().toLowerCase(),
-          phone: trialPhone.trim(),
-          restaurantName: restaurantName.trim(),
-          role: 'ADMIN',
-          active: true,
-        };
-        const tenant: TenantInfo = {
-          id: `tenant_${Date.now()}`,
-          name: restaurantName.trim(),
-          cedulaJuridica: '3-101-998877',
-          email: trialEmail.trim().toLowerCase(),
-          phone: trialPhone.trim(),
-          location: 'Costa Rica',
-          plan: 'pro',
-          status: 'ACTIVE',
-          currency: 'CRC',
-          monthlyFee: 45000,
-        };
+        // Register with backend
         try {
-          localStorage.setItem('saborai_user', JSON.stringify({ ...user, password: trialPassword }));
-          localStorage.setItem('saborai_tenant', JSON.stringify(tenant));
-        } catch {}
-        notionService.recordUserRegistration(user, tenant).catch(() => {});
-        const trialEnd = new Date();
-        trialEnd.setDate(trialEnd.getDate() + 14);
-        const sub: SaboraiSubscription = {
-          mode: 'TRIAL',
-          email: trialEmail,
-          restaurantName: restaurantName,
-          plan: 'pro',
-          trialEndsAt: trialEnd.toISOString(),
-          activatedAt: new Date().toISOString(),
-        };
-        setView('TRIAL_SUCCESS');
-        setTimeout(() => onSubscriptionActivated(sub, user, tenant), 2200);
+          const regRes = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: trialEmail.trim(),
+              password: trialPassword,
+              name: restaurantName.trim(),
+              phone: trialPhone.trim(),
+              restaurantName: restaurantName.trim(),
+              plan: 'pro'
+            })
+          });
+          
+          const regData = await regRes.json();
+          
+          if (!regRes.ok) {
+            setError(regData.error || 'Error al crear la cuenta en el backend.');
+            setIsProcessing(false);
+            return;
+          }
+          
+          // Store token and clear legacy localStorage
+          localStorage.setItem('saborai_token', regData.token);
+          localStorage.removeItem('saborai_user');
+          localStorage.removeItem('saborai_tenant');
+          
+          const user: UserProfile = {
+            id: regData.user.id,
+            name: regData.user.name,
+            email: regData.user.email,
+            phone: regData.user.phone,
+            restaurantName: regData.user.restaurant_name,
+            role: regData.user.role,
+            active: regData.user.active
+          };
+          
+          const tenant: TenantInfo = {
+            id: regData.tenant.id,
+            name: regData.tenant.name,
+            cedulaJuridica: regData.tenant.cedula_juridica || '3-101-998877',
+            email: regData.tenant.email,
+            phone: regData.tenant.phone,
+            location: regData.tenant.location || 'Costa Rica',
+            plan: regData.tenant.plan,
+            status: regData.tenant.status,
+            currency: regData.tenant.currency,
+            monthlyFee: regData.tenant.monthly_fee || 45000
+          };
+
+          notionService.recordUserRegistration(user, tenant).catch(() => {});
+          const sub: SaboraiSubscription = {
+            mode: 'TRIAL',
+            email: regData.subscription.email,
+            restaurantName: user.restaurantName,
+            plan: regData.subscription.plan,
+            trialEndsAt: regData.subscription.trial_ends_at,
+            activatedAt: regData.subscription.activated_at,
+          };
+          
+          setView('TRIAL_SUCCESS');
+          setTimeout(() => onSubscriptionActivated(sub, user, tenant), 2200);
+        } catch (backendErr) {
+          console.error(backendErr);
+          setError('Error de conexión con el backend.');
+          setIsProcessing(false);
+        }
       } else {
         setError(response.error || 'Error al procesar el pago. Intenta nuevamente.');
         setIsProcessing(false);
@@ -213,53 +243,76 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
     }
   };
 
-  /* Login — validación estricta de email + contraseña */
-  const handleLogin = (e: React.FormEvent) => {
+  /* Login — validación estricta de email + contraseña contra backend */
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     resetError();
     setIsProcessing(true);
 
-    setTimeout(() => {
-      try {
-        const savedUserRaw = localStorage.getItem('saborai_user');
-        const savedTenantRaw = localStorage.getItem('saborai_tenant');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          password: loginPassword
+        })
+      });
 
-        if (!savedUserRaw || !savedTenantRaw) {
-          // No hay ningún usuario registrado en este dispositivo
-          setIsProcessing(false);
-          setError('No encontramos una cuenta en este dispositivo. Crea una cuenta primero.');
-          setView('TRIAL_STEP1');
-          return;
-        }
+      const data = await res.json();
 
-        const savedUser = JSON.parse(savedUserRaw);
-        const savedTenant = JSON.parse(savedTenantRaw);
-        const emailMatch = savedUser.email?.toLowerCase() === loginEmail.trim().toLowerCase();
-
-        if (!emailMatch) {
-          setIsProcessing(false);
-          setError('No existe una cuenta con ese correo. ¿Quieres crear una cuenta nueva?');
-          return;
-        }
-
-        // Email encontrado — verificar contraseña
-        const passwordMatch = savedUser.password && savedUser.password === loginPassword;
-        if (!passwordMatch) {
-          setIsProcessing(false);
-          setError('Contraseña incorrecta. Verifica tus datos e intenta nuevamente.');
-          return;
-        }
-
-        // Credenciales correctas ✅
+      if (!res.ok) {
         setIsProcessing(false);
-        const sub: SaboraiSubscription = { mode: 'ACTIVE', email: savedUser.email, activatedAt: new Date().toISOString() };
-        onSubscriptionActivated(sub, savedUser, savedTenant);
-
-      } catch {
-        setIsProcessing(false);
-        setError('Error al verificar tus credenciales. Intenta nuevamente.');
+        setError(data.error || 'Correo o contraseña incorrectos.');
+        // Si el error dice que no existe, podríamos sugerir crear cuenta
+        if (data.error && data.error.toLowerCase().includes('incorrectos')) {
+           // We keep the exact error from API
+        }
+        return;
       }
-    }, 700);
+
+      // Credenciales correctas ✅
+      localStorage.setItem('saborai_token', data.token);
+      localStorage.removeItem('saborai_user'); // Clean legacy
+      localStorage.removeItem('saborai_tenant');
+      
+      const user: UserProfile = {
+        id: data.user.id,
+        name: data.user.name,
+        email: data.user.email,
+        phone: data.user.phone,
+        restaurantName: data.user.restaurant_name,
+        role: data.user.role,
+        active: data.user.active
+      };
+      
+      const tenant: TenantInfo = {
+        id: data.tenant.id,
+        name: data.tenant.name,
+        cedulaJuridica: data.tenant.cedula_juridica || '3-101-998877',
+        email: data.tenant.email,
+        phone: data.tenant.phone,
+        location: data.tenant.location || 'Costa Rica',
+        plan: data.tenant.plan,
+        status: data.tenant.status,
+        currency: data.tenant.currency,
+        monthlyFee: data.tenant.monthly_fee || 45000
+      };
+
+      setIsProcessing(false);
+      const sub: SaboraiSubscription = { 
+        mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
+        email: user.email, 
+        activatedAt: data.subscription?.activated_at || new Date().toISOString(),
+        trialEndsAt: data.subscription?.trial_ends_at
+      };
+      onSubscriptionActivated(sub, user, tenant);
+
+    } catch (err) {
+      console.error(err);
+      setIsProcessing(false);
+      setError('Error al conectar con el servidor. Intenta nuevamente.');
+    }
   };
 
 

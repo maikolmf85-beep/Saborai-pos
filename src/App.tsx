@@ -30,8 +30,10 @@ import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
 
 export function App() {
   // Authentication & Session state
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
+      // Legacy fallback + initial state
       const saved = localStorage.getItem('saborai_user');
       return saved ? JSON.parse(saved) : null;
     } catch {
@@ -104,6 +106,79 @@ export function App() {
       return { ...order, items: updatedItems, status: nextStatus };
     }));
   };
+
+  // JWT Token validation on load
+  useEffect(() => {
+    const validateSession = async () => {
+      const token = localStorage.getItem('saborai_token');
+      if (!token) {
+        setIsLoadingAuth(false);
+        // If there's legacy user data, clear it since we moved to backend
+        if (localStorage.getItem('saborai_user')) {
+           setCurrentUser(null);
+           setSubscription(null);
+           localStorage.removeItem('saborai_user');
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          const user: UserProfile = {
+            id: data.user.id,
+            name: data.user.name,
+            email: data.user.email,
+            phone: data.user.phone,
+            restaurantName: data.user.restaurant_name,
+            role: data.user.role,
+            active: data.user.active
+          };
+          const tenantObj: TenantInfo = {
+            id: data.tenant.id,
+            name: data.tenant.name,
+            cedulaJuridica: data.tenant.cedula_juridica || '3-101-998877',
+            email: data.tenant.email,
+            phone: data.tenant.phone,
+            location: data.tenant.location || 'Costa Rica',
+            plan: data.tenant.plan,
+            status: data.tenant.status,
+            currency: data.tenant.currency,
+            monthlyFee: data.tenant.monthly_fee || 45000
+          };
+          const sub: SaboraiSubscription = { 
+            mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
+            email: user.email, 
+            activatedAt: data.subscription?.activated_at || new Date().toISOString(),
+            trialEndsAt: data.subscription?.trial_ends_at
+          };
+          
+          setCurrentUser(user);
+          setTenant(tenantObj);
+          setSubscription(sub);
+        } else {
+          // Token invalid or expired
+          localStorage.removeItem('saborai_token');
+          setCurrentUser(null);
+          setSubscription(null);
+        }
+      } catch (err) {
+        console.error('Failed to validate session', err);
+      } finally {
+        setIsLoadingAuth(false);
+      }
+    };
+
+    if (appDomain === 'POS') {
+      validateSession();
+    } else {
+      setIsLoadingAuth(false);
+    }
+  }, [appDomain]);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('pos');
   
@@ -474,7 +549,16 @@ export function App() {
     );
   }
 
-  // If POS domain, but not authenticated, show WelcomeGate again
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center text-white">
+        <div className="w-12 h-12 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin mb-4"></div>
+        <p className="text-stone-400 text-sm font-medium animate-pulse">Cargando sesión...</p>
+      </div>
+    );
+  }
+  
+  // If not authenticated, show WelcomeGate
   if (!currentUser) {
     return (
       <WelcomeGate
