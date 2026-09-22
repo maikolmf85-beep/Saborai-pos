@@ -880,20 +880,33 @@ export function App() {
                // Find item
                const item = menuItems.find(m => m.name.toLowerCase().includes(cmd.product.toLowerCase()));
                if (item) {
-                 const newOrder = { ...(selectedTableForOrder.order || { items: [], total: 0 }) };
+                 const newOrder = { ...(selectedTableForOrder.activeOrder || { orderNumber: `ORD-${Date.now()}`, server: currentUser?.name || 'Mesero', openedAt: new Date().toISOString(), subAccounts: [{ id: 1, name: 'General' }], items: [] }) };
                  newOrder.items.push({
                     id: `itm_${Date.now()}`,
-                    productId: item.id,
-                    productName: item.name,
+                    name: item.name,
                     quantity: cmd.quantity || 1,
                     price: item.price,
-                    notes: 'Agregado por Nysa IA'
+                    notes: 'Agregado por Nysa IA',
+                    cabysCode: item.cabysCode,
+                    taxRate: item.taxRate,
+                    category: item.station === 'Bar' ? 'Bar' : 'Cocina'
                  });
-                 newOrder.total += item.price * (cmd.quantity || 1);
-                 handleSaveOrder({ ...selectedTableForOrder, status: 'OCCUPIED', order: newOrder });
-                 addNotification('success', `Nysa agregó ${cmd.quantity || 1}x ${item.name} a la mesa ${selectedTableForOrder.name}`);
+                 handleSaveOrder({ ...selectedTableForOrder, status: 'OCCUPIED', activeOrder: newOrder });
+                 addNotification({
+                   id: `nysa_${Date.now()}`,
+                   type: 'ORDER_READY',
+                   title: 'Nysa IA',
+                   message: `Agregó ${cmd.quantity || 1}x ${item.name} a la mesa ${selectedTableForOrder.name}`,
+                   timestamp: new Date()
+                 });
                } else {
-                 addNotification('error', `Nysa no encontró el producto: ${cmd.product}`);
+                 addNotification({
+                   id: `nysa_err_${Date.now()}`,
+                   type: 'NEW_ORDER',
+                   title: 'Nysa IA (Error)',
+                   message: `No encontró el producto: ${cmd.product}`,
+                   timestamp: new Date()
+                 });
                }
             } else if (cmd.type === 'OPEN_SHIFT') {
                handleOpenCashShift('status');

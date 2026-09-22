@@ -148,7 +148,7 @@ Responde en español, de forma concisa. Usa formato markdown (negritas, listas) 
 Contexto actual del restaurante:
 - Productos en el menú: ${menuItems.map(m => m.name + ' (₡' + m.price + ')').join(', ')}
 ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})
-- Orden actual en la mesa: ${selectedTable.order?.items.map(i => i.quantity + 'x ' + i.productName).join(', ') || 'Vacía'}` : '- No hay una mesa seleccionada en este momento.'}
+- Orden actual en la mesa: ${selectedTable.activeOrder?.items.map((i: any) => i.quantity + 'x ' + i.productName).join(', ') || 'Vacía'}` : '- No hay una mesa seleccionada en este momento.'}
 
 Capacidades especiales (Function Calling):
 Si el usuario te pide explícitamente AGREGAR un producto a la mesa, debes responder ÚNICAMENTE con un bloque JSON al final de tu mensaje en este formato exacto:
@@ -277,9 +277,11 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
-              <ReactMarkdown className="prose prose-sm prose-invert max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1">
-                {msg.text}
-              </ReactMarkdown>
+              <div className="prose prose-sm prose-invert max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1">
+                <ReactMarkdown>
+                  {msg.text}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         ))}
