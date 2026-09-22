@@ -133,11 +133,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      // Modelos serie 3.x (los 2.0 y 2.5 fueron descontinuados en junio 2026)
+      // Usar modelos estables y ultrarrápidos para reducir latencia
       const MODELS_TO_TRY = [
-        'gemini-3.6-flash', // Estable en producción
-        'gemini-3.7-flash', // Agosto 2026
-        'gemini-3.8-flash', // El más nuevo y capaz
+        'gemini-1.5-flash',
+        'gemini-1.5-flash-8b',
+        'gemini-1.0-pro'
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
