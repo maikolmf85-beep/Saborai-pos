@@ -166,7 +166,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             <a href="#faq" className="hover:text-[#3b3733] transition-colors">FAQ</a>
           </div>
           <button
-            onClick={() => { setSelectedPlanModal('pro'); setCheckoutStep('REGISTRATION'); setCheckoutError(null); }}
+            onClick={onEnterPOS}
             aria-label="Comenzar prueba gratuita de 14 días"
             className="px-5 py-2.5 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2e2a27] transition-colors"
           >
@@ -207,11 +207,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             {/* Main Action CTAs */}
             <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
               <button
-                onClick={() => {
-                  setSelectedPlanModal('pro');
-                  setCheckoutStep('REGISTRATION');
-                  setCheckoutError(null);
-                }}
+                onClick={onEnterPOS}
                 className="w-full sm:w-auto px-8 py-4 bg-[#3b3733] text-[#fcfeff] rounded-2xl font-bold text-base hover:bg-[#2e2a27] hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-xl shadow-[#3b3733]/20 flex items-center justify-center gap-2.5 group"
               >
                 <span>Comenzar Prueba Gratis (14 Días)</span>
@@ -293,7 +289,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 ))}
               </div>
               <button
-                onClick={() => { setSelectedPlanModal('pro'); setCheckoutStep('REGISTRATION'); setCheckoutError(null); }}
+                onClick={onEnterPOS}
                 aria-label="Probar Saborai Copilot IA gratis"
                 className="mt-10 inline-flex items-center gap-2.5 px-7 py-3.5 bg-[#a9b994] text-[#1e2018] rounded-2xl font-bold text-sm hover:bg-[#bccaad] active:scale-[0.98] transition-all shadow-lg shadow-[#a9b994]/20"
               >
@@ -502,11 +498,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 </div>
 
                 <button
-                  onClick={() => {
-                    setSelectedPlanModal(plan.id);
-                    setCheckoutStep('REGISTRATION');
-                    setCheckoutError(null);
-                  }}
+                  onClick={onEnterPOS}
                   className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200 ${
                     plan.popular
                       ? 'bg-[#3b3733] text-[#fcfeff] hover:bg-[#282522] shadow-lg shadow-[#3b3733]/25'
