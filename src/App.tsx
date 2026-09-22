@@ -148,7 +148,8 @@ export function App() {
             plan: data.tenant.plan,
             status: data.tenant.status,
             currency: data.tenant.currency,
-            monthlyFee: data.tenant.monthly_fee || 45000
+            monthlyFee: data.tenant.monthly_fee || 45000,
+            onboardingCompleted: data.tenant.onboardingCompleted
           };
           const sub: SaboraiSubscription = { 
             mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
@@ -576,13 +577,26 @@ export function App() {
       <NysaOnboarding
         tenant={tenant}
         currentUser={currentUser}
-        onComplete={(updatedTenant, newStaff, newMenu) => {
+        onComplete={async (updatedTenant, newStaff, newMenu) => {
           handleUpdateTenant(updatedTenant);
           if (newStaff.length > 0) {
             newStaff.forEach(handleAddStaffMember);
           }
           if (newMenu.length > 0) {
             handleUpdateMenu(newMenu);
+          }
+          
+          // Guardar en el backend para que no vuelva a salir
+          try {
+            const token = localStorage.getItem('saborai_token');
+            if (token) {
+              await fetch('/api/tenant/onboarding', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` }
+              });
+            }
+          } catch (e) {
+            console.error('Error guardando onboarding', e);
           }
         }}
       />

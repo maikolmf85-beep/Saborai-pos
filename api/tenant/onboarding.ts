@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  if (req.method !== 'GET') {
+  if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
@@ -31,44 +31,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const decoded = jwt.verify(token, jwtSecret) as { userId: string; email: string };
     
-    // Fetch user
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', decoded.userId)
-      .single();
+    // Update tenant onboarding status
+    const { error } = await supabase
+      .from('tenants')
+      .update({ onboarding_completed: true })
+      .eq('user_id', decoded.userId);
 
-    if (userError || !user) {
-      return res.status(401).json({ error: 'Usuario no encontrado' });
+    if (error) {
+      console.error('Error updating onboarding status:', error);
+      return res.status(500).json({ error: 'Failed to update onboarding status' });
     }
 
-    // Fetch related tenant and subscription
-    const { data: tenant } = await supabase
-      .from('tenants')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-      
-    const { data: subscription } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', user.id)
-      .single();
-
-    // Map onboarding_completed in the returned tenant so the client knows
-    const mappedTenant = {
-      ...tenant,
-      onboardingCompleted: tenant.onboarding_completed
-    };
-
-    res.status(200).json({
-      success: true,
-      user,
-      tenant: mappedTenant,
-      subscription
-    });
+    res.status(200).json({ success: true });
   } catch (err: any) {
-    console.error('Me endpoint error:', err);
+    console.error('Onboarding endpoint error:', err);
     return res.status(401).json({ error: 'Token inválido o expirado' });
   }
 }
