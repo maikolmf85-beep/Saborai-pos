@@ -281,7 +281,7 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
-              <div className="prose prose-sm prose-invert max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1">
+              <div className="prose prose-sm max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1 text-[#3b3733]">
                 <ReactMarkdown>
                   {msg.text}
                 </ReactMarkdown>

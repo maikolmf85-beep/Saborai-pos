@@ -892,7 +892,7 @@ export function App() {
             const cmd = JSON.parse(action);
             if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {
                // Find item
-               const item = menuItems.find(m => m.name.toLowerCase().includes(cmd.product.toLowerCase()));
+               const item = menuItems.find(m => m.name.toLowerCase().includes((cmd.product || '').toLowerCase()));
                if (item) {
                  const newOrder = { ...(selectedTableForOrder.activeOrder || { orderNumber: `ORD-${Date.now()}`, server: currentUser?.name || 'Mesero', openedAt: new Date().toISOString(), subAccounts: [{ id: 1, name: 'General' }], items: [] }) };
                  newOrder.items.push({
@@ -917,20 +917,21 @@ export function App() {
                  addNotification({
                    id: `nysa_err_${Date.now()}`,
                    type: 'NEW_ORDER',
-                   title: 'Nysa IA (Error)',
-                   message: `No encontró el producto: ${cmd.product}`,
+                   title: 'Nysa IA (Aviso)',
+                   message: `No encontró el producto: ${cmd.product || 'desconocido'}`,
                    timestamp: new Date()
                  });
                }
             } else if (cmd.type === 'ADD_TABLE') {
-               const tableNumberStr = cmd.name.replace(/\D/g, '');
+               const tableName = cmd.name || 'Nueva Mesa';
+               const tableNumberStr = tableName.replace(/\D/g, '');
                const tableNum = tableNumberStr ? parseInt(tableNumberStr, 10) : tables.length + 1;
-               const exists = tables.some(t => t.number === tableNum || t.name.toLowerCase() === cmd.name.toLowerCase());
+               const exists = tables.some(t => t.number === tableNum || t.name.toLowerCase() === tableName.toLowerCase());
                if (!exists) {
                  const newTable: Table = {
                    id: `tbl_${Date.now()}`,
                    number: tableNum,
-                   name: cmd.name,
+                   name: tableName,
                    seats: 4,
                    shape: 'square',
                    status: 'AVAILABLE',
@@ -943,7 +944,7 @@ export function App() {
                    id: `nysa_${Date.now()}`,
                    type: 'ORDER_READY',
                    title: 'Nysa IA',
-                   message: `Creó la ${cmd.name} en la zona ${newTable.zone}`,
+                   message: `Creó la ${tableName} en la zona ${newTable.zone}`,
                    timestamp: new Date()
                  });
                } else {
@@ -951,7 +952,7 @@ export function App() {
                    id: `nysa_err_${Date.now()}`,
                    type: 'NEW_ORDER',
                    title: 'Nysa IA (Aviso)',
-                   message: `La ${cmd.name} ya existe.`,
+                   message: `La ${tableName} ya existe.`,
                    timestamp: new Date()
                  });
                }
