@@ -5,14 +5,21 @@ import {
   Sparkles, 
   X, 
   Send,
-  AlertTriangle
+  AlertTriangle,
+  Mic,
+  MicOff
 } from 'lucide-react';
+
+import ReactMarkdown from 'react-markdown';
+import { MenuItem, Table, UserProfile } from '../types';
 
 interface AICopilotChatProps {
   isOpen: boolean;
   onClose: () => void;
   onQuickAction?: (actionType: string) => void;
-  currentUser?: import('../types').UserProfile;
+  currentUser?: UserProfile;
+  menuItems?: MenuItem[];
+  selectedTable?: Table | null;
 }
 
 interface Message {
@@ -37,11 +44,40 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   isOpen,
   onClose,
   onQuickAction,
-  currentUser
+  currentUser,
+  menuItems = [],
+  selectedTable = null
 }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Funcionalidad de voz
+  const startListening = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Tu navegador no soporta comandos de voz.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-ES';
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0].transcript)
+        .join('');
+      setInputMessage(transcript);
+    };
+    recognition.onerror = () => setIsListening(false);
+    recognition.onend = () => setIsListening(false);
+    
+    recognition.start();
+  };
 
   // messages debe declararse ANTES del useEffect que lo referencia
   const [messages, setMessages] = useState<Message[]>([
@@ -107,7 +143,22 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
 Empleado: "${currentUser?.name || 'Empleado'}", Rol: ${roleName}.
 Ayudas con el POS, menú, inventarios y ventas del restaurante.
-Responde en español, de forma concisa. No menciones que eres de Google.`;
+Responde en español, de forma concisa. Usa formato markdown (negritas, listas) para resaltar información importante. No menciones que eres de Google.
+
+Contexto actual del restaurante:
+- Productos en el menú: ${menuItems.map(m => m.name + ' (₡' + m.price + ')').join(', ')}
+${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})
+- Orden actual en la mesa: ${selectedTable.order?.items.map(i => i.quantity + 'x ' + i.productName).join(', ') || 'Vacía'}` : '- No hay una mesa seleccionada en este momento.'}
+
+Capacidades especiales (Function Calling):
+Si el usuario te pide explícitamente AGREGAR un producto a la mesa, debes responder ÚNICAMENTE con un bloque JSON al final de tu mensaje en este formato exacto:
+\`\`\`json
+{"type": "ADD_ITEM", "product": "nombre_producto", "quantity": 1}
+\`\`\`
+Si el usuario te pide ABRIR EL TURNO, responde con:
+\`\`\`json
+{"type": "OPEN_SHIFT"}
+\`\`\``;
 
       const aiMsgId = `ai_${Date.now()}`;
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
@@ -121,14 +172,28 @@ Responde en español, de forma concisa. No menciones que eres de Google.`;
           const model = client.getGenerativeModel({ model: modelName, systemInstruction });
           const streamResult = await model.generateContentStream(userText);
 
+          let fullResponseText = '';
           for await (const chunk of streamResult.stream) {
             const chunkText = chunk.text();
             if (chunkText) {
               streamed = true;
+              fullResponseText += chunkText;
+              
+              // Ocultamos el bloque JSON de la vista del usuario
+              const displayContent = fullResponseText.replace(/\`\`\`json\n\{.*\}\n\`\`\`/gs, '');
+              
               setMessages(prev =>
-                prev.map(m => m.id === aiMsgId ? { ...m, text: m.text + chunkText } : m)
+                prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
               );
             }
+          }
+          
+          // Ejecutar comandos detectados
+          if (onQuickAction) {
+             const match = fullResponseText.match(/\`\`\`json\n(\{.*?\})\n\`\`\`/s);
+             if (match && match[1]) {
+                onQuickAction(match[1]);
+             }
           }
           break; // OK
         } catch (modelError: unknown) {
@@ -212,7 +277,9 @@ Responde en español, de forma concisa. No menciones que eres de Google.`;
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
-              {msg.text}
+              <ReactMarkdown className="prose prose-sm prose-invert max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1">
+                {msg.text}
+              </ReactMarkdown>
             </div>
           </div>
         ))}
@@ -251,6 +318,16 @@ Responde en español, de forma concisa. No menciones que eres de Google.`;
 
       {/* Input bar */}
       <form onSubmit={handleSendMessage} className="p-3 bg-[#fcfeff] border-t border-[#6b686d]/20 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={isListening ? () => {} : startListening}
+          className={`p-2.5 rounded-xl transition-colors ${
+            isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+          }`}
+          title="Hablar con Nysa"
+        >
+          {isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+        </button>
         <input
           type="text"
           placeholder={apiReady ? "Pregúntale a Nysa lo que necesites..." : "Configura la API Key para activar Nysa..."}

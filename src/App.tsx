@@ -871,6 +871,36 @@ export function App() {
         isOpen={isCopilotOpen}
         onClose={() => setIsCopilotOpen(false)}
         currentUser={currentUser}
+        menuItems={menuItems}
+        selectedTable={selectedTableForOrder}
+        onQuickAction={(action) => {
+          try {
+            const cmd = JSON.parse(action);
+            if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {
+               // Find item
+               const item = menuItems.find(m => m.name.toLowerCase().includes(cmd.product.toLowerCase()));
+               if (item) {
+                 const newOrder = { ...(selectedTableForOrder.order || { items: [], total: 0 }) };
+                 newOrder.items.push({
+                    id: `itm_${Date.now()}`,
+                    productId: item.id,
+                    productName: item.name,
+                    quantity: cmd.quantity || 1,
+                    price: item.price,
+                    notes: 'Agregado por Nysa IA'
+                 });
+                 newOrder.total += item.price * (cmd.quantity || 1);
+                 handleSaveOrder({ ...selectedTableForOrder, status: 'OCCUPIED', order: newOrder });
+                 addNotification('success', `Nysa agregó ${cmd.quantity || 1}x ${item.name} a la mesa ${selectedTableForOrder.name}`);
+               } else {
+                 addNotification('error', `Nysa no encontró el producto: ${cmd.product}`);
+               }
+            } else if (cmd.type === 'OPEN_SHIFT') {
+               handleOpenCashShift('status');
+               setIsCopilotOpen(false);
+            }
+          } catch(e) { console.error(e); }
+        }}
       />
 
       {/* Real-time Audible & Visual Notification Toasts */}
