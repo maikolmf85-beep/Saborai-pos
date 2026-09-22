@@ -155,6 +155,10 @@ Si el usuario te pide explícitamente AGREGAR un producto a la mesa, debes respo
 \`\`\`json
 {"type": "ADD_ITEM", "product": "nombre_producto", "quantity": 1}
 \`\`\`
+Si el usuario te pide AGREGAR O CREAR UNA MESA nueva, responde con:
+\`\`\`json
+{"type": "ADD_TABLE", "name": "Mesa 2", "zone": "Terraza"}
+\`\`\`
 Si el usuario te pide ABRIR EL TURNO, responde con:
 \`\`\`json
 {"type": "OPEN_SHIFT"}

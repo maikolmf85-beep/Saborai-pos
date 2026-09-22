@@ -908,6 +908,39 @@ export function App() {
                    timestamp: new Date()
                  });
                }
+            } else if (cmd.type === 'ADD_TABLE') {
+               const tableNumberStr = cmd.name.replace(/\D/g, '');
+               const tableNum = tableNumberStr ? parseInt(tableNumberStr, 10) : tables.length + 1;
+               const exists = tables.some(t => t.number === tableNum || t.name.toLowerCase() === cmd.name.toLowerCase());
+               if (!exists) {
+                 const newTable: Table = {
+                   id: `tbl_${Date.now()}`,
+                   number: tableNum,
+                   name: cmd.name,
+                   seats: 4,
+                   shape: 'square',
+                   status: 'AVAILABLE',
+                   zone: cmd.zone || 'Salón Principal',
+                   x: 50,
+                   y: 50
+                 };
+                 handleUpdateTables([...tables, newTable]);
+                 addNotification({
+                   id: `nysa_${Date.now()}`,
+                   type: 'ORDER_READY',
+                   title: 'Nysa IA',
+                   message: `Creó la ${cmd.name} en la zona ${newTable.zone}`,
+                   timestamp: new Date()
+                 });
+               } else {
+                 addNotification({
+                   id: `nysa_err_${Date.now()}`,
+                   type: 'NEW_ORDER',
+                   title: 'Nysa IA (Aviso)',
+                   message: `La ${cmd.name} ya existe.`,
+                   timestamp: new Date()
+                 });
+               }
             } else if (cmd.type === 'OPEN_SHIFT') {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
