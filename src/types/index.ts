@@ -90,6 +90,7 @@ export interface MenuItem {
   imageIcon: string;
   ingredients: { name: string; requiredQty: number; unit: string; currentStock: number }[];
   aiSuggestedPairing?: string;
+  prepTime?: number; // Tiempo estimado de preparación en minutos
 }
 
 export interface KDSOrder {

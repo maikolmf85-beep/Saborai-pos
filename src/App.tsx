@@ -758,6 +758,7 @@ export function App() {
         {activeTab === 'kds' && (
           <KDSView 
             orders={kdsOrders}
+            menuItems={menuItems}
             onUpdateStatus={handleUpdateKdsOrder}
             onToggleItemCompletion={handleToggleKdsItem}
             onNotify={addNotification} 

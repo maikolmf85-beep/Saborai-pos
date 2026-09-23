@@ -11,7 +11,7 @@ import {
   List,
   LayoutGrid
 } from 'lucide-react';
-import { KDSOrder } from '../types';
+import { KDSOrder, MenuItem } from '../types';
 import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
 
@@ -20,11 +20,13 @@ interface KDSViewProps {
   onUpdateStatus: (orderId: string, nextStatus: KDSOrder['status']) => void;
   onToggleItemCompletion: (orderId: string, itemId: string) => void;
   onNotify?: (notif: PosNotification) => void;
+  menuItems?: MenuItem[];
 }
 
-export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onToggleItemCompletion, onNotify }) => {
+export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onToggleItemCompletion, onNotify, menuItems = [] }) => {
   const [stationFilter, setStationFilter] = useState<'ALL' | 'Cocina' | 'Bar'>('ALL');
   const [viewMode, setViewMode] = useState<'TICKETS' | 'CONSOLIDATED'>('TICKETS');
+  const [loadMultiplier, setLoadMultiplier] = useState<number>(1);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -151,6 +153,34 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
             </button>
           </div>
 
+          {/* Traffic Load Selector */}
+          <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-2xl border border-stone-200/80 mr-2">
+            <button
+              onClick={() => setLoadMultiplier(1)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                loadMultiplier === 1 ? 'bg-white text-emerald-700 shadow-xs' : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Normal (1x)
+            </button>
+            <button
+              onClick={() => setLoadMultiplier(1.5)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                loadMultiplier === 1.5 ? 'bg-white text-amber-600 shadow-xs' : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Alto (1.5x)
+            </button>
+            <button
+              onClick={() => setLoadMultiplier(2)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                loadMultiplier === 2 ? 'bg-white text-red-600 shadow-xs' : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Saturado (2x)
+            </button>
+          </div>
+
           {/* Station Filter Buttons */}
           <div className="flex items-center gap-1.5 bg-stone-100 p-1 rounded-2xl border border-stone-200/80">
             <button
@@ -248,8 +278,26 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {filteredOrders.map((order) => {
           const mins = getElapsedTimeInMinutes(order.timestamp);
-          const isUrgent = mins >= 18;
-          const isWarning = mins >= 10 && mins < 18;
+          
+          // Calculate max prep time
+          let maxPrepTime = 15; // default 15 mins if no items have prepTime
+          let hasPrepTime = false;
+          
+          order.items.forEach(it => {
+            const menuItem = menuItems.find(m => m.name === it.name);
+            if (menuItem?.prepTime) {
+              if (!hasPrepTime) {
+                maxPrepTime = menuItem.prepTime;
+                hasPrepTime = true;
+              } else if (menuItem.prepTime > maxPrepTime) {
+                maxPrepTime = menuItem.prepTime;
+              }
+            }
+          });
+          
+          const adjustedPrepTime = Math.ceil(maxPrepTime * loadMultiplier);
+          const isUrgent = mins >= adjustedPrepTime;
+          const isWarning = mins >= (adjustedPrepTime * 0.75) && mins < adjustedPrepTime;
 
           return (
             <div
@@ -281,16 +329,20 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                     <p className="text-xs text-stone-500">{order.server}</p>
                   </div>
 
-                  {/* Timer Pill */}
-                  <div className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold ${
-                    isUrgent 
-                      ? 'bg-red-500 text-white' 
-                      : isWarning 
-                      ? 'bg-amber-500 text-white' 
-                      : 'bg-stone-100 text-stone-800'
-                  }`}>
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>{mins} min</span>
+                  <div className={`flex flex-col items-end gap-0.5`}>
+                    <div className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold ${
+                      isUrgent 
+                        ? 'bg-red-500 text-white' 
+                        : isWarning 
+                        ? 'bg-amber-500 text-white' 
+                        : 'bg-stone-100 text-stone-800'
+                    }`}>
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>{mins} min</span>
+                    </div>
+                    {order.status !== 'READY' && order.status !== 'SERVED' && (
+                      <span className="text-[9px] font-bold text-stone-400">Meta: {adjustedPrepTime}m</span>
+                    )}
                   </div>
                 </div>
 

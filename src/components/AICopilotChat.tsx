@@ -279,14 +279,14 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
             <div
               className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                 msg.sender === 'user'
-                  ? 'bg-stone-900 text-white font-medium rounded-br-none shadow-sm'
+                  ? 'bg-black text-white font-medium rounded-br-none shadow-sm'
                   : msg.isError
                   ? 'bg-red-50 text-red-700 rounded-bl-none border border-red-200'
-                  : 'bg-gray-100 text-[#3b3733] rounded-bl-none border border-gray-200'
+                  : 'bg-white text-black rounded-bl-none border border-gray-200 shadow-sm'
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
-              <div className="prose prose-sm max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1 text-[#3b3733]">
+              <div className="prose prose-sm max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1 prose-p:text-current prose-strong:text-current prose-ul:text-current prose-ol:text-current">
                 <ReactMarkdown>
                   {msg.text}
                 </ReactMarkdown>

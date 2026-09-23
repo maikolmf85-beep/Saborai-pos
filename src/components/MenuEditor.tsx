@@ -319,10 +319,10 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   </div>
                 </div>
 
-                {/* Station and Taxes */}
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-stone-100">
+                {/* Station, Taxes, and Prep Time */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-stone-100">
                   <div>
-                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Estación de Destino (KDS)</label>
+                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Estación (KDS)</label>
                     <select
                       value={editingItem.station || 'Cocina'}
                       onChange={e => setEditingItem({...editingItem, station: e.target.value as 'Cocina'|'Bar'})}
@@ -352,6 +352,18 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                         </>
                       )}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Tiempo Prep. (Min)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="Ej: 15"
+                      value={editingItem.prepTime || ''}
+                      onChange={e => setEditingItem({...editingItem, prepTime: parseInt(e.target.value) || 0})}
+                      className="w-full px-3 py-2 text-sm font-black border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
+                    />
                   </div>
                 </div>
 
