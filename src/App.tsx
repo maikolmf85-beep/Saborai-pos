@@ -801,6 +801,7 @@ export function App() {
         onNavigateToLanding={() => setActiveTab('landing')}
         onOpenNotion={() => setIsNotionModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
+        currentUser={currentUser}
       />
 
       {/* Offline Synchronization Inspector & Simulator Modal */}

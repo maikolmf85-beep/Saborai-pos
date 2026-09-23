@@ -272,7 +272,7 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
             <div
               className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                 msg.sender === 'user'
-                  ? 'bg-[#3b3733] text-[#fcfeff] rounded-br-none'
+                  ? 'bg-stone-900 text-white font-medium rounded-br-none shadow-sm'
                   : msg.isError
                   ? 'bg-red-50 text-red-700 rounded-bl-none border border-red-200'
                   : 'bg-gray-100 text-[#3b3733] rounded-bl-none border border-gray-200'

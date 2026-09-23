@@ -34,6 +34,7 @@ interface SettingsModalProps {
   onNavigateToLanding: () => void;
   onOpenNotion?: () => void;
   onOpenStaffModal?: () => void;
+  currentUser?: any;
 }
 
 type SettingsSection = 'regime' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
@@ -47,7 +48,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSelectTenant,
   onNavigateToLanding,
   onOpenNotion,
-  onOpenStaffModal
+  onOpenStaffModal,
+  currentUser
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('regime');
   
@@ -250,29 +252,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <span>Inventario & Recetas</span>
           </button>
 
-          <button
-            onClick={() => setActiveSection('admin')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
-              activeSection === 'admin'
-                ? 'border-stone-900 text-stone-900'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            <Building2 className="w-4 h-4 text-[#588157]" />
-            <span>SaaS Backoffice</span>
-          </button>
+          {currentUser?.email === 'maikolmf85@gmail.com' && (
+            <>
+              <button
+                onClick={() => setActiveSection('admin')}
+                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
+                  activeSection === 'admin'
+                    ? 'border-stone-900 text-stone-900'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <Building2 className="w-4 h-4 text-[#588157]" />
+                <span>SaaS Backoffice</span>
+              </button>
 
-          <button
-            onClick={() => setActiveSection('landing')}
-            className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
-              activeSection === 'landing'
-                ? 'border-stone-900 text-stone-900'
-                : 'border-transparent text-stone-500 hover:text-stone-800'
-            }`}
-          >
-            <Globe className="w-4 h-4 text-[#588157]" />
-            <span>Landing Comercial</span>
-          </button>
+              <button
+                onClick={() => setActiveSection('landing')}
+                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
+                  activeSection === 'landing'
+                    ? 'border-stone-900 text-stone-900'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <Globe className="w-4 h-4 text-[#588157]" />
+                <span>Landing Comercial</span>
+              </button>
+            </>
+          )}
 
           <div className="ml-auto flex items-center gap-2 my-1 shrink-0">
             {onOpenStaffModal && (
