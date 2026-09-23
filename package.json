@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "@anthropic-ai/sdk": "^0.128.0",
     "@supabase/supabase-js": "^2.116.0",
     "bcryptjs": "^3.0.3",
     "dotenv": "^18.0.1",

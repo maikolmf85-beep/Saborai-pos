@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import { 
   Sparkles, 
   X, 
@@ -29,15 +29,18 @@ interface Message {
   isError?: boolean;
 }
 
-// La API Key de Gemini se lee de la variable de entorno VITE_GEMINI_API_KEY
-// Agrégala en Vercel: Settings → Environment Variables → VITE_GEMINI_API_KEY
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+// La API Key de Claude se lee de la variable de entorno VITE_ANTHROPIC_API_KEY
+// Agrégala en Vercel: Settings → Environment Variables → VITE_ANTHROPIC_API_KEY
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined;
 
-function getNysaClient(): GoogleGenerativeAI | null {
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'tu_api_key_aqui' || GEMINI_API_KEY.trim() === '') {
+function getNysaClient(): Anthropic | null {
+  if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === 'tu_api_key_aqui' || ANTHROPIC_API_KEY.trim() === '') {
     return null;
   }
-  return new GoogleGenerativeAI(GEMINI_API_KEY);
+  return new Anthropic({
+    apiKey: ANTHROPIC_API_KEY,
+    dangerouslyAllowBrowser: true
+  });
 }
 
 export const AICopilotChat: React.FC<AICopilotChatProps> = ({
@@ -93,7 +96,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const apiReady = !!GEMINI_API_KEY && GEMINI_API_KEY !== 'tu_api_key_aqui' && GEMINI_API_KEY.trim() !== '';
+  const apiReady = !!ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui' && ANTHROPIC_API_KEY.trim() !== '';
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,7 +122,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           id: `ai_${Date.now()}`,
           sender: 'ai',
           isError: true,
-          text: '⚠️ La API Key de Gemini no está configurada. Para activarme, añade la variable VITE_GEMINI_API_KEY en los ajustes de Vercel (Settings → Environment Variables) y haz un Redeploy.'
+          text: '⚠️ La API Key de Claude no está configurada. Para activarme, añade la variable VITE_ANTHROPIC_API_KEY en los ajustes de Vercel (Settings → Environment Variables) y haz un Redeploy.'
         }
       ]);
       return;
@@ -135,7 +138,8 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 
       // Usar modelos estables y ultrarrápidos para reducir latencia
       const MODELS_TO_TRY = [
-        'gemini-2.5-flash'
+        'claude-3-haiku-20240307',
+        'claude-3-5-sonnet-20240620'
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
@@ -171,15 +175,18 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
 
       for (const modelName of MODELS_TO_TRY) {
         try {
-          const model = client.getGenerativeModel({ model: modelName, systemInstruction });
-          const streamResult = await model.generateContentStream(userText);
+          const streamResult = await client.messages.stream({
+            model: modelName,
+            max_tokens: 1024,
+            system: systemInstruction,
+            messages: [{ role: 'user', content: userText }]
+          });
 
           let fullResponseText = '';
-          for await (const chunk of streamResult.stream) {
-            const chunkText = chunk.text();
-            if (chunkText) {
+          for await (const chunk of streamResult) {
+            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
               streamed = true;
-              fullResponseText += chunkText;
+              fullResponseText += chunk.delta.text;
               
               // Ocultamos el bloque JSON de la vista del usuario
               const displayContent = fullResponseText.replace(/\`\`\`json\n\{.*\}\n\`\`\`/gs, '');
