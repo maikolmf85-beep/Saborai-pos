@@ -44,52 +44,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'tokenize') {
       const cardData = payload as TilopayCardData;
       
-      // Aquí se enviaría la petición REAL a TiloPay para tokenizar.
-      // Ejemplo: 
-      // const response = await fetch('https://api.tilopay.com/api/v1/tokenize', {
-      //   method: 'POST',
-      //   headers: {
-      //     'apikey': TILOPAY_API_KEY,
-      //     'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
-      //     'Content-Type': 'application/json'
-      //   },
-      //   body: JSON.stringify(cardData)
-      // });
-      // const data = await response.json();
+      const response = await fetch('https://api.tilopay.com/api/v1/tokenize', {
+        method: 'POST',
+        headers: {
+          'apikey': TILOPAY_API_KEY,
+          'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(cardData)
+      });
       
-      // Simulando comportamiento basado en los datos para pruebas iniciales, 
-      // pero listo para cambiar a fetch real
-      const delay = Math.floor(Math.random() * 1000) + 1500;
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const data = await response.json();
       
-      if (cardData.cvv === '999') {
-        throw new Error('Tarjeta declinada por el banco emisor (Fondos Insuficientes / CVV Inválido).');
-      }
-      if (cardData.cardNumber.replace(/\s+/g, '').endsWith('0000')) {
-        throw new Error('Tarjeta bloqueada por sospecha de fraude.');
+      if (!response.ok) {
+        throw new Error(data.message || 'Tarjeta declinada o error de validación por el banco emisor.');
       }
 
-      // Devolver Token Real o Simulado
-      const token = `tilo_tok_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
-      return res.status(200).json({ token });
+      return res.status(200).json({ token: data.token || data.id });
 
     } else if (action === 'subscribe') {
       const { planId, token, email } = payload;
 
-      // Validación simple
-      if (!token || !token.startsWith('tilo_tok_')) {
+      // Validación simple (dependiendo de TiloPay los tokens varían)
+      if (!token) {
         return res.status(400).json({ success: false, error: 'Token de pago inválido.' });
       }
 
-      // Petición REAL a TiloPay para Suscripción
-      // const response = await fetch('https://api.tilopay.com/api/v1/subscribe', { ... });
+      const response = await fetch('https://api.tilopay.com/api/v1/subscribe', {
+        method: 'POST',
+        headers: {
+          'apikey': TILOPAY_API_KEY,
+          'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ planId, token, email })
+      });
       
-      const delay = Math.floor(Math.random() * 1000) + 1000;
-      await new Promise(resolve => setTimeout(resolve, delay));
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Error procesando la suscripción con Tilopay.');
+      }
 
       return res.status(200).json({
         success: true,
-        transactionId: `sub_txn_${Date.now()}`,
+        transactionId: data.transactionId || data.id || `txn_${Date.now()}`,
         message: `Suscripción al plan '${planId}' procesada correctamente para ${email} vía TiloPay.`
       });
 
