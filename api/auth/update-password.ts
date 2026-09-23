@@ -1,10 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabase.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -25,9 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Supabase configuration is missing.' });
-  }
+
 
   const { token, newPassword } = req.body || {};
 
@@ -53,8 +48,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!userId) {
       return res.status(401).json({ error: 'Token inválido.' });
     }
-
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 2. Hashear la nueva contraseña
     const salt = await bcrypt.genSalt(10);

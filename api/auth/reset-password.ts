@@ -1,10 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../utils/supabase.js';
 import { Resend } from 'resend';
 import jwt from 'jsonwebtoken';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -26,9 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Supabase configuration is missing.' });
-  }
+
 
   const { email } = req.body || {};
 
@@ -37,7 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
     // 1. Buscar al usuario
     const { data: user, error: userError } = await supabase
