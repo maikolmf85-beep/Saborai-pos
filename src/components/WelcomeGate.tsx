@@ -218,7 +218,8 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
             plan: regData.tenant.plan,
             status: regData.tenant.status,
             currency: regData.tenant.currency,
-            monthlyFee: regData.tenant.monthly_fee || 45000
+            monthlyFee: regData.tenant.monthly_fee || 45000,
+            onboardingCompleted: regData.tenant.onboarding_completed ?? false
           };
 
           notionService.recordUserRegistration(user, tenant).catch(() => {});
@@ -301,7 +302,8 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         plan: data.tenant.plan,
         status: data.tenant.status,
         currency: data.tenant.currency,
-        monthlyFee: data.tenant.monthly_fee || 45000
+        monthlyFee: data.tenant.monthly_fee || 45000,
+        onboardingCompleted: data.tenant.onboarding_completed ?? false
       };
 
       setIsProcessing(false);
