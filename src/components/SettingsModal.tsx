@@ -14,7 +14,8 @@ import {
   CheckCircle2,
   Info,
   Store,
-  Pencil
+  Pencil,
+  ShieldAlert
 } from 'lucide-react';
 import { PrinterSettings } from './PrinterSettings';
 import { InventoryRecipes } from './InventoryRecipes';
@@ -571,6 +572,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
               </form>
+
+              {/* Danger Zone */}
+              <div className="mt-8 pt-6 border-t border-stone-200">
+                <h4 className="text-sm font-bold text-red-600 flex items-center gap-2 mb-3">
+                  <ShieldAlert className="w-4 h-4" />
+                  <span>Zona de Peligro</span>
+                </h4>
+                <div className="bg-red-50/50 border border-red-100 rounded-2xl p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div>
+                    <h5 className="font-bold text-stone-900 text-sm">Cancelar Suscripción</h5>
+                    <p className="text-xs text-stone-600 mt-1 max-w-lg">
+                      Al cancelar tu plan, perderás el acceso al sistema al finalizar tu periodo actual pagado. Los cobros automáticos se detendrán y tu información dejará de sincronizarse.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('¿Estás seguro que deseas cancelar tu suscripción a Saborai POS? Esta acción detendrá los cobros y limitará tu acceso.')) {
+                        onUpdateTenantStatus('CANCELLED');
+                        alert('Tu suscripción ha sido cancelada. Mantendrás el acceso hasta el final del periodo de gracia.');
+                      }
+                    }}
+                    className="shrink-0 px-5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 hover:border-red-300 rounded-xl text-xs font-bold transition-all shadow-sm"
+                  >
+                    Finalizar Suscripción
+                  </button>
+                </div>
+              </div>
+
             </div>
           )}
 
