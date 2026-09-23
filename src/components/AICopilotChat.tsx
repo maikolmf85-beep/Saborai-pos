@@ -138,8 +138,8 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 
       // Usar modelos estables y ultrarrápidos para reducir latencia
       const MODELS_TO_TRY = [
-        'claude-3-haiku-20240307',
-        'claude-3-5-sonnet-20240620'
+        'claude-3-5-haiku-20241022',
+        'claude-3-5-sonnet-20241022'
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
