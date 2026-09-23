@@ -135,7 +135,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 
       // Usar modelos estables y ultrarrápidos para reducir latencia
       const MODELS_TO_TRY = [
-        'gemini-1.5-flash'
+        'gemini-2.5-flash'
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
