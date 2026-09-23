@@ -1,9 +1,10 @@
 import React from 'react';
 import { BrandLogo } from './BrandLogos';
 import { 
-  LayoutGrid, 
-  Tv2, 
-  ReceiptText, 
+  UtensilsCrossed, 
+  ChefHat, 
+  CreditCard,
+  BookOpen, 
   Settings as SettingsIcon, 
   Sparkles, 
   Wifi, 
@@ -12,8 +13,8 @@ import {
   Volume2, 
   VolumeX, 
   UserPlus,
-  Receipt,
-  Lock,
+  Banknote,
+  Vault,
   Landmark
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
@@ -171,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <NavVerticalItem
             id="nav-tab-pos"
             onClick={() => setActiveTab('pos')}
-            icon={<LayoutGrid className="w-5 h-5" />}
+            icon={<UtensilsCrossed className="w-5 h-5" />}
             label="Mesa y Salones"
             sublabel="Plano interactivo en pantalla completa"
             isActive={activeTab === 'pos'}
@@ -181,7 +182,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <NavVerticalItem
             id="nav-tab-kds"
             onClick={() => setActiveTab('kds')}
-            icon={<Tv2 className="w-5 h-5" />}
+            icon={<ChefHat className="w-5 h-5" />}
             label="Cocina & Bar KDS"
             sublabel="Monitor de órdenes y comandas"
             isActive={activeTab === 'kds'}
@@ -192,7 +193,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-tab-menu"
               onClick={() => setActiveTab('menu')}
-              icon={<Sparkles className="w-5 h-5" />}
+              icon={<BookOpen className="w-5 h-5" />}
               label="Menú y Catálogo"
               sublabel="Administra platillos y precios"
               isActive={activeTab === 'menu'}
@@ -203,7 +204,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <NavVerticalItem
             id="nav-tab-billing"
             onClick={() => setActiveTab('billing')}
-            icon={<ReceiptText className="w-5 h-5" />}
+            icon={<CreditCard className="w-5 h-5" />}
             label="Caja y Facturación"
             sublabel="Cobro rápido y Hacienda DGT v4.3"
             isActive={activeTab === 'billing'}
@@ -222,7 +223,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-shift-btn"
               onClick={() => onOpenCashShift('status')}
-              icon={<Receipt className="w-5 h-5" />}
+              icon={<Banknote className="w-5 h-5" />}
               label={isShiftOpen ? "Turno de Caja Activo" : "Caja Cerrada"}
               sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Ver balance y movimientos` : `${activeRegisterName || 'Caja'} • Clic para abrir turno`}
               badge={
@@ -243,7 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-close-shift-btn"
               onClick={() => onOpenCashShift('close')}
-              icon={<Lock className="w-5 h-5 text-amber-300" />}
+              icon={<Vault className="w-5 h-5 text-amber-300" />}
               label="Cerrar Turno & Caja"
               sublabel="Realizar arqueo ciego y reporte Z"
               variant="warning"
