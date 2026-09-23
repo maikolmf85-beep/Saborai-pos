@@ -23,7 +23,8 @@ type GateView =
   | 'TRIAL_STEP1'
   | 'TRIAL_STEP2'
   | 'TRIAL_SUCCESS'
-  | 'LOGIN_FORM';
+  | 'LOGIN_FORM'
+  | 'FORGOT_PASSWORD';
 
 interface WelcomeGateProps {
   onSubscriptionActivated: (sub: SaboraiSubscription, user: UserProfile, tenant: TenantInfo) => void;
@@ -88,8 +89,14 @@ function buildDemoSession(email: string, restaurantName = 'Mi Restaurante Demo')
 export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivated }) => {
   const [view, setView] = useState<GateView>('WELCOME');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const resetError = () => {
+    setError(null);
+    setSuccessMessage(null);
+  };
 
   /* ── Demo fields ──────────── */
   const [demoEmail, setDemoEmail] = useState('');
@@ -115,8 +122,6 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   /* ─────────────────────────────────────────────────────────── */
   /*  HANDLERS                                                   */
   /* ─────────────────────────────────────────────────────────── */
-
-  const resetError = () => { setError(null); };
 
   /* Demo submit */
   const handleDemoSubmit = (e: React.FormEvent) => {
@@ -312,6 +317,33 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       console.error(err);
       setIsProcessing(false);
       setError('Error al conectar con el servidor. Intenta nuevamente.');
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    resetError();
+    setIsProcessing(true);
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail.trim() })
+      });
+
+      const data = await res.json();
+      setIsProcessing(false);
+
+      if (!res.ok) {
+        setError(data.error || 'Error al solicitar el restablecimiento.');
+        return;
+      }
+
+      setSuccessMessage(data.message || 'Instrucciones enviadas a tu correo.');
+    } catch (err) {
+      setIsProcessing(false);
+      setError('Error de conexión con el backend.');
     }
   };
 
@@ -654,6 +686,15 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
               {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          <div className="flex justify-end mt-1">
+            <button
+              type="button"
+              onClick={() => { resetError(); setSuccessMessage(null); setView('FORGOT_PASSWORD'); }}
+              className="text-xs text-[#a9b994] hover:underline font-semibold"
+            >
+              ¿Olvidaste tu contraseña?
+            </button>
+          </div>
         </div>
 
         <button
@@ -670,4 +711,54 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       </p>
     </CardWrapper>
   );
+
+  if (view === 'FORGOT_PASSWORD') {
+    return (
+      <CardWrapper>
+        <BackBtn onClick={() => setView('LOGIN_FORM')} disabled={isProcessing} />
+        <div className="text-center mb-8">
+          <h3 className="text-2xl font-black text-white mb-2">Recuperar Contraseña</h3>
+          <p className="text-sm text-stone-400 leading-relaxed">
+            Ingresa tu correo electrónico y te enviaremos las instrucciones para restablecer tu acceso.
+          </p>
+        </div>
+
+        {error && <ErrorBox msg={error || ''} />}
+        {successMessage && (
+          <div className="p-4 bg-[#a9b994]/15 border border-[#a9b994]/40 rounded-xl text-center mb-6 animate-in fade-in">
+            <CheckCircle2 className="w-6 h-6 text-[#a9b994] mx-auto mb-2" />
+            <p className="text-sm font-semibold text-[#a9b994]">{successMessage}</p>
+          </div>
+        )}
+
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <div>
+            <label className={LABEL_CLASS}>Correo Electrónico</label>
+            <div className="relative">
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500 pointer-events-none" />
+              <input
+                type="email"
+                required
+                placeholder="tucorreo@restaurante.cr"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
+                disabled={isProcessing || !!successMessage}
+                className={`${FIELD_CLASS} pl-10`}
+              />
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={isProcessing || !!successMessage}
+            className="w-full py-4 bg-[#a9b994] text-stone-900 rounded-xl font-bold text-sm hover:bg-[#bccaad] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 mt-2 shadow-lg shadow-[#a9b994]/15"
+          >
+            {isProcessing ? <span className="animate-pulse">Enviando...</span> : <span>Enviar Instrucciones</span>}
+          </button>
+        </form>
+      </CardWrapper>
+    );
+  }
+
+  return null;
 };
