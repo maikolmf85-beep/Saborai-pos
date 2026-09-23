@@ -138,8 +138,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 
       // Usar modelos estables y ultrarrápidos para reducir latencia
       const MODELS_TO_TRY = [
-        'claude-3-5-haiku-20241022',
-        'claude-3-5-sonnet-20241022'
+        'claude-haiku-4.5',
+        'claude-3-5-haiku-latest',
+        'claude-3-5-sonnet-latest',
+        'claude-3-5-sonnet-20240620'
       ];
 
       const systemInstruction = `Eres Nysa, asistente de Saborai POS. Eres servicial, profesional y amigable.
@@ -209,7 +211,7 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
           lastError = modelError;
           const msg = modelError instanceof Error ? modelError.message : String(modelError);
           // Reintenta con el siguiente modelo ante cualquier error de servidor (4xx, 5xx)
-          if (/\[4\d\d\s*\]|\[5\d\d\s*\]|overloaded|not found|no longer available|unavailable|quota/i.test(msg)) {
+          if (/\[4\d\d\s*\]|\[5\d\d\s*\]|404|overloaded|not found|not_found|no longer available|unavailable|quota/i.test(msg)) {
             console.warn(`Modelo ${modelName} falló (${msg.substring(0, 80)}), intentando siguiente...`);
             continue;
           }
