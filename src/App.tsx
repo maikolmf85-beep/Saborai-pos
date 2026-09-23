@@ -21,6 +21,7 @@ import { NysaOnboarding } from './components/NysaOnboarding';
 import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
 import { MenuEditor } from './components/MenuEditor';
 import { WelcomeGate, SaboraiSubscription } from './components/WelcomeGate';
+import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
@@ -29,6 +30,10 @@ import { NotificationToastContainer, PosNotification } from './components/Notifi
 import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
 
 export function App() {
+  const [resetToken, setResetToken] = useState<string | null>(() => 
+    new URLSearchParams(window.location.search).get('resetToken')
+  );
+
   // Authentication & Session state
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
@@ -547,6 +552,18 @@ export function App() {
           Renovar Suscripción
         </button>
       </div>
+    );
+  }
+
+  if (resetToken) {
+    return (
+      <ResetPasswordScreen 
+        token={resetToken} 
+        onSuccess={() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setResetToken(null);
+        }} 
+      />
     );
   }
 
