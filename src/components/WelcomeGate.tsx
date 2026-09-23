@@ -338,7 +338,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       setIsProcessing(false);
 
       if (!res.ok) {
-        setError(data.error || 'Error al solicitar el restablecimiento.');
+        setError(data.details ? `${data.error} Detalle: ${data.details}` : (data.error || 'Error al solicitar el restablecimiento.'));
         return;
       }
 

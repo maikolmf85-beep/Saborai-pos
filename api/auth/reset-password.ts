@@ -75,7 +75,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const resend = new Resend(resendApiKey);
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'soporte@saborai.com';
+    // Use the onboarding domain by default to avoid verification errors in testing
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
     const emailResponse = await resend.emails.send({
       from: fromEmail,
@@ -99,16 +100,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (emailResponse.error) {
       console.error('Error de Resend:', emailResponse.error);
-      // In development, provide detailed error and fallback simulation
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`Simulated reset link for ${email}: ${resetLink}`);
-        return res.status(200).json({
-          success: true,
-          message: `Envío simulado del correo (modo desarrollo). Detalle: ${emailResponse.error.message}`
-        });
-      }
-      // In production, hide details
-      return res.status(500).json({ error: 'Error al enviar el correo electrónico.' });
+      
+      // Return the detailed error to the client for debugging
+      return res.status(500).json({ 
+        error: 'Error al enviar el correo electrónico.',
+        details: emailResponse.error.message
+      });
     }
 
     return res.status(200).json({ 
