@@ -256,7 +256,7 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
               </span>
             </h3>
             <p className="text-[11px] text-[#a9b994]">
-              {apiReady ? 'Siempre a tu lado' : 'Configura VITE_GEMINI_API_KEY en Vercel'}
+              {apiReady ? 'Siempre a tu lado' : 'Configura VITE_ANTHROPIC_API_KEY en Vercel'}
             </p>
           </div>
         </div>
