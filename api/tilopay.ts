@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'tokenize') {
       const cardData = payload as TilopayCardData;
       
-      const response = await fetch('https://api.tilopay.com/api/v1/tokenize', {
+      const response = await fetch('https://api-baas-sandbox.tilopay.com/api/v1/tokenize', {
         method: 'POST',
         headers: {
           'apikey': TILOPAY_API_KEY,
@@ -70,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ success: false, error: 'Token de pago inválido.' });
       }
 
-      const response = await fetch('https://api.tilopay.com/api/v1/subscribe', {
+      const response = await fetch('https://api-baas-sandbox.tilopay.com/api/v1/subscribe', {
         method: 'POST',
         headers: {
           'apikey': TILOPAY_API_KEY,
