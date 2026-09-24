@@ -6,7 +6,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "moduleResolution": "node",
+    "moduleResolution": "Node16",
     "outDir": ".vercel/output/functions"
   },
   "include": ["api/**/*.ts"]
