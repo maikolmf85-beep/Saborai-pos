@@ -624,6 +624,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                   </button>
                 </div>
               </form>
+            ) : (
+              <form onSubmit={handleSimulateTilopayCheckout} className="space-y-4">
                 {checkoutError && (
                   <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-medium mb-4">
                     ⚠️ {checkoutError}
