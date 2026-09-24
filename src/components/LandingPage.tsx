@@ -120,12 +120,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             if (token) {
               await tilopayService.createSubscription(plan, token, email);
             }
-            // Clear URL
             window.history.replaceState({}, document.title, window.location.pathname);
             setCheckoutStatus('SUCCESS');
             setShowSuccessOnboarding(true);
             setTimeout(() => {
               onStartDemo(plan);
+              onEnterPOS();
             }, 2500);
           } catch (err: any) {
             setCheckoutStatus('ERROR');
