@@ -54,17 +54,34 @@ class HaciendaService {
 
     if (onStatusChange) onStatusChange('PROCESANDO');
 
-    // Simulate async DGT delay (2 to 5 seconds)
-    const delay = Math.floor(Math.random() * 3000) + 2000;
-    
-    setTimeout(() => {
-      // 95% chance of acceptance, 5% rejection to simulate real scenarios
-      const isAccepted = Math.random() > 0.05;
-      const finalStatus = isAccepted ? 'ACEPTADO' : 'RECHAZADO';
-      
-      this.updateInvoiceStatus(invoice.clave50Digitos, finalStatus);
-      if (onStatusChange) onStatusChange(finalStatus);
-    }, delay);
+    // Call backend API
+    fetch('/api/hacienda', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        xmlBase64: typeof window !== 'undefined' ? btoa(unescape(encodeURIComponent(invoice.xmlContent || ''))) : '',
+        clave: invoice.clave50Digitos,
+        fecha: invoice.fechaEmision,
+        emisor: invoice.emisor,
+        receptor: invoice.receptor
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        this.updateInvoiceStatus(invoice.clave50Digitos, 'ACEPTADO'); // In real life, wait for webhook
+        if (onStatusChange) onStatusChange('ACEPTADO');
+      } else {
+        this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO');
+        if (onStatusChange) onStatusChange('RECHAZADO');
+        console.error('Hacienda API Error:', data);
+      }
+    })
+    .catch(err => {
+      console.error('Hacienda Network Error:', err);
+      this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO');
+      if (onStatusChange) onStatusChange('RECHAZADO');
+    });
   }
 
   public resendInvoice(clave: string, onStatusChange?: (status: string) => void) {
