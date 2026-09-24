@@ -41,17 +41,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { action, payload } = req.body;
 
   try {
+    // 1. Obtener Token de Acceso (Bearer)
+    const loginRes = await fetch('https://app.tilopay.com/api/v1/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiuser: TILOPAY_API_USER,
+        password: TILOPAY_API_PASSWORD
+      })
+    });
+    
+    if (!loginRes.ok) {
+      throw new Error(`Error de autenticación con TiloPay (Código ${loginRes.status}). Revisa tus credenciales.`);
+    }
+    
+    const loginData = await loginRes.json();
+    const bearerToken = loginData.access_token || loginData.token;
+
+    if (!bearerToken) {
+      throw new Error('TiloPay no devolvió un token de acceso válido.');
+    }
+
     if (action === 'tokenize') {
       const cardData = payload as TilopayCardData;
       
       const response = await fetch('https://app.tilopay.com/api/v1/processTokenize', {
         method: 'POST',
         headers: {
-          'apikey': TILOPAY_API_KEY,
-          'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
+          'Authorization': `Bearer ${bearerToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(cardData)
+        body: JSON.stringify({
+          key: TILOPAY_API_KEY,
+          ...cardData
+        })
       });
       
       const contentType = response.headers.get('content-type') || '';
@@ -72,7 +95,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (action === 'subscribe') {
       const { planId, token, email } = payload;
 
-      // Validación simple (dependiendo de TiloPay los tokens varían)
       if (!token) {
         return res.status(400).json({ success: false, error: 'Token de pago inválido.' });
       }
@@ -80,11 +102,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const response = await fetch('https://app.tilopay.com/api/v1/processPayment', {
         method: 'POST',
         headers: {
-          'apikey': TILOPAY_API_KEY,
-          'Authorization': `Basic ${Buffer.from(TILOPAY_API_USER + ':' + TILOPAY_API_PASSWORD).toString('base64')}`,
+          'Authorization': `Bearer ${bearerToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ planId, token, email })
+        body: JSON.stringify({
+          key: TILOPAY_API_KEY,
+          planId, 
+          token, 
+          email 
+        })
       });
       
       const contentType = response.headers.get('content-type') || '';
