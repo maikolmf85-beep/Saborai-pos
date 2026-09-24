@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
 import {
   Sparkles, CreditCard, ShieldCheck, CheckCircle2,
@@ -108,16 +108,110 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   const [trialPhone, setTrialPhone] = useState('');
   const [trialPassword, setTrialPassword] = useState('');
 
-  /* ── Trial Step 2 (card) ──── */
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpMonth, setCardExpMonth] = useState('');
-  const [cardExpYear, setCardExpYear] = useState('');
-  const [cardCvv, setCardCvv] = useState('');
-  const [cardName, setCardName] = useState('');
+  /* ── Trial Step 2 (payment logic) ──── */
+  // We no longer collect card numbers here!
 
   /* ── Login fields ─────────── */
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  /* ── TiloPay Return Interceptor ──── */
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('tilopay_success') === 'true') {
+      const email = searchParams.get('email');
+      const name = searchParams.get('name');
+      const phone = searchParams.get('phone');
+      const pwd = searchParams.get('pwd');
+      const plan = searchParams.get('planId') || 'pro';
+      const token = searchParams.get('token') || searchParams.get('id');
+
+      if (email && pwd) {
+        setIsProcessing(true);
+        setView('WELCOME'); // Prevent showing forms while loading
+        
+        const registerUser = async () => {
+          try {
+            if (token) {
+              await tilopayService.createSubscription(plan, token, email);
+            }
+
+            const regRes = await fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email,
+                password: pwd,
+                name: name || 'Admin',
+                phone: phone || '',
+                restaurantName: name || 'Restaurante',
+                plan
+              })
+            });
+            
+            const regData = await regRes.json();
+            
+            if (!regRes.ok) {
+              setError(regData.error || 'Error al crear la cuenta en el backend.');
+              setIsProcessing(false);
+              return;
+            }
+            
+            localStorage.setItem('saborai_token', regData.token);
+            localStorage.removeItem('saborai_user');
+            localStorage.removeItem('saborai_tenant');
+            
+            const user: UserProfile = {
+              id: regData.user.id,
+              name: regData.user.name,
+              email: regData.user.email,
+              phone: regData.user.phone,
+              restaurantName: regData.user.restaurant_name,
+              role: regData.user.role,
+              active: regData.user.active
+            };
+            
+            const tenantObj: TenantInfo = {
+              id: regData.tenant.id,
+              name: regData.tenant.name,
+              cedulaJuridica: regData.tenant.cedula_juridica || '3-101-998877',
+              email: regData.tenant.email,
+              phone: regData.tenant.phone,
+              location: regData.tenant.location || 'Costa Rica',
+              plan: regData.tenant.plan,
+              status: regData.tenant.status,
+              currency: regData.tenant.currency,
+              monthlyFee: regData.tenant.monthly_fee || 45000,
+              onboardingCompleted: regData.tenant.onboarding_completed ?? false
+            };
+
+            notionService.recordUserRegistration(user, tenantObj).catch(() => {});
+            
+            const sub: SaboraiSubscription = {
+              mode: 'TRIAL',
+              email: regData.subscription.email,
+              restaurantName: user.restaurantName,
+              plan: regData.subscription.plan,
+              trialEndsAt: regData.subscription.trial_ends_at,
+              activatedAt: regData.subscription.activated_at,
+            };
+            
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setView('TRIAL_SUCCESS');
+            setTimeout(() => onSubscriptionActivated(sub, user, tenantObj), 2200);
+
+          } catch (err) {
+            console.error(err);
+            setError('Error finalizando la suscripción.');
+            setIsProcessing(false);
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        };
+
+        registerUser();
+      }
+    }
+  }, []);
 
   /* ─────────────────────────────────────────────────────────── */
   /*  HANDLERS                                                   */
@@ -154,95 +248,22 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
     setView('TRIAL_STEP2');
   };
 
-  /* Trial Step 2 – card payment */
-  const handleTrialPayment = async (e: React.FormEvent) => {
+  /* Trial Step 2 – Redirect to TiloPay */
+  const handleTrialContinue = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsProcessing(true);
     resetError();
     try {
-      const token = await tilopayService.tokenizeCard({
-        cardNumber,
-        expMonth: cardExpMonth,
-        expYear: cardExpYear,
-        cvv: cardCvv,
-        cardholderName: cardName,
+      const url = await tilopayService.getPaymentUrl({
+        email: trialEmail,
+        firstName: restaurantName || 'Admin',
+        lastName: 'Saborai',
+        planId: 'pro',
+        redirect: window.location.origin + `?tilopay_success=true&planId=pro&email=${encodeURIComponent(trialEmail)}&name=${encodeURIComponent(restaurantName)}&phone=${encodeURIComponent(trialPhone)}&pwd=${encodeURIComponent(trialPassword)}`
       });
-      const response = await tilopayService.createSubscription('pro', token, trialEmail);
-      if (response.success) {
-        /* Build user & tenant */
-        // Register with backend
-        try {
-          const regRes = await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: trialEmail.trim(),
-              password: trialPassword,
-              name: restaurantName.trim(),
-              phone: trialPhone.trim(),
-              restaurantName: restaurantName.trim(),
-              plan: 'pro'
-            })
-          });
-          
-          const regData = await regRes.json();
-          
-          if (!regRes.ok) {
-            setError(regData.error || 'Error al crear la cuenta en el backend.');
-            setIsProcessing(false);
-            return;
-          }
-          
-          // Store token and clear legacy localStorage
-          localStorage.setItem('saborai_token', regData.token);
-          localStorage.removeItem('saborai_user');
-          localStorage.removeItem('saborai_tenant');
-          
-          const user: UserProfile = {
-            id: regData.user.id,
-            name: regData.user.name,
-            email: regData.user.email,
-            phone: regData.user.phone,
-            restaurantName: regData.user.restaurant_name,
-            role: regData.user.role,
-            active: regData.user.active
-          };
-          
-          const tenant: TenantInfo = {
-            id: regData.tenant.id,
-            name: regData.tenant.name,
-            cedulaJuridica: regData.tenant.cedula_juridica || '3-101-998877',
-            email: regData.tenant.email,
-            phone: regData.tenant.phone,
-            location: regData.tenant.location || 'Costa Rica',
-            plan: regData.tenant.plan,
-            status: regData.tenant.status,
-            currency: regData.tenant.currency,
-            monthlyFee: regData.tenant.monthly_fee || 45000,
-            onboardingCompleted: regData.tenant.onboarding_completed ?? false
-          };
 
-          notionService.recordUserRegistration(user, tenant).catch(() => {});
-          const sub: SaboraiSubscription = {
-            mode: 'TRIAL',
-            email: regData.subscription.email,
-            restaurantName: user.restaurantName,
-            plan: regData.subscription.plan,
-            trialEndsAt: regData.subscription.trial_ends_at,
-            activatedAt: regData.subscription.activated_at,
-          };
-          
-          setView('TRIAL_SUCCESS');
-          setTimeout(() => onSubscriptionActivated(sub, user, tenant), 2200);
-        } catch (backendErr) {
-          console.error(backendErr);
-          setError('Error de conexión con el backend.');
-          setIsProcessing(false);
-        }
-      } else {
-        setError(response.error || 'Error al procesar el pago. Intenta nuevamente.');
-        setIsProcessing(false);
-      }
+      // Redirigir a TiloPay
+      window.location.href = url;
     } catch (err: any) {
       setError(err.message || 'Error de conexión con el servicio de pagos.');
       setIsProcessing(false);
@@ -564,28 +585,13 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
         {error && <ErrorBox msg={error} />}
 
-        <form onSubmit={handleTrialPayment} className="space-y-4">
-          <div>
-            <label className={`${LABEL_CLASS} flex items-center gap-1.5`}><CreditCard className="w-3.5 h-3.5" /> Número de Tarjeta</label>
-            <input type="text" required maxLength={19} placeholder="4000 1234 5678 9010" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={LABEL_CLASS}>Expira (MM / YY)</label>
-              <div className="flex items-center gap-2">
-                <input type="text" required maxLength={2} placeholder="MM" value={cardExpMonth} onChange={(e) => setCardExpMonth(e.target.value)} disabled={isProcessing} className={`${FIELD_CLASS} text-center`} />
-                <span className="text-stone-500">/</span>
-                <input type="text" required maxLength={2} placeholder="YY" value={cardExpYear} onChange={(e) => setCardExpYear(e.target.value)} disabled={isProcessing} className={`${FIELD_CLASS} text-center`} />
-              </div>
-            </div>
-            <div>
-              <label className={LABEL_CLASS}>CVV</label>
-              <input type="password" required maxLength={4} placeholder="•••" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
-            </div>
-          </div>
-          <div>
-            <label className={LABEL_CLASS}>Nombre en Tarjeta</label>
-            <input type="text" required placeholder="Como aparece en la tarjeta" value={cardName} onChange={(e) => setCardName(e.target.value)} disabled={isProcessing} className={FIELD_CLASS} />
+        <form onSubmit={handleTrialContinue} className="space-y-4">
+          <div className="p-5 rounded-2xl bg-[#a9b994]/10 border border-[#a9b994]/30 text-center mb-6">
+            <ShieldCheck className="w-10 h-10 text-[#a9b994] mx-auto mb-3" />
+            <h4 className="text-white font-black text-lg mb-2">Pago 100% Seguro</h4>
+            <p className="text-xs text-stone-400 leading-relaxed">
+              Al continuar, serás redirigido a la bóveda segura de <strong>TiloPay Costa Rica</strong> para digitar los datos de tu tarjeta con encriptación bancaria. Saborai POS nunca almacena tu tarjeta.
+            </p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#a9b994]/8 border border-[#a9b994]/25 flex items-center justify-between">
@@ -598,11 +604,11 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
           <div className="flex items-start gap-2.5 text-xs text-stone-500">
             <ShieldCheck className="w-4 h-4 text-[#a9b994] shrink-0 mt-0.5" />
-            <span>Datos procesados de forma segura por Tilopay. Tu tarjeta es tokenizada y no se realiza ningún cobro durante la prueba.</span>
+            <span>Serás redirigido a TiloPay. No se realizará ningún cobro durante la prueba de 14 días.</span>
           </div>
 
           <button type="submit" disabled={isProcessing} className="w-full py-4 bg-[#a9b994] text-stone-900 rounded-xl font-bold text-sm hover:bg-[#bccaad] active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60 shadow-lg shadow-[#a9b994]/15">
-            {isProcessing ? <span className="animate-pulse">Procesando con Tilopay...</span> : <><CreditCard className="w-4 h-4" /><span>Activar Prueba Gratuita de 14 Días</span></>}
+            {isProcessing ? <span className="animate-pulse">Redirigiendo a TiloPay...</span> : <><CreditCard className="w-4 h-4" /><span>Ir al Pago Seguro</span></>}
           </button>
         </form>
       </CardWrapper>

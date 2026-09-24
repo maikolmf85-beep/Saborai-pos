@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
 import { 
   Sparkles, 
@@ -86,13 +86,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       buttonText: 'Contratar Multi-Sucursal'
     }
   ];
-  
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpMonth, setCardExpMonth] = useState('');
-  const [cardExpYear, setCardExpYear] = useState('');
-  const [cardCvv, setCardCvv] = useState('');
-  const [cardName, setCardName] = useState('');
-
   const [checkoutStatus, setCheckoutStatus] = useState<'IDLE' | 'TOKENIZING' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   
@@ -109,6 +102,43 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     setCheckoutStep('PAYMENT');
   };
 
+  /* ── TiloPay Return Interceptor ──── */
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get('tilopay_success') === 'true') {
+      const email = searchParams.get('email');
+      const plan = searchParams.get('planId') as SubscriptionPlan || 'pro';
+      const token = searchParams.get('token') || searchParams.get('id');
+
+      if (email) {
+        setSelectedPlanModal(plan);
+        setCheckoutStep('PAYMENT');
+        setCheckoutStatus('PROCESSING');
+        
+        const registerSub = async () => {
+          try {
+            if (token) {
+              await tilopayService.createSubscription(plan, token, email);
+            }
+            // Clear URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setCheckoutStatus('SUCCESS');
+            setShowSuccessOnboarding(true);
+            setTimeout(() => {
+              onStartDemo(plan);
+            }, 2500);
+          } catch (err: any) {
+            setCheckoutStatus('ERROR');
+            setCheckoutError(err.message || 'Error finalizando la suscripción con TiloPay.');
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        };
+
+        registerSub();
+      }
+    }
+  }, []);
+
   const handleSimulateTilopayCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPlanModal) return;
@@ -117,31 +147,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     setCheckoutError(null);
 
     try {
-      const token = await tilopayService.tokenizeCard({
-        cardNumber,
-        expMonth: cardExpMonth,
-        expYear: cardExpYear,
-        cvv: cardCvv,
-        cardholderName: cardName
+      // Usamos el nombre del restaurante como firstName provisional para TiloPay
+      const url = await tilopayService.getPaymentUrl({
+        email: ownerEmail,
+        firstName: restaurantName || 'Saborai',
+        lastName: 'Cliente',
+        planId: selectedPlanModal,
+        redirect: window.location.origin + `?tilopay_success=true&planId=${selectedPlanModal}&email=${encodeURIComponent(ownerEmail)}`
       });
 
-      setCheckoutStatus('PROCESSING');
-      
-      const response = await tilopayService.createSubscription(selectedPlanModal, token, ownerEmail);
+      // Redirigir al cliente a la bóveda segura de TiloPay
+      window.location.href = url;
 
-      if (response.success) {
-        setCheckoutStatus('SUCCESS');
-        setTimeout(() => {
-          onStartDemo(selectedPlanModal as SubscriptionPlan);
-          setShowSuccessOnboarding(true);
-        }, 1500);
-      } else {
-        setCheckoutStatus('ERROR');
-        setCheckoutError(response.error || 'Error al procesar la suscripción.');
-      }
     } catch (err: any) {
       setCheckoutStatus('ERROR');
-      setCheckoutError(err.message || 'Error durante la tokenización de la tarjeta.');
+      setCheckoutError(err.message || 'Error al conectar con TiloPay.');
     }
   };
 
@@ -604,85 +624,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                   </button>
                 </div>
               </form>
-            ) : (
-              <form onSubmit={handleSimulateTilopayCheckout} className="space-y-4">
-                
                 {checkoutError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-medium">
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-medium mb-4">
                     ⚠️ {checkoutError}
                   </div>
                 )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 pt-2">
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5 flex items-center gap-2">
-                      <CreditCard className="w-4 h-4" /> Número de Tarjeta (Tilopay)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      maxLength={19}
-                      disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                      placeholder="4000 1234 5678 9010"
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Expira (MM/YY)</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        required
-                        maxLength={2}
-                        placeholder="MM"
-                        disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                        value={cardExpMonth}
-                        onChange={(e) => setCardExpMonth(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] text-center bg-[#fcfeff]"
-                      />
-                      <span className="text-[#6b686d] font-bold">/</span>
-                      <input
-                        type="text"
-                        required
-                        maxLength={2}
-                        placeholder="YY"
-                        disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                        value={cardExpYear}
-                        onChange={(e) => setCardExpYear(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] text-center bg-[#fcfeff]"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">CVC/CVV</label>
-                    <input
-                      type="password"
-                      required
-                      maxLength={4}
-                      placeholder="***"
-                      disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                      value={cardCvv}
-                      onChange={(e) => setCardCvv(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
-                    />
-                  </div>
-
-                  <div className="col-span-2">
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1.5">Nombre en Tarjeta</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Como aparece en la tarjeta"
-                      disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl border border-[#6b686d]/30 focus:border-[#a9b994] focus:outline-none text-sm text-[#3b3733] bg-[#fcfeff]"
-                    />
-                  </div>
+                
+                <div className="p-5 rounded-2xl bg-[#a9b994]/10 border border-[#a9b994]/30 text-center">
+                  <ShieldCheck className="w-10 h-10 text-[#a9b994] mx-auto mb-3" />
+                  <h4 className="text-[#3b3733] font-black text-lg mb-2">Pago 100% Seguro</h4>
+                  <p className="text-xs text-[#6b686d] leading-relaxed mb-4">
+                    Al continuar, serás redirigido a la bóveda segura de <strong>TiloPay Costa Rica</strong> para digitar los datos de tu tarjeta con encriptación bancaria. Saborai POS nunca almacena tu tarjeta.
+                  </p>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-[#a9b994]/15 border border-[#a9b994]/40 text-xs text-[#3b3733] flex items-center justify-between mt-4">
@@ -703,7 +656,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 <div className="p-3 rounded-xl border border-dashed border-[#6b686d]/40 text-xs text-[#6b686d] flex items-center gap-2">
                   <ShieldCheck className="w-6 h-6 text-[#a9b994] shrink-0" />
                   <span>
-                    Ambiente Seguro Tilopay 2.0. 
+                    Serás redirigido a TiloPay. 
                     {selectedPlanModal === 'pro' && (
                       <strong className="text-[#3b3733] block mt-1">
                         Se requiere tarjeta para activar la prueba. No se realizarán cargos hoy.
@@ -726,13 +679,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                     disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'}
                     className="flex-1 py-4 bg-[#3b3733] text-[#fcfeff] rounded-xl font-bold text-sm hover:bg-[#2a2623] transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
                   >
-                    {checkoutStatus === 'TOKENIZING' && <span className="animate-pulse">Tokenizando...</span>}
-                    {checkoutStatus === 'PROCESSING' && <span className="animate-pulse">Creando...</span>}
+                    {checkoutStatus === 'TOKENIZING' && <span className="animate-pulse">Redirigiendo a TiloPay...</span>}
                     {checkoutStatus === 'SUCCESS' && <span>¡Aprobada! ✓</span>}
                     {(checkoutStatus === 'IDLE' || checkoutStatus === 'ERROR') && (
                       <>
                         <CreditCard className="w-4 h-4 text-[#a9b994]" />
-                        <span>Suscribirme</span>
+                        <span>Ir al Pago Seguro</span>
                       </>
                     )}
                   </button>

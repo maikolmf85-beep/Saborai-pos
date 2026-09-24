@@ -1,9 +1,9 @@
-export interface TilopayCardData {
-  cardNumber: string;
-  expMonth: string;
-  expYear: string;
-  cvv: string;
-  cardholderName: string;
+export interface TilopayPaymentRequest {
+  email: string;
+  firstName: string;
+  lastName: string;
+  planId: string;
+  redirect: string;
 }
 
 export interface TilopaySubscriptionResponse {
@@ -15,11 +15,9 @@ export interface TilopaySubscriptionResponse {
 
 class TilopayService {
   /**
-   * Tokeniza una tarjeta de crédito a través del backend seguro
-   * @param cardData 
-   * @returns un string con el token (o lanza un error si la tarjeta es declinada)
+   * Genera el link de pago seguro de TiloPay
    */
-  public async tokenizeCard(cardData: TilopayCardData): Promise<string> {
+  public async getPaymentUrl(request: TilopayPaymentRequest): Promise<string> {
     try {
       const response = await fetch('/api/tilopay', {
         method: 'POST',
@@ -28,17 +26,17 @@ class TilopayService {
         },
         body: JSON.stringify({
           action: 'tokenize',
-          payload: cardData
+          payload: request
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Error al tokenizar la tarjeta.');
+        throw new Error(data.error || 'Error al conectar con la pasarela de pagos.');
       }
 
-      return data.token;
+      return data.url;
     } catch (error: any) {
       throw new Error(error.message || 'Error de conexión con el servicio de pagos.');
     }

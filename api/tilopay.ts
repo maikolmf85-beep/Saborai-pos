@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (action === 'tokenize') {
-      const cardData = payload as TilopayCardData;
+      const { email, firstName, lastName, redirect } = payload;
       
       const response = await fetch('https://app.tilopay.com/api/v1/processTokenize', {
         method: 'POST',
@@ -73,7 +73,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         body: JSON.stringify({
           key: TILOPAY_API_KEY,
-          ...cardData
+          email,
+          firstName,
+          lastName,
+          language: 'es',
+          redirect, // La URL a donde TiloPay enviará al usuario tras digitar la tarjeta
+          token_version: 'v2'
         })
       });
       
@@ -86,11 +91,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       const data = await response.json();
       
-      if (!response.ok) {
-        throw new Error(data.message || 'Tarjeta declinada o error de validación por el banco emisor.');
+      if (!response.ok || !data.url) {
+        throw new Error(data.message || 'Error al generar el link de pago seguro.');
       }
 
-      return res.status(200).json({ token: data.token || data.id });
+      // TiloPay nos devuelve una URL segura a donde debemos mandar al cliente
+      return res.status(200).json({ url: data.url });
 
     } else if (action === 'subscribe') {
       const { planId, token, email } = payload;
