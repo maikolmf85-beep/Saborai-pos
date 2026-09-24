@@ -44,7 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'tokenize') {
       const cardData = payload as TilopayCardData;
       
-      const response = await fetch('https://api-baas-sandbox.tilopay.com/api/v1/tokenize', {
+      const response = await fetch('https://app.tilopay.com/api/v1/processTokenize', {
         method: 'POST',
         headers: {
           'apikey': TILOPAY_API_KEY,
@@ -53,6 +53,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         body: JSON.stringify(cardData)
       });
+      
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+         const text = await response.text();
+         console.error('TiloPay Non-JSON Response:', text.substring(0, 200));
+         throw new Error(`La pasarela de pagos falló al responder (código ${response.status}). Intenta de nuevo.`);
+      }
       
       const data = await response.json();
       
@@ -70,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ success: false, error: 'Token de pago inválido.' });
       }
 
-      const response = await fetch('https://api-baas-sandbox.tilopay.com/api/v1/subscribe', {
+      const response = await fetch('https://app.tilopay.com/api/v1/processPayment', {
         method: 'POST',
         headers: {
           'apikey': TILOPAY_API_KEY,
@@ -80,6 +87,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify({ planId, token, email })
       });
       
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+         const text = await response.text();
+         console.error('TiloPay Non-JSON Response:', text.substring(0, 200));
+         throw new Error(`La pasarela de pagos falló al procesar la suscripción (código ${response.status}).`);
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
