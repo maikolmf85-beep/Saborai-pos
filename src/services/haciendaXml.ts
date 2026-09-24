@@ -33,29 +33,32 @@ export function generateHaciendaXmlV43(
     </LineaDetalle>`;
   }).join('');
 
+  const emisorTipoId = tenant.haciendaConfig?.tipoIdentificacion || '02';
+  const codigoActividad = tenant.haciendaConfig?.codigoActividad || '561001';
+
   return `<?xml version="1.0" encoding="utf-8"?>
 <FacturaElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/facturaElectronica" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
-  <CodigoActividad>561001</CodigoActividad>
+  <CodigoActividad>${codigoActividad}</CodigoActividad>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${currentDate}</FechaEmision>
   <Emisor>
     <Nombre>${escapeXml(tenant.name)}</Nombre>
     <Identificacion>
-      <Tipo>02</Tipo>
-      <Numero>${tenant.cedulaJuridica.replace(/-/g, '')}</Numero>
+      <Tipo>${emisorTipoId}</Tipo>
+      <Numero>${tenant.cedulaJuridica.replace(/[^0-9]/g, '')}</Numero>
     </Identificacion>
-    <NombreComercial>Saborai POS Restaurant</NombreComercial>
+    <NombreComercial>${escapeXml(tenant.name)}</NombreComercial>
     <Ubicacion>
       <Provincia>1</Provincia>
       <Canton>01</Canton>
       <Distrito>01</Distrito>
       <Barrio>01</Barrio>
-      <OtrasSenas>${escapeXml(tenant.location)}</OtrasSenas>
+      <OtrasSenas>${escapeXml(tenant.location || 'San José, Costa Rica')}</OtrasSenas>
     </Ubicacion>
     <Telefono>
       <CodigoPais>506</CodigoPais>
-      <NumTelefono>${tenant.phone.replace(/[^0-9]/g, '')}</NumTelefono>
+      <NumTelefono>${tenant.phone.replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8)}</NumTelefono>
     </Telefono>
     <CorreoElectronico>${tenant.email}</CorreoElectronico>
   </Emisor>
@@ -94,15 +97,6 @@ export function generateHaciendaXmlV43(
     </TotalOtrosCargos>
     <TotalComprobante>${invoice.totalComprobante.toFixed(5)}</TotalComprobante>
   </ResumenFactura>
-  <!-- Firma Digital XMLDSig PKCS#12 Ministerio de Hacienda CR -->
-  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#" Id="Signature-Saborai-CR">
-    <ds:SignedInfo>
-      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-      <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-      <ds:DigestValue>SABORAICR99a8b7c6d5e4f3a2b1==</ds:DigestValue>
-    </ds:SignedInfo>
-    <ds:SignatureValue>MIIEowIBAAKCAQEA0wSaboraiCostaRicaSignProof...</ds:SignatureValue>
-  </ds:Signature>
 </FacturaElectronica>`;
 }
 

@@ -20,6 +20,7 @@ import {
 import { PrinterSettings } from './PrinterSettings';
 import { InventoryRecipes } from './InventoryRecipes';
 import { SuperAdminBackoffice } from './SuperAdminBackoffice';
+import { HaciendaSettings } from './HaciendaSettings';
 import { TenantInfo, SubscriptionStatus, TaxRegime } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
@@ -37,7 +38,7 @@ interface SettingsModalProps {
   currentUser?: any;
 }
 
-type SettingsSection = 'regime' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
+type SettingsSection = 'regime' | 'hacienda' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -214,6 +215,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <Receipt className="w-4 h-4 text-[#588157]" />
             <span>Perfil & Régimen Tributario</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSection('hacienda')}
+            className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
+              activeSection === 'hacienda'
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-[#588157]" />
+            <span>Facturación Hacienda (ATV & .p12)</span>
           </button>
 
           <button
@@ -607,6 +620,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {/* Section: Facturación Hacienda ATV & Firma .p12 */}
+          {activeSection === 'hacienda' && (
+            <div className="animate-in fade-in duration-200">
+              <HaciendaSettings 
+                tenant={tenant}
+                onUpdateTenant={onUpdateTenant}
+              />
             </div>
           )}
 

@@ -55,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error(`Error de autenticación con TiloPay (Código ${loginRes.status}). Revisa tus credenciales.`);
     }
     
-    const loginData = await loginRes.json();
+    const loginData = (await loginRes.json()) as any;
     const bearerToken = loginData.access_token || loginData.token;
 
     if (!bearerToken) {
@@ -89,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
          throw new Error(`La pasarela de pagos falló al responder (código ${response.status}). Intenta de nuevo.`);
       }
       
-      const data = await response.json();
+      const data = (await response.json()) as any;
       
       if (!response.ok || !data.url) {
         throw new Error(data.message || 'Error al generar el link de pago seguro.');
@@ -126,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
          throw new Error(`La pasarela de pagos falló al procesar la suscripción (código ${response.status}).`);
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as any;
 
       if (!response.ok) {
         throw new Error(data.message || 'Error procesando la suscripción con Tilopay.');

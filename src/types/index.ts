@@ -2,6 +2,22 @@ export type SubscriptionPlan = 'express' | 'pro' | 'multibranch';
 export type SubscriptionStatus = 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | 'TRIAL';
 export type TaxRegime = 'TRADITIONAL' | 'SIMPLIFIED'; // Régimen Normal/General vs Régimen Simplificado (Hacienda CR)
 
+export interface HaciendaConfig {
+  environment: 'sandbox' | 'production';
+  atvUsername: string;
+  atvPassword?: string;
+  pinP12: string;
+  p12FileName?: string;
+  p12Base64?: string;
+  tipoIdentificacion?: '01' | '02' | '03' | '04';
+  codigoActividad?: string;
+  sucursal?: string;
+  terminal?: string;
+  certExpiresOn?: string;
+  isValidated?: boolean;
+  lastTestedAt?: string;
+}
+
 export interface TenantInfo {
   id: string;
   name: string;
@@ -18,6 +34,7 @@ export interface TenantInfo {
   includeService10ByDefault?: boolean;
   zones?: string[]; // Dynamic zones for the tenant
   onboardingCompleted?: boolean;
+  haciendaConfig?: HaciendaConfig;
 }
 
 export type UserRole = 'ADMIN' | 'SALONERO' | 'CAJERO' | 'SALONERO_CAJA' | 'WAITER';
