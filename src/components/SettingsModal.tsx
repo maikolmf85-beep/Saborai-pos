@@ -162,7 +162,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       phone,
       location,
       taxRegime: selectedRegime,
-      includeService10ByDefault: includeService10
+      includeService10ByDefault: includeService10,
+      haciendaConfig: tenant.haciendaConfig || haciendaService.getConfig() || undefined
     };
 
     onUpdateTenant(updated);

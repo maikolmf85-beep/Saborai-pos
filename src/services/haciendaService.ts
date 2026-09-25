@@ -32,12 +32,24 @@ class HaciendaService {
   }
 
   public getConfig(): HaciendaConfig | null {
+    if (!this.config) {
+      const savedConfig = localStorage.getItem('saborai_hacienda_config');
+      if (savedConfig) {
+        try {
+          this.config = JSON.parse(savedConfig);
+        } catch (e) {
+          console.error('Failed to load hacienda config', e);
+        }
+      }
+    }
     return this.config;
   }
 
   public saveConfig(config: HaciendaConfig) {
     this.config = config;
     localStorage.setItem('saborai_hacienda_config', JSON.stringify(config));
+    // Also notify any custom event listeners
+    window.dispatchEvent(new CustomEvent('saborai_hacienda_config_updated', { detail: config }));
   }
 
   private persist() {
@@ -62,7 +74,7 @@ class HaciendaService {
   }
 
   public async testConnection(configToTest?: HaciendaConfig): Promise<{ success: boolean; message: string; details?: any }> {
-    const config = configToTest || this.config;
+    const config = configToTest || this.getConfig();
     if (!config?.atvUsername || !config?.atvPassword) {
       return { success: false, message: 'Faltan credenciales ATV (usuario o contraseña).' };
     }
@@ -83,13 +95,14 @@ class HaciendaService {
 
       const data = await res.json().catch(() => null);
       if (res.ok && data?.success) {
-        // Actualizar estado de validación local
-        if (this.config) {
-          this.config.isValidated = true;
-          this.config.certExpiresOn = data.expiresOn || this.config.certExpiresOn;
-          this.config.lastTestedAt = new Date().toISOString();
-          this.saveConfig(this.config);
-        }
+        // Guardar configuración completa actualizada
+        const updatedConfig: HaciendaConfig = {
+          ...config,
+          isValidated: true,
+          certExpiresOn: data.expiresOn || config.certExpiresOn,
+          lastTestedAt: new Date().toISOString()
+        };
+        this.saveConfig(updatedConfig);
         return { success: true, message: data.message || 'Conexión exitosa con Hacienda ATV.', details: data };
       } else {
         return { 

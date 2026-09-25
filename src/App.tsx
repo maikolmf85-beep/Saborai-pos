@@ -59,16 +59,19 @@ export function App() {
   const [tenant, setTenant] = useState<TenantInfo>(() => {
     try {
       const saved = localStorage.getItem('saborai_tenant');
+      const savedHaciendaRaw = localStorage.getItem('saborai_hacienda_config');
+      const savedHaciendaConfig = savedHaciendaRaw ? JSON.parse(savedHaciendaRaw) : undefined;
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
           ...initialTenant,
           ...parsed,
           taxRegime: parsed.taxRegime || 'TRADITIONAL',
-          includeService10ByDefault: parsed.includeService10ByDefault ?? true
+          includeService10ByDefault: parsed.includeService10ByDefault ?? true,
+          haciendaConfig: parsed.haciendaConfig || savedHaciendaConfig
         };
       }
-      return initialTenant;
+      return { ...initialTenant, haciendaConfig: savedHaciendaConfig };
     } catch {
       return initialTenant;
     }
@@ -78,6 +81,9 @@ export function App() {
     setTenant(updated);
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updated));
+      if (updated.haciendaConfig) {
+        localStorage.setItem('saborai_hacienda_config', JSON.stringify(updated.haciendaConfig));
+      }
     } catch {}
   };
 
@@ -143,6 +149,11 @@ export function App() {
             role: data.user.role,
             active: data.user.active
           };
+          const savedHaciendaRaw = localStorage.getItem('saborai_hacienda_config');
+          const savedHaciendaConfig = savedHaciendaRaw ? JSON.parse(savedHaciendaRaw) : undefined;
+          const savedTenantRaw = localStorage.getItem('saborai_tenant');
+          const savedTenant = savedTenantRaw ? JSON.parse(savedTenantRaw) : null;
+
           const tenantObj: TenantInfo = {
             id: data.tenant.id,
             name: data.tenant.name,
@@ -154,7 +165,10 @@ export function App() {
             status: data.tenant.status,
             currency: data.tenant.currency,
             monthlyFee: data.tenant.monthly_fee || 45000,
-            onboardingCompleted: data.tenant.onboardingCompleted
+            onboardingCompleted: data.tenant.onboardingCompleted,
+            taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
+            includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
+            haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig
           };
           const sub: SaboraiSubscription = { 
             mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
