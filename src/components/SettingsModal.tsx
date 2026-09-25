@@ -24,6 +24,7 @@ import { HaciendaSettings } from './HaciendaSettings';
 import { TenantInfo, SubscriptionStatus, TaxRegime } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
+import { haciendaService } from '../services/haciendaService';
 
 interface SettingsModalProps {
   isOpen: boolean;
