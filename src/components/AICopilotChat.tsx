@@ -282,11 +282,11 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
                   ? 'bg-[#3b3733] text-white font-medium rounded-br-none shadow-sm'
                   : msg.isError
                   ? 'bg-red-50 text-red-700 rounded-bl-none border border-red-200'
-                  : 'bg-[#f4f7f0] text-[#3b3733] font-medium rounded-bl-none border border-[#a9b994]/40 shadow-sm'
+                  : 'bg-[#f4f7f0] text-stone-900 font-medium rounded-bl-none border border-[#a9b994]/40 shadow-sm'
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}
-              <div className="prose prose-sm max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1 prose-p:text-current prose-strong:text-current prose-ul:text-current prose-ol:text-current">
+              <div className="prose prose-sm max-w-none prose-p:leading-snug prose-li:my-0.5 prose-p:my-1 text-inherit [&_p]:text-inherit [&_a]:text-inherit [&_strong]:text-inherit [&_ul]:text-inherit [&_ol]:text-inherit [&_li]:text-inherit [&_h1]:text-inherit [&_h2]:text-inherit [&_h3]:text-inherit">
                 <ReactMarkdown>
                   {msg.text}
                 </ReactMarkdown>
