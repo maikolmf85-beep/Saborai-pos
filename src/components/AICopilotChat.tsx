@@ -279,10 +279,10 @@ Si el usuario te pide ABRIR EL TURNO, responde con:
             <div
               className={`max-w-[85%] p-3.5 rounded-2xl text-xs leading-relaxed ${
                 msg.sender === 'user'
-                  ? 'bg-black text-white font-medium rounded-br-none shadow-sm'
+                  ? 'bg-[#3b3733] text-white font-medium rounded-br-none shadow-sm'
                   : msg.isError
                   ? 'bg-red-50 text-red-700 rounded-bl-none border border-red-200'
-                  : 'bg-white text-black rounded-bl-none border border-gray-200 shadow-sm'
+                  : 'bg-[#f4f7f0] text-[#3b3733] font-medium rounded-bl-none border border-[#a9b994]/40 shadow-sm'
               }`}
             >
               {msg.isError && <AlertTriangle className="w-3.5 h-3.5 inline mr-1 mb-0.5" />}

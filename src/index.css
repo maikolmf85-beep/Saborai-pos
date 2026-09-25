@@ -6,6 +6,42 @@
   body {
     @apply bg-main text-primary font-sans;
   }
+
+  button {
+    @apply transition-all duration-200 active:scale-[0.98];
+  }
+  
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d6d3d1;
+    border-radius: 10px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a29e;
+  }
+}
+
+@layer utilities {
+  .pos-animate-enter {
+    animation: posSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes posSlideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* ======================================================== */

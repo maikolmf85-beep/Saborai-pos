@@ -67,7 +67,7 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
   let styleClasses = 'text-stone-400 hover:text-white hover:bg-stone-900/90';
 
   if (isActive) {
-    styleClasses = 'bg-[#a9b994] text-stone-950 font-black shadow-[0_0_18px_rgba(169,185,148,0.45)] ring-1 ring-white/30';
+    styleClasses = 'bg-[#a9b994] text-white font-black shadow-[0_0_18px_rgba(169,185,148,0.45)] ring-1 ring-white/30';
   } else if (variant === 'warning') {
     styleClasses = 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-300';
   } else if (variant === 'danger') {
@@ -96,7 +96,7 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-bold">{label}</span>
             {isActive && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#a9b994] text-stone-950 font-black uppercase">
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white text-[#a9b994] font-black uppercase shadow-sm">
                 Activo
               </span>
             )}
@@ -133,7 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <aside 
-      className="group/sidebar absolute top-0 left-0 w-16 sm:w-[68px] hover:w-[280px] transition-all duration-300 h-screen bg-stone-950/95 text-white flex flex-col justify-between items-start py-3 border-r border-stone-800/80 shadow-2xl z-50 overflow-hidden backdrop-blur-xl"
+      className="group/sidebar absolute top-0 left-0 w-16 sm:w-[68px] hover:w-[280px] transition-all duration-300 h-screen bg-stone-950/95 text-white flex flex-col justify-between items-start py-3 border-r border-stone-800/80 shadow-2xl z-50 overflow-y-auto overflow-x-hidden backdrop-blur-xl scrollbar-none"
       aria-label="Navegación vertical SaborAI POS"
       onMouseEnter={() => {}}
       onMouseLeave={() => {}}
