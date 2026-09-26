@@ -10,14 +10,10 @@ import {
   TrendingUp,
   Cpu,
   Bot,
-  Tablet,
-  Monitor,
-  Smartphone,
-  Star,
   Play,
   X,
   Menu,
-  Globe,
+  Star,
 } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { tilopayService } from '../services/tilopayService';
@@ -138,7 +134,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         'Soporte estándar vía WhatsApp',
       ],
       popular: false,
-      accent: '#6ee7b7',
+      accent: '#a9b994',
       buttonText: 'Elegir Plan Express',
     },
     {
@@ -150,15 +146,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       period: '/ mes',
       features: [
         'Dispositivos ilimitados (Móvil, Tablet, PC)',
-        'Saborai Copilot IA - Cross-selling y Asistente',
+        'Saborai Copilot IA - Asistente en mesa',
         'Control de Recetas y Escandallos automáticos',
         'Subcuentas y división de cuentas en mesa',
         'KDS Cocina y Bar con alertas de tiempo',
-        'Matriz de impresión en red IP y Spooler',
         'Sincronización Offline en Red Local (Mesh)',
       ],
       popular: true,
-      accent: '#a7f3d0',
+      accent: '#588157',
       buttonText: 'Probar 14 Días Gratis',
     },
     {
@@ -171,13 +166,118 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       features: [
         'Todo lo incluido en el Plan Pro',
         'Gestión centralizada de menú y precios',
-        'Consolidación financiera y stock entre locales',
-        'Multi-caja y conciliación bancaria Tilopay',
+        'Consolidación financiera y stock',
+        'Multi-caja y conciliación Tilopay',
         'Soporte prioritario 24/7 y Onboarding VIP',
       ],
       popular: false,
-      accent: '#c4b5fd',
+      accent: '#3b3733',
       buttonText: 'Contratar Multi-Sucursal',
+    },
+  ];
+
+  const features = [
+    {
+      emoji: '🧠',
+      label: 'IA Nativa',
+      title: 'Saborai Copilot',
+      badge: 'Solo en Saborai',
+      desc: 'La IA predecirá quiebres de inventario, sugerirá maridajes y auditará códigos CABYS sin salir del sistema.',
+      color: '#588157',
+      chat: [
+        { role: 'ai', msg: 'El lomo de res se agotará en 2 días.' },
+        { role: 'user', msg: 'Mesa 7 pide ribeye. ¿Vino?' },
+        { role: 'ai', msg: 'Malbec Reserva. Marida perfectamente.' },
+      ],
+    },
+    {
+      emoji: '🏛️',
+      label: 'Hacienda v4.3',
+      title: 'Facturación Electrónica',
+      badge: 'Certificado Hacienda',
+      desc: 'Emisión de XML firmado según Hacienda v4.3. Clave 50 dígitos, IVA diferenciado (13%, 4%, 2%, 1%, Exento).',
+      color: '#3b3733',
+      chat: [
+        { role: 'ai', msg: 'Factura FE-001 enviada a Hacienda.' },
+        { role: 'user', msg: 'Nota de crédito.' },
+        { role: 'ai', msg: 'Nota NC-001 generada.' },
+      ],
+    },
+    {
+      emoji: '👨‍🍳',
+      label: 'KDS Cocina',
+      title: 'Pantallas KDS',
+      badge: 'Multi-Estación',
+      desc: 'Comandas en tiempo real para cocina y bar con enrutamiento automático y alertas de preparación.',
+      color: '#a9b994',
+      chat: [
+        { role: 'ai', msg: 'Mesa 3: 2x Ceviche. En espera 4 min.' },
+        { role: 'user', msg: 'Ribeye Mesa 7 demorado.' },
+        { role: 'ai', msg: 'Alerta enviada. 18 min (umbral: 15).' },
+      ],
+    },
+    {
+      emoji: '⚗️',
+      label: 'Escandallos',
+      title: 'Recetas Vivas',
+      badge: 'Control Total',
+      desc: 'Cada venta descuenta gramos exactos e insumos para controlar mermas y rentabilidad real por plato.',
+      color: '#588157',
+      chat: [
+        { role: 'ai', msg: 'Venta Ribeye: -315g res. Stock: 2.4 kg.' },
+        { role: 'user', msg: '¿Rentabilidad actual?' },
+        { role: 'ai', msg: 'Ceviche: margen 18%. Costos subieron.' },
+      ],
+    },
+    {
+      emoji: '📡',
+      label: 'Modo Offline',
+      title: 'Red Local Mesh',
+      badge: 'Sin Interrupciones',
+      desc: 'Si el internet falla, la red local sigue funcionando. Todo se sincroniza automáticamente al reconectar.',
+      color: '#3b3733',
+      chat: [
+        { role: 'ai', msg: 'Modo Offline activo. Red local OK.' },
+        { role: 'user', msg: 'Mesa 2 cuenta.' },
+        { role: 'ai', msg: 'Cola Hacienda: 3 facturas pendientes.' },
+      ],
+    },
+    {
+      emoji: '🖨️',
+      label: 'Impresión',
+      title: 'Enrutador Inteligente',
+      badge: 'Plug and Print',
+      desc: 'Conecta impresoras IP, Bluetooth o USB. Enruta platos a cocina y bebidas al bar automáticamente.',
+      color: '#a9b994',
+      chat: [
+        { role: 'ai', msg: 'Impresora Cocina IP 192.168.1.10: OK.' },
+        { role: 'user', msg: 'Se desconectó la cocina.' },
+        { role: 'ai', msg: 'Comanda redirigida a la impresora de bar.' },
+      ],
+    },
+  ];
+
+  const usageModes = [
+    {
+      icon: '📱',
+      title: 'Salonero en Mesa',
+      subtitle: 'iPad / Tablet',
+      desc: 'Toma el pedido desde la mesa. Llega en segundos a cocina y bar. Sin errores.',
+      steps: ['Selecciona mesa', 'Agrega items', 'Sugerencia de IA', 'Envía a cocina'],
+    },
+    {
+      icon: '🖥️',
+      title: 'Caja Rápida',
+      subtitle: 'Pantalla Táctil',
+      desc: 'Cobro en mostrador. Subcuentas, split y pagos mixtos. Factura Hacienda al instante.',
+      steps: ['Selección rápida', 'Split de cuenta', 'Cobro Tilopay', 'Factura inmediata'],
+    },
+    {
+      icon: '📊',
+      title: 'Admin Remoto',
+      subtitle: 'Smartphone',
+      desc: 'Monitorea ventas y alertas proactivas desde cualquier lugar.',
+      steps: ['Dashboard en vivo', 'Alertas IA', 'Reportes Z', 'Control de Menú'],
     },
   ];
 
@@ -215,14 +315,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             setTimeout(() => { onStartDemo(plan); onEnterPOS(); }, 2500);
           } catch (err: any) {
             setCheckoutStatus('ERROR');
-            setCheckoutError(err.message || 'Error finalizando la suscripción con TiloPay.');
+            setCheckoutError(err.message);
             window.history.replaceState({}, document.title, window.location.pathname);
           }
         };
         registerSub();
       }
     }
-  }, []);
+  }, [onStartDemo, onEnterPOS]);
 
   const handleSimulateTilopayCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,220 +340,77 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       window.location.href = url;
     } catch (err: any) {
       setCheckoutStatus('ERROR');
-      setCheckoutError(err.message || 'Error al conectar con TiloPay.');
+      setCheckoutError(err.message);
     }
   };
 
-  const features = [
-    {
-      emoji: '🧠',
-      label: 'IA Nativa',
-      title: 'Saborai Copilot',
-      badge: 'Solo en Saborai',
-      desc: 'La única IA integrada en el núcleo de un POS en Costa Rica. Predice quiebres de inventario, sugiere maridajes en mesa y audita códigos CABYS de Hacienda en tiempo real, sin salir del sistema.',
-      color: '#10b981',
-      chat: [
-        { role: 'ai', msg: 'El lomo de res estará agotado en 2 días según el ritmo actual de ventas.' },
-        { role: 'user', msg: 'Mesa 7 pidió el ribeye. ¿Qué vino le recomiendo?' },
-        { role: 'ai', msg: 'Malbec Reserva o Carménère. Ambos en inventario, maridarán perfectamente.' },
-        { role: 'user', msg: 'Revisar CABYS del tiramisú' },
-        { role: 'ai', msg: 'Código 2129090000 correcto. IVA 13%. Sin observaciones de Hacienda.' },
-      ],
-    },
-    {
-      emoji: '🏛️',
-      label: 'Hacienda v4.3',
-      title: 'Facturación Electrónica',
-      badge: 'Certificado Hacienda',
-      desc: 'Emisión de XML firmado digitalmente según normativa Hacienda v4.3. Clave 50 dígitos, IVA diferenciado (13%, 4%, 2%, 1%, Exento) y 10% de servicio automático.',
-      color: '#3b82f6',
-      chat: [
-        { role: 'ai', msg: 'Factura FE-001 emitida y enviada a Hacienda exitosamente.' },
-        { role: 'user', msg: 'El cliente quiere una nota de crédito.' },
-        { role: 'ai', msg: 'Nota de crédito NC-001 generada y enviada al correo del cliente.' },
-        { role: 'ai', msg: 'IVA 13% aplicado correctamente. Exoneración B2B detectada.' },
-      ],
-    },
-    {
-      emoji: '👨‍🍳',
-      label: 'KDS Cocina',
-      title: 'Pantallas KDS Inteligentes',
-      badge: 'Multi-Estación',
-      desc: 'Comandas en tiempo real para cocina y bar. Alertas visuales y sonoras por tiempo de preparación. Enrutamiento automático por categoría, caliente a cocina, cócteles al bar.',
-      color: '#f97316',
-      chat: [
-        { role: 'ai', msg: 'Comanda Mesa 3: 2x Ceviche, 1x Salmón. En espera 4 min.' },
-        { role: 'ai', msg: 'Bar Mesa 5: 3x Mojito, 1x Margarita. ¡Listo!' },
-        { role: 'user', msg: 'El ribeye de Mesa 7 está tomando demasiado.' },
-        { role: 'ai', msg: 'Alerta enviada al chef. Tiempo actual: 18 min (umbral: 15 min).' },
-      ],
-    },
-    {
-      emoji: '⚗️',
-      label: 'Escandallos',
-      title: 'Recetas y Escandallos Vivos',
-      badge: 'Control Total',
-      desc: 'Cada venta descuenta gramos exactos de carne, ml de licor y unidades de insumo. Control automático de mermas, costos operativos y rentabilidad real por plato.',
-      color: '#eab308',
-      chat: [
-        { role: 'ai', msg: 'Venta Ribeye 300g: -315g de res (merma 5%). Stock restante: 2.4 kg.' },
-        { role: 'ai', msg: 'Mojito vendido: -45ml ron, -8g azúcar, -2 hojas de menta.' },
-        { role: 'user', msg: '¿Cuál plato está debajo del margen objetivo?' },
-        { role: 'ai', msg: 'Ceviche: margen 18% vs objetivo 30%. Costo de insumos subió 12%.' },
-      ],
-    },
-    {
-      emoji: '📡',
-      label: 'Modo Offline',
-      title: 'Sincronización Mesh Local',
-      badge: 'Sin Interrupciones',
-      desc: '¿Se cayó el internet? La red local sigue comunicando saloneros, cocina y bar al instante mediante WebSockets locales e IndexedDB. Todo se sincroniza al reconectar.',
-      color: '#64748b',
-      chat: [
-        { role: 'ai', msg: 'Internet desconectado. Modo Offline activo. Red local OK.' },
-        { role: 'user', msg: 'Mesa 2 pide la cuenta.' },
-        { role: 'ai', msg: 'Tiquete generado. Cola Hacienda: 3 facturas pendientes de envío.' },
-        { role: 'ai', msg: 'Conexión restaurada. 3 facturas enviadas a Hacienda exitosamente.' },
-      ],
-    },
-    {
-      emoji: '🖨️',
-      label: 'Impresión',
-      title: 'Enrutador Térmico Inteligente',
-      badge: 'Plug and Print',
-      desc: 'Conexión multicanal: IP/Ethernet, Bluetooth y USB. Separa automáticamente platos a cocina y cócteles al bar. Compatible con impresoras 58mm y 80mm de cualquier marca.',
-      color: '#ec4899',
-      chat: [
-        { role: 'ai', msg: 'Impresora Cocina (IP 192.168.1.10): OK. Papel disponible.' },
-        { role: 'ai', msg: 'Comanda Bar enviada a Epson TM-T20 vía Bluetooth.' },
-        { role: 'user', msg: 'La impresora de cocina se desconectó.' },
-        { role: 'ai', msg: 'Reintentando... Comanda redirigida a impresora de respaldo USB.' },
-      ],
-    },
-  ];
-
-  const usageModes = [
-    {
-      icon: '📱',
-      title: 'Salonero en Mesa',
-      subtitle: 'iPad / Tablet Android',
-      desc: 'El salonero toma el pedido desde la mesa con el mapa interactivo. La comanda llega en segundos a cocina y bar. Sin papel, sin errores.',
-      steps: ['Selecciona mesa en el mapa interactivo', 'Agrega items del menú digital', 'IA sugiere maridajes al instante', 'Envía a cocina y bar con 1 toque'],
-      accent: '#22d3ee',
-    },
-    {
-      icon: '🖥️',
-      title: 'Caja Rápida',
-      subtitle: 'PC / Pantalla Táctil',
-      desc: 'Cobro express en mostrador. Subcuentas, splits por persona y pagos mixtos (efectivo + Tilopay). Factura Hacienda emitida en segundos.',
-      steps: ['Selección rápida de items', 'División de cuenta automática', 'Cobro Tilopay o efectivo', 'Factura electrónica en segundos'],
-      accent: '#a78bfa',
-    },
-    {
-      icon: '📊',
-      title: 'Admin Remoto',
-      subtitle: 'Smartphone - Control Total',
-      desc: 'El dueño monitorea ventas, inventario y rendimiento del equipo desde cualquier lugar. La IA envía alertas proactivas cuando detecta anomalías.',
-      steps: ['Dashboard de ventas en vivo', 'Alertas IA de stock bajo', 'Reportes Z y financieros', 'Gestión de menú y precios'],
-      accent: '#34d399',
-    },
-    {
-      icon: '🌐',
-      title: 'Multi-Sucursal',
-      subtitle: 'Dashboard Centralizado',
-      desc: 'Controla todas tus sucursales desde un panel unificado. Menú sincronizado, inventario consolidado y reportes financieros comparativos en tiempo real.',
-      steps: ['Vista comparativa de sucursales', 'Menú y precios centralizados', 'Stock consolidado en red', 'Conciliación Tilopay multi-caja'],
-      accent: '#f59e0b',
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-[#08090a] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
       <style>{`
-        @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
-        @keyframes glowPulse { 0%,100%{opacity:.35} 50%{opacity:.8} }
-        @keyframes slideUp { from{opacity:0;transform:translateY(28px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+        @keyframes glowPulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
+        @keyframes slideUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
-        @keyframes gradientShift { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
-        @keyframes cursorBlink { 0%,100%{opacity:1} 50%{opacity:0} }
         @keyframes beamSweep {
           0%{transform:translateX(-100%) skewX(-20deg)}
           100%{transform:translateX(500%) skewX(-20deg)}
         }
         .lp-float { animation: floatY 5s ease-in-out infinite; }
-        .lp-glow { animation: glowPulse 3.5s ease-in-out infinite; }
-        .lp-slide-up { animation: slideUp .65s ease both; }
-        .lp-fade-in { animation: fadeIn .45s ease both; }
-        .lp-grad { animation: gradientShift 7s ease infinite; background-size:200% 200%; }
-        .lp-cursor { display:inline-block; animation: cursorBlink .75s step-end infinite; }
+        .lp-glow { animation: glowPulse 4s ease-in-out infinite; }
+        .lp-slide-up { animation: slideUp .7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .lp-fade-in { animation: fadeIn .5s ease both; }
+        .lp-cursor { display:inline-block; animation: glowPulse .8s infinite; }
+        
         .lp-glass {
-          background: rgba(255,255,255,.045);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
-          border: 1px solid rgba(255,255,255,.09);
+          background: rgba(255, 255, 255, 0.7);
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          border: 1px solid rgba(169, 185, 148, 0.3);
         }
-        .lp-glass-dark {
-          background: rgba(0,0,0,.45);
-          backdrop-filter: blur(18px);
-          -webkit-backdrop-filter: blur(18px);
-          border: 1px solid rgba(255,255,255,.06);
-        }
+        
         .lp-grad-text {
-          background: linear-gradient(135deg, #6ee7b7 0%, #3b82f6 50%, #a855f7 100%);
+          background: linear-gradient(135deg, #588157 0%, #a9b994 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
         }
+
         .lp-card {
-          transition: transform .28s cubic-bezier(.4,0,.2,1), box-shadow .28s cubic-bezier(.4,0,.2,1);
+          transition: transform .3s cubic-bezier(.4,0,.2,1), box-shadow .3s cubic-bezier(.4,0,.2,1);
         }
         .lp-card:hover {
-          transform: translateY(-5px);
-          box-shadow: 0 24px 64px rgba(0,0,0,.55);
+          transform: translateY(-4px);
+          box-shadow: 0 20px 40px rgba(88, 129, 87, 0.1);
         }
-        .lp-feat-tab {
-          transition: all .22s ease;
-          border: 1px solid rgba(255,255,255,.08);
-        }
-        .lp-feat-tab:hover { border-color: rgba(255,255,255,.18); }
-        .lp-feat-tab.lp-active {
-          background: rgba(16,185,129,.12);
-          border-color: rgba(16,185,129,.45);
-        }
+
         .lp-beam { position: relative; overflow: hidden; }
         .lp-beam::after {
           content:'';
           position:absolute; top:0; left:0; right:0; bottom:0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent);
-          animation: beamSweep 2.8s ease-in-out infinite;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent);
+          animation: beamSweep 3s ease-in-out infinite;
           pointer-events: none;
         }
-        .lp-grid-bg {
-          background-image: linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-                            linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
-          background-size: 56px 56px;
-        }
+
         .lp-hero-bg {
-          background:
-            radial-gradient(ellipse 80% 55% at 50% -5%, rgba(52,211,153,.11) 0%, transparent 58%),
-            radial-gradient(ellipse 50% 40% at 85% 80%, rgba(139,92,246,.09) 0%, transparent 50%),
-            radial-gradient(ellipse 45% 35% at 5% 65%, rgba(59,130,246,.07) 0%, transparent 50%),
-            #08090a;
+          background: 
+            radial-gradient(circle at 15% 50%, rgba(169, 185, 148, 0.15) 0%, transparent 50%),
+            radial-gradient(circle at 85% 30%, rgba(88, 129, 87, 0.1) 0%, transparent 50%),
+            #fcfeff;
         }
       `}</style>
 
-      {/* Orbs */}
+      {/* Background Orbs */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute top-[-15%] left-[15%] w-[700px] h-[700px] rounded-full lp-glow" style={{ background: 'rgba(52,211,153,.07)', filter: 'blur(130px)' }} />
-        <div className="absolute bottom-[5%] right-[0%] w-[550px] h-[550px] rounded-full lp-glow" style={{ background: 'rgba(139,92,246,.07)', filter: 'blur(110px)', animationDelay: '2s' }} />
-        <div className="absolute top-[45%] left-[-8%] w-[400px] h-[400px] rounded-full lp-glow" style={{ background: 'rgba(59,130,246,.06)', filter: 'blur(90px)', animationDelay: '4s' }} />
+        <div className="absolute top-[-10%] left-[10%] w-[600px] h-[600px] rounded-full lp-glow" style={{ background: 'rgba(169, 185, 148, 0.15)', filter: 'blur(100px)' }} />
+        <div className="absolute bottom-[5%] right-[0%] w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'rgba(88, 129, 87, 0.1)', filter: 'blur(90px)', animationDelay: '2s' }} />
       </div>
 
-      {/* Announcement bar */}
-      <div className="relative z-20 lp-grad text-white py-2.5 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2.5" style={{ background: 'linear-gradient(90deg,#059669,#0d9488,#0891b2,#059669)', backgroundSize:'200% auto' }}>
-        <Sparkles className="w-3.5 h-3.5 animate-pulse shrink-0" aria-hidden="true" />
+      {/* Top Banner */}
+      <div className="relative z-20 text-white py-2.5 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2.5" style={{ background: 'linear-gradient(90deg, #3b3733, #588157, #3b3733)', backgroundSize: '200% auto', animation: 'glowPulse 5s infinite' }}>
+        <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
         <span>
-          <strong>Saborai POS</strong> — El primer POS en Costa Rica con IA nativa integrada.{' '}
+          <strong>Saborai POS</strong> — El primer POS en Costa Rica con IA nativa.{' '}
           <button onClick={onEnterPOS} className="underline underline-offset-2 font-bold hover:no-underline">
             Prueba gratis 14 días
           </button>
@@ -464,651 +421,263 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       <header
         role="banner"
         className="sticky top-0 z-50 transition-all duration-300"
-        style={scrolled ? { background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(24px)', borderBottom: '1px solid rgba(255,255,255,.06)' } : {}}
+        style={scrolled ? { background: 'rgba(252, 254, 255, 0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(169, 185, 148, 0.2)' } : {}}
       >
         <nav aria-label="Navegación principal" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-          <a href="#" aria-label="Saborai POS - Ir al inicio">
+          <a href="#" aria-label="Saborai POS - Inicio">
             <BrandLogo variant="full" size="sm" />
           </a>
-          <div className="hidden md:flex items-center gap-8 text-sm font-medium" style={{ color: 'rgba(255,255,255,.55)' }}>
+          <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-[#6b686d]">
             {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','FAQ']].map(([href,label]) => (
-              <a key={href} href={href} className="relative group transition-colors hover:text-white">
-                {label}
-                <span className="absolute -bottom-1 left-0 w-0 h-px bg-emerald-400 group-hover:w-full transition-all duration-300" />
-              </a>
+              <a key={href} href={href} className="hover:text-[#588157] transition-colors">{label}</a>
             ))}
           </div>
           <div className="hidden md:flex items-center gap-3">
-            <button onClick={onEnterPOS} aria-label="Probar demo del POS" className="px-4 py-2 text-sm font-semibold transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,.55)' }}>
+            <button onClick={onEnterPOS} className="px-4 py-2 text-sm font-bold text-[#3b3733] hover:text-[#588157] transition-colors">
               Probar Demo
             </button>
             <button
               onClick={onEnterPOS}
-              id="nav-cta-free-trial"
-              aria-label="Comenzar prueba gratuita de 14 días"
-              className="lp-beam px-5 py-2.5 rounded-xl font-bold text-sm hover:opacity-90 hover:scale-105 active:scale-95 transition-all"
-              style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 4px 20px rgba(16,185,129,.3)' }}
+              className="lp-beam px-6 py-2.5 rounded-full font-bold text-sm text-white hover:scale-105 active:scale-95 transition-all shadow-md"
+              style={{ background: '#588157' }}
             >
-              Prueba Gratis 14 días
+              Prueba Gratis 14 Días
             </button>
           </div>
-          <button className="md:hidden p-2 transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,.6)' }} onClick={() => setMobileMenuOpen(v => !v)} aria-label="Abrir menú">
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          <button className="md:hidden p-2 text-[#3b3733]" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </nav>
         {mobileMenuOpen && (
-          <div className="md:hidden lp-glass-dark border-t border-white/5 px-6 py-5 space-y-4 lp-fade-in">
+          <div className="md:hidden bg-white border-t border-[#a9b994]/20 px-6 py-5 space-y-4 shadow-xl absolute w-full lp-fade-in">
             {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','FAQ']].map(([href,label]) => (
-              <a key={href} href={href} className="block py-1 font-medium transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,.55)' }} onClick={() => setMobileMenuOpen(false)}>{label}</a>
+              <a key={href} href={href} className="block py-2 font-bold text-[#3b3733]" onClick={() => setMobileMenuOpen(false)}>{label}</a>
             ))}
-            <div className="pt-3 flex flex-col gap-3">
-              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl text-sm font-bold border border-white/15 hover:border-white/30 transition-colors" style={{ color: 'rgba(255,255,255,.7)' }}>Probar Demo</button>
-              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl text-sm font-bold text-white" style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 4px 16px rgba(16,185,129,.3)' }}>Prueba Gratis 14 días</button>
+            <div className="pt-4 flex flex-col gap-3">
+              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
+              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold text-white bg-[#588157]">Prueba Gratis 14 Días</button>
             </div>
           </div>
         )}
       </header>
 
-      <main id="main-content">
-
+      <main>
         {/* HERO */}
-        <section className="lp-hero-bg relative overflow-hidden pt-20 pb-28 lg:pt-28 lg:pb-36" aria-label="Inicio">
-          <div className="lp-grid-bg absolute inset-0 pointer-events-none" aria-hidden="true" style={{ opacity: .4 }} />
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="flex flex-col items-center text-center max-w-5xl mx-auto">
+        <section className="lp-hero-bg relative pt-20 pb-32 lg:pt-32 lg:pb-40 text-center px-4 sm:px-6 lg:px-8">
+          <div className="max-w-4xl mx-auto relative z-10">
+            <div className="lp-slide-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-8 bg-white border border-[#a9b994]/50 text-[#588157] shadow-sm">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="text-xs font-bold uppercase tracking-widest">Minimalismo e Inteligencia</span>
+            </div>
 
-              <div className="lp-slide-up inline-flex items-center gap-2 px-4 py-2 rounded-full mb-8 lp-glass" style={{ border: '1px solid rgba(16,185,129,.35)', color: '#6ee7b7' }}>
-                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <Cpu className="w-3.5 h-3.5" />
-                <span className="text-xs font-bold uppercase tracking-widest">El primer POS con IA nativa en Costa Rica</span>
-              </div>
+            <h1 className="lp-slide-up text-5xl sm:text-7xl font-black tracking-tight leading-tight mb-6 text-[#3b3733]" style={{ animationDelay: '.1s' }}>
+              El POS para restaurantes que <br className="hidden sm:block" />
+              <span className="lp-grad-text">
+                {typingText}
+                <span className="lp-cursor text-[#a9b994]">|</span>
+              </span>
+            </h1>
 
-              <h1 className="lp-slide-up text-5xl sm:text-7xl lg:text-8xl font-black tracking-tight leading-tight mb-6" style={{ animationDelay: '.1s' }}>
-                El POS que{' '}
-                <span className="lp-grad-text">
-                  {typingText}
-                  <span className="lp-cursor">|</span>
-                </span>
-              </h1>
+            <p className="lp-slide-up text-lg text-[#6b686d] mb-10 max-w-2xl mx-auto leading-relaxed" style={{ animationDelay: '.2s' }}>
+              Automatiza tu restaurante con la única plataforma en Costa Rica que combina Facturación Hacienda v4.3, KDS, y pagos Tilopay impulsados por IA nativa.
+            </p>
 
-              <p className="lp-slide-up text-lg sm:text-xl leading-relaxed mb-10 max-w-3xl" style={{ animationDelay: '.2s', color: 'rgba(255,255,255,.5)' }}>
-                Saborai POS integra <strong style={{ color: 'rgba(255,255,255,.85)' }}>Inteligencia Artificial nativa</strong> en cada módulo de tu restaurante.
-                Facturación Hacienda v4.3, KDS, escandallos, modo offline y pagos Tilopay — todo conectado con IA que trabaja junto a tu equipo.
-              </p>
-
-              <div className="lp-slide-up flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto" style={{ animationDelay: '.3s' }}>
-                <button
-                  onClick={onEnterPOS}
-                  id="hero-cta-free-trial"
-                  aria-label="Comenzar prueba gratuita de 14 días"
-                  className="lp-beam w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-base hover:opacity-90 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2.5 group"
-                  style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 8px 32px rgba(16,185,129,.35)' }}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Comenzar Prueba Gratis (14 Días)</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </button>
-
-                <button
-                  onClick={onEnterPOS}
-                  id="hero-cta-demo"
-                  aria-label="Probar demo del POS"
-                  className="lp-glass w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-base hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-                  style={{ border: '1px solid rgba(255,255,255,.2)' }}
-                >
-                  <Play className="w-4 h-4" style={{ color: '#34d399' }} />
-                  <span>Probar Demo del POS</span>
-                </button>
-              </div>
-
-              <div className="lp-slide-up mt-14 flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-medium" style={{ animationDelay: '.4s', color: 'rgba(255,255,255,.35)' }}>
-                {[
-                  { icon: <Cpu className="w-3.5 h-3.5" style={{ color: '#34d399' }} />, text: 'IA Nativa Integrada' },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#34d399' }} />, text: 'Hacienda v4.3 Certificado' },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#34d399' }} />, text: 'Pagos Tilopay CR' },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#34d399' }} />, text: 'Sincronización Offline' },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5" style={{ color: '#34d399' }} />, text: 'Sin permanencia' },
-                ].map(({ icon, text }) => (
-                  <div key={text} className="flex items-center gap-2 hover:text-white/70 transition-colors">
-                    {icon}
-                    <span>{text}</span>
-                  </div>
-                ))}
-              </div>
-
+            <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4" style={{ animationDelay: '.3s' }}>
+              <button
+                onClick={onEnterPOS}
+                className="lp-beam w-full sm:w-auto px-8 py-4 rounded-full font-black text-white hover:scale-105 transition-all shadow-lg flex items-center justify-center gap-2"
+                style={{ background: '#588157' }}
+              >
+                Comenzar Prueba Gratis <ArrowRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={onEnterPOS}
+                className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/50 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4 text-[#588157]" /> Probar Demo
+              </button>
+            </div>
+            
+            <div className="lp-slide-up mt-12 flex flex-wrap items-center justify-center gap-6 text-[11px] font-bold text-[#a9b994] uppercase tracking-wider" style={{ animationDelay: '.4s' }}>
+              {['IA Nativa', 'Hacienda v4.3', 'Tilopay', 'Modo Offline'].map((t) => (
+                <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> {t}</span>
+              ))}
             </div>
           </div>
         </section>
 
         {/* STATS */}
-        <section className="py-16" style={{ borderTop: '1px solid rgba(255,255,255,.05)', borderBottom: '1px solid rgba(255,255,255,.05)' }} aria-label="Estadísticas">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div ref={statsRef} className="grid grid-cols-1 sm:grid-cols-3 gap-10 text-center">
-              {[
-                { val: stat1, suffix: '%', label: 'Reducción de errores en comanda', note: 'vs. sistema en papel' },
-                { val: stat2, suffix: '%', label: 'Ahorro en tiempo de facturación', note: 'con Hacienda automático' },
-                { val: stat3, suffix: ' días', label: 'Prueba gratuita sin tarjeta', note: 'Activa en 2 minutos' },
-              ].map(({ val, suffix, label, note }) => (
-                <div key={label}>
-                  <div className="text-5xl sm:text-6xl font-black lp-grad-text mb-2">
-                    {val}{suffix}
-                  </div>
-                  <p className="font-semibold text-base mb-1" style={{ color: 'rgba(255,255,255,.8)' }}>{label}</p>
-                  <p className="text-sm" style={{ color: 'rgba(255,255,255,.3)' }}>{note}</p>
-                </div>
-              ))}
-            </div>
+        <section className="py-16 bg-white border-y border-[#a9b994]/20" ref={statsRef}>
+          <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 sm:grid-cols-3 gap-10 text-center">
+            {[
+              { val: stat1, s: '%', l: 'Eficiencia en Comanda' },
+              { val: stat2, s: '%', l: 'Ahorro de Tiempo en Caja' },
+              { val: stat3, s: ' días', l: 'Prueba Completamente Gratis' },
+            ].map((s, i) => (
+              <div key={i}>
+                <div className="text-5xl font-black text-[#588157] mb-2">{s.val}{s.s}</div>
+                <div className="text-sm font-bold text-[#6b686d] uppercase tracking-widest">{s.l}</div>
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* FEATURES */}
-        <section id="features" aria-labelledby="features-heading" className="py-28 relative">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* FEATURES - Minimalist Grid */}
+        <section id="features" className="py-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-black mb-4 text-[#3b3733]">Características <span className="text-[#588157]">Únicas</span></h2>
+            <p className="text-[#6b686d] max-w-2xl mx-auto">Una suite completa y moderna diseñada para simplificar la operación diaria de tu negocio gastronómico.</p>
+          </div>
 
-            <div className="text-center max-w-3xl mx-auto mb-16">
-              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#34d399' }}>Módulos de Nueva Generación</p>
-              <h2 id="features-heading" className="text-3xl sm:text-5xl font-black tracking-tight mb-5">
-                Diseñado para el ritmo <span className="lp-grad-text">frenético</span> de los restaurantes
-              </h2>
-              <p className="text-base leading-relaxed" style={{ color: 'rgba(255,255,255,.45)' }}>
-                Cada módulo conectado con IA. Información en tiempo real que fluye entre mesas, cocina, bar y gerencia.
-              </p>
-            </div>
-
-            <div className="flex flex-col lg:flex-row gap-8 items-start">
-              {/* Tabs */}
-              <div className="flex lg:flex-col gap-2 w-full lg:w-64 shrink-0 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0">
-                {features.map((f, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setActiveFeature(i)}
-                    className={`lp-feat-tab shrink-0 flex items-center gap-3 px-4 py-3 rounded-2xl text-left w-[150px] lg:w-full ${activeFeature === i ? 'lp-active' : ''}`}
-                    style={{ color: activeFeature === i ? 'white' : 'rgba(255,255,255,.45)' }}
-                  >
-                    <span className="text-lg">{f.emoji}</span>
-                    <span className="font-bold text-sm">{f.label}</span>
-                    {activeFeature === i && <ChevronRight className="w-4 h-4 ml-auto shrink-0 hidden lg:block" style={{ color: '#34d399' }} />}
-                  </button>
-                ))}
-              </div>
-
-              {/* Panel */}
-              <div className="flex-1 lp-glass rounded-3xl p-8 min-h-[480px]">
-                {features.map((f, i) => (
-                  <div key={i} className={activeFeature === i ? 'block lp-fade-in' : 'hidden'}>
-                    <div className="flex flex-col lg:flex-row gap-8">
-                      <div className="flex-1">
-                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-xs font-bold uppercase tracking-wider mb-5" style={{ background: f.color + '22', border: '1px solid ' + f.color + '44', color: f.color }}>
-                          <span>{f.badge}</span>
-                        </div>
-                        <h3 className="text-2xl sm:text-3xl font-black mb-4">{f.title}</h3>
-                        <p className="text-base leading-relaxed mb-8" style={{ color: 'rgba(255,255,255,.55)' }}>{f.desc}</p>
-                        <button
-                          onClick={onEnterPOS}
-                          className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white hover:opacity-90 transition-all"
-                          style={{ background: `linear-gradient(135deg,${f.color},${f.color}cc)`, boxShadow: `0 4px 20px ${f.color}35` }}
-                        >
-                          <Play className="w-4 h-4" />
-                          Ver en vivo
-                        </button>
-                      </div>
-
-                      <div className="flex-1 lp-glass-dark rounded-2xl p-5 max-w-sm w-full">
-                        <div className="flex items-center gap-2.5 mb-4 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,.05)' }}>
-                          <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: `linear-gradient(135deg,#10b981,#0d9488)` }}>
-                            <Bot className="w-3.5 h-3.5 text-white" />
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-white">Saborai Copilot</p>
-                            <p className="text-[10px]" style={{ color: 'rgba(255,255,255,.3)' }}>IA nativa activa</p>
-                          </div>
-                          <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        </div>
-                        <div className="space-y-2.5">
-                          {f.chat.map((m, ci) => (
-                            <div key={ci} className={`text-xs px-3.5 py-2.5 rounded-xl leading-relaxed ${m.role === 'ai' ? 'bg-white/5 border border-white/8' : 'ml-8 text-right border'}`} style={m.role === 'ai' ? { color: 'rgba(255,255,255,.7)', border: '1px solid rgba(255,255,255,.07)' } : { background: f.color + '18', borderColor: f.color + '35', color: f.color }}>
-                              {m.msg}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {features.map((f, i) => (
+              <div key={i} className="lp-card bg-white rounded-3xl p-8 border border-[#a9b994]/30 shadow-sm relative overflow-hidden group">
+                <div className="w-12 h-12 rounded-2xl bg-[#f4f7f0] flex items-center justify-center text-2xl mb-6 group-hover:scale-110 transition-transform">
+                  {f.emoji}
+                </div>
+                <h3 className="text-xl font-black mb-3 text-[#3b3733]">{f.title}</h3>
+                <p className="text-sm text-[#6b686d] leading-relaxed mb-6">{f.desc}</p>
+                <div className="p-4 rounded-xl bg-[#f4f7f0] border border-[#a9b994]/20 space-y-2">
+                  <div className="text-[10px] font-bold text-[#a9b994] uppercase tracking-wider mb-2">Simulación:</div>
+                  {f.chat.slice(0, 2).map((c, j) => (
+                    <div key={j} className={`text-xs p-2 rounded-lg ${c.role === 'ai' ? 'bg-white border border-[#a9b994]/30 text-[#588157]' : 'bg-[#3b3733] text-white ml-6'}`}>
+                      {c.msg}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-
+            ))}
           </div>
         </section>
 
         {/* USAGE MODES */}
-        <section id="usage" aria-labelledby="usage-heading" className="py-28 relative" style={{ background: 'radial-gradient(ellipse 75% 50% at 50% 50%, rgba(16,185,129,.06) 0%, transparent 70%)' }}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-
-            <div className="text-center max-w-3xl mx-auto mb-16">
-              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: '#34d399' }}>Modos de Uso</p>
-              <h2 id="usage-heading" className="text-3xl sm:text-5xl font-black tracking-tight mb-5">
-                Un sistema, <span className="lp-grad-text">infinitas formas</span> de operar
-              </h2>
-              <p className="text-base" style={{ color: 'rgba(255,255,255,.45)' }}>Saborai POS se adapta al rol de cada persona en tu equipo.</p>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-3 mb-12">
+        <section id="usage" className="py-28 bg-[#f4f7f0] border-y border-[#a9b994]/20">
+          <div className="max-w-7xl mx-auto px-4 text-center">
+            <h2 className="text-4xl font-black mb-12 text-[#3b3733]">Flujo de trabajo <span className="text-[#588157]">Perfecto</span></h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {usageModes.map((m, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveUsage(i)}
-                  className="flex items-center gap-2.5 px-5 py-3 rounded-2xl font-semibold text-sm transition-all duration-300"
-                  style={activeUsage === i
-                    ? { border: `1px solid ${m.accent}55`, background: m.accent + '18', color: m.accent }
-                    : { border: '1px solid rgba(255,255,255,.09)', color: 'rgba(255,255,255,.45)' }
-                  }
-                >
-                  <span>{m.icon}</span><span>{m.title}</span>
-                </button>
-              ))}
-            </div>
-
-            {usageModes.map((mode, i) => (
-              <div key={i} className={activeUsage === i ? 'block lp-fade-in' : 'hidden'}>
-                <div className="lp-glass rounded-3xl p-8 sm:p-12" style={{ border: `1px solid ${mode.accent}25` }}>
-                  <div className="flex flex-col lg:flex-row gap-10 items-center">
-                    <div className="flex-1 max-w-xl">
-                      <div className="flex items-center gap-3 mb-5">
-                        <span className="text-4xl">{mode.icon}</span>
-                        <div>
-                          <h3 className="text-2xl font-black text-white">{mode.title}</h3>
-                          <p className="text-sm" style={{ color: 'rgba(255,255,255,.35)' }}>{mode.subtitle}</p>
-                        </div>
-                      </div>
-                      <p className="text-base leading-relaxed mb-8" style={{ color: 'rgba(255,255,255,.6)' }}>{mode.desc}</p>
-                      <button
-                        onClick={onEnterPOS}
-                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white lp-glass hover:bg-white/10 transition-all"
-                        style={{ border: `1px solid ${mode.accent}35` }}
-                      >
-                        <Play className="w-4 h-4" style={{ color: mode.accent }} />
-                        Probar este modo
-                      </button>
-                    </div>
-                    <div className="flex-1 w-full max-w-md space-y-3">
-                      {mode.steps.map((step, si) => (
-                        <div key={si} className="flex items-center gap-4 lp-glass rounded-2xl px-5 py-4 lp-card">
-                          <div className="w-8 h-8 rounded-xl font-black text-sm flex items-center justify-center shrink-0" style={{ background: mode.accent + '22', color: mode.accent }}>
-                            {si + 1}
-                          </div>
-                          <span className="font-medium text-sm" style={{ color: 'rgba(255,255,255,.7)' }}>{step}</span>
-                          <ChevronRight className="w-4 h-4 ml-auto shrink-0" style={{ color: 'rgba(255,255,255,.2)' }} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-          </div>
-        </section>
-
-        {/* AI DEEP DIVE */}
-        <section aria-labelledby="ai-heading" id="ai" className="py-28 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#060a09 0%,#0a1512 40%,#060a09 100%)' }}>
-          <div className="absolute inset-0 pointer-events-none" aria-hidden="true" style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(16,185,129,.055) 0%, transparent 65%)' }} />
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-            <div className="flex flex-col lg:flex-row items-center gap-16">
-              
-              <div className="flex-1 max-w-xl">
-                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider mb-6" style={{ background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.3)', color: '#34d399' }}>
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span>Saborai Copilot IA - Exclusivo</span>
-                </div>
-                <h2 id="ai-heading" className="text-3xl sm:text-5xl font-black tracking-tight mb-6 leading-tight">
-                  La primera IA que vive <span className="lp-grad-text">dentro</span> de tu POS.
-                </h2>
-                <p className="text-base leading-relaxed mb-10" style={{ color: 'rgba(255,255,255,.5)' }}>
-                  Otros sistemas conectan un chatbot externo. Saborai Copilot tiene acceso directo a tus comandas, inventario, ventas y recetas en tiempo real.
-                </p>
-
-                <div className="space-y-4">
-                  {[
-                    ['🧠', 'Predicción de quiebres de stock', 'Alerta con días de anticipación.'],
-                    ['🍷', 'Sugerencias de maridaje en mesa', 'Recomendaciones en tiempo real.'],
-                    ['📋', 'Auditoría de códigos CABYS', 'Detecta y corrige para cumplir Hacienda.'],
-                    ['📊', 'Análisis de rentabilidad por plato', 'Identifica qué platos tienen mejor margen.'],
-                  ].map(([emoji, title, desc]) => (
-                    <div key={title} className="flex items-start gap-4 lp-glass rounded-2xl p-4 lp-card">
-                      <span className="text-2xl shrink-0" aria-hidden="true">{emoji}</span>
-                      <div>
-                        <p className="font-bold text-white text-sm mb-1">{title}</p>
-                        <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,.4)' }}>{desc}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <button
-                  onClick={onEnterPOS}
-                  aria-label="Probar Copilot IA gratis"
-                  className="lp-beam mt-10 inline-flex items-center gap-2.5 px-7 py-3.5 rounded-2xl font-bold text-sm text-white hover:opacity-90 active:scale-95 transition-all"
-                  style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 8px 28px rgba(16,185,129,.3)' }}
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Probar el Copilot IA Gratis</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="flex-1 w-full max-w-lg">
-                <div className="lp-glass-dark rounded-3xl p-6">
-                  <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: '1px solid rgba(255,255,255,.05)' }}>
-                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 4px 16px rgba(16,185,129,.3)' }}>
-                      <Bot className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white">Saborai Copilot</p>
-                      <p className="text-[10px]" style={{ color: 'rgba(255,255,255,.3)' }}>IA nativa integrada</p>
-                    </div>
-                    <div className="ml-auto flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-[10px] font-bold" style={{ color: '#34d399' }}>En vivo</span>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    {[
-                      { role: 'ai', msg: 'El lomo de res se agotará en 2 días según el ritmo de ventas.' },
-                      { role: 'user', msg: 'Mesa 7 pidió el ribeye. ¿Qué vino le recomiendo?' },
-                      { role: 'ai', msg: 'Sugiere el Malbec Reserva o el Carménère. Ambos en inventario y maridarán perfectamente con cortes rojos.' },
-                      { role: 'user', msg: 'Revisar el código CABYS del tiramisú' },
-                      { role: 'ai', msg: 'Código correcto: 2129090000 · IVA aplicable: 13% · Sin observaciones de Hacienda.' },
-                      { role: 'user', msg: '¿Cuál plato tiene mejor margen hoy?' },
-                      { role: 'ai', msg: 'El Risotto de Hongos tiene 52% de margen neto. El Ceviche bajó a 18% — costo de insumos subió 12% esta semana.' },
-                    ].map((m, i) => (
-                      <div key={i} className={`text-xs px-4 py-3 rounded-xl leading-relaxed ${m.role === 'ai' ? '' : 'ml-12 text-right'}`} style={m.role === 'ai' ? { background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.07)', color: 'rgba(255,255,255,.72)' } : { background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.25)', color: '#6ee7b7' }}>
-                        {m.msg}
-                      </div>
+                <div key={i} className="bg-white rounded-3xl p-8 shadow-sm border border-[#a9b994]/20 text-left lp-card">
+                  <div className="text-4xl mb-4">{m.icon}</div>
+                  <h3 className="text-xl font-black text-[#3b3733] mb-1">{m.title}</h3>
+                  <p className="text-xs font-bold text-[#a9b994] uppercase tracking-wider mb-4">{m.subtitle}</p>
+                  <p className="text-sm text-[#6b686d] mb-6">{m.desc}</p>
+                  <ul className="space-y-3">
+                    {m.steps.map((s, j) => (
+                      <li key={j} className="flex items-center gap-3 text-xs font-semibold text-[#3b3733]">
+                        <div className="w-5 h-5 rounded-full bg-[#588157]/10 text-[#588157] flex items-center justify-center">{j+1}</div>
+                        {s}
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
-              </div>
-
+              ))}
             </div>
           </div>
         </section>
 
         {/* PRICING */}
-        <section id="pricing" aria-labelledby="pricing-heading" className="py-28" style={{ background: '#08090a' }}>
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center max-w-3xl mx-auto mb-14">
-              <p className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest mb-5 lp-glass" style={{ border: '1px solid rgba(255,255,255,.09)', color: 'rgba(255,255,255,.5)' }}>
-                <TrendingUp className="w-3.5 h-3.5" style={{ color: '#34d399' }} />Tarifas Transparentes en Costa Rica
-              </p>
-              <h2 id="pricing-heading" className="text-3xl sm:text-5xl font-black tracking-tight mb-5">
-                Elige el plan ideal <span className="lp-grad-text">para tu restaurante</span>
-              </h2>
-              <p className="text-base" style={{ color: 'rgba(255,255,255,.4)' }}>Todos los planes incluyen actualizaciones, soporte y facturación Hacienda.</p>
-              
-              <div className="inline-flex items-center p-1 lp-glass rounded-2xl mt-8" style={{ border: '1px solid rgba(255,255,255,.09)' }}>
-                {(['CRC', 'USD'] as const).map(c => (
-                  <button
-                    key={c}
-                    onClick={() => setSelectedCurrency(c)}
-                    className="px-6 py-2.5 rounded-xl text-xs font-bold transition-all"
-                    style={selectedCurrency === c ? { background: 'linear-gradient(135deg,#10b981,#0d9488)', color: 'white', boxShadow: '0 2px 12px rgba(16,185,129,.3)' } : { color: 'rgba(255,255,255,.4)' }}
-                  >
-                    {c === 'CRC' ? 'Colones (₡ CRC)' : 'Dólares ($ USD)'}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-              {plans.map((pl) => (
-                <div
-                  key={pl.id}
-                  className={`relative flex flex-col rounded-3xl overflow-hidden lp-card ${pl.popular ? '' : 'lp-glass'}`}
-                  style={pl.popular ? { outline: '2px solid rgba(16,185,129,.5)', boxShadow: '0 0 60px rgba(16,185,129,.15)', background: 'rgba(255,255,255,.04)' } : { border: '1px solid rgba(255,255,255,.08)' }}
+        <section id="pricing" className="py-28 max-w-7xl mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-black mb-4 text-[#3b3733]">Planes Transparentes</h2>
+            <div className="inline-flex bg-[#f4f7f0] p-1 rounded-xl border border-[#a9b994]/30">
+              {(['CRC', 'USD'] as const).map(c => (
+                <button
+                  key={c}
+                  onClick={() => setSelectedCurrency(c)}
+                  className={`px-6 py-2 rounded-lg text-xs font-bold transition-all ${selectedCurrency === c ? 'bg-white text-[#588157] shadow-sm' : 'text-[#6b686d]'}`}
                 >
-                  {pl.popular && <div className="h-1 w-full" style={{ background: 'linear-gradient(90deg,#10b981,#0d9488,#0891b2)' }} />}
-                  
-                  <div className="p-8 relative" style={pl.popular ? { background: 'linear-gradient(135deg,rgba(16,185,129,.15) 0%,rgba(13,148,136,.1) 100%)' } : {}}>
-                    {pl.popular && (
-                      <div className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider" style={{ background: 'rgba(16,185,129,.2)', border: '1px solid rgba(16,185,129,.4)', color: '#34d399' }}>
-                        <Star className="w-2.5 h-2.5" />
-                        Más Popular
-                      </div>
-                    )}
-                    <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: pl.accent + 'aa' }}>{pl.subtitle}</p>
-                    <h3 className="text-2xl font-black text-white mb-4">{pl.name}</h3>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-4xl sm:text-5xl font-black text-white">
-                        {selectedCurrency === 'CRC' ? pl.priceCRC : pl.priceUSD}
-                      </span>
-                      <span className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,.4)' }}>{pl.period}</span>
-                    </div>
-                    {pl.popular && <p className="mt-2 text-xs font-bold" style={{ color: pl.accent }}>14 días gratis. Sin tarjeta requerida</p>}
-                  </div>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                  <div className="flex-1 p-8 flex flex-col" style={{ borderTop: '1px solid rgba(255,255,255,.06)' }}>
-                    <ul className="space-y-3.5 mb-8 flex-1">
-                      {pl.features.map((f) => (
-                        <li key={f} className="flex items-start gap-3 text-sm" style={{ color: 'rgba(255,255,255,.6)' }}>
-                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: pl.accent }} />
-                          <span>{f}</span>
-                        </li>
-                      ))}
-                    </ul>
-                    <button
-                      onClick={onEnterPOS}
-                      className="w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-200"
-                      style={pl.popular ? { background: 'linear-gradient(135deg,#10b981,#0d9488)', color: 'white', boxShadow: '0 4px 20px rgba(16,185,129,.3)' } : { border: '1px solid ' + pl.accent + '35', color: pl.accent, background: pl.accent + '10' }}
-                    >
-                      {pl.buttonText}
-                    </button>
-                  </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {plans.map(pl => (
+              <div key={pl.id} className={`bg-white rounded-3xl p-8 border ${pl.popular ? 'border-[#588157] shadow-xl relative' : 'border-[#a9b994]/30 shadow-sm'} flex flex-col lp-card`}>
+                {pl.popular && <div className="absolute top-0 inset-x-0 h-1.5 bg-[#588157]" />}
+                {pl.popular && <div className="absolute top-4 right-4 bg-[#f4f7f0] text-[#588157] text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">Recomendado</div>}
+                <p className="text-[#a9b994] font-bold text-xs uppercase tracking-widest mb-2">{pl.subtitle}</p>
+                <h3 className="text-2xl font-black text-[#3b3733] mb-4">{pl.name}</h3>
+                <div className="text-4xl font-black text-[#588157] mb-6">
+                  {selectedCurrency === 'CRC' ? pl.priceCRC : pl.priceUSD} <span className="text-sm text-[#6b686d] font-semibold">{pl.period}</span>
                 </div>
-              ))}
-            </div>
-            
-            <p className="text-center text-xs mt-10" style={{ color: 'rgba(255,255,255,.2)' }}>
-              Precios incluyen impuestos · Pago seguro vía Tilopay Costa Rica · Sin contratos de permanencia
-            </p>
+                <ul className="space-y-4 mb-8 flex-1">
+                  {pl.features.map((f, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-[#6b686d] font-medium">
+                      <CheckCircle2 className="w-5 h-5 text-[#588157] shrink-0" /> {f}
+                    </li>
+                  ))}
+                </ul>
+                <button onClick={onEnterPOS} className={`w-full py-4 rounded-xl font-bold transition-all ${pl.popular ? 'bg-[#588157] text-white hover:opacity-90 shadow-md' : 'bg-[#f4f7f0] text-[#3b3733] hover:bg-[#e8ece1]'}`}>
+                  {pl.buttonText}
+                </button>
+              </div>
+            ))}
           </div>
         </section>
 
-        {/* FINAL CTA */}
-        <section className="py-24 relative overflow-hidden" style={{ background: 'linear-gradient(135deg,#0d1f1a,#0a1a14,#0d1f1a)' }}>
-          <div className="absolute top-0 left-0 right-0 h-px" style={{ background: 'linear-gradient(90deg,transparent,rgba(16,185,129,.3),transparent)' }} />
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
-            
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest mb-8" style={{ background: 'rgba(16,185,129,.12)', border: '1px solid rgba(16,185,129,.3)', color: '#34d399' }}>
-              <Sparkles className="w-3.5 h-3.5 animate-pulse" />
-              <span>Comienza hoy - Sin riesgos</span>
-            </div>
-            
-            <h2 className="text-4xl sm:text-6xl font-black tracking-tight mb-6">
-              Tu restaurante merece la <span className="lp-grad-text">tecnología más avanzada</span> de Costa Rica
-            </h2>
-            
-            <p className="text-lg leading-relaxed mb-12 max-w-2xl mx-auto" style={{ color: 'rgba(255,255,255,.45)' }}>
-              Únete a los restaurantes que gestionan sus operaciones con IA nativa. Sin permanencia, sin complicaciones.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <button
-                onClick={onEnterPOS}
-                id="final-trial"
-                aria-label="Comenzar prueba gratuita 14 días"
-                className="lp-beam w-full sm:w-auto px-10 py-5 rounded-2xl font-black text-lg text-white hover:opacity-90 hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-3 group"
-                style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 10px 40px rgba(16,185,129,.4)' }}
-              >
-                <Sparkles className="w-5 h-5" />
-                <span>Comenzar Prueba Gratis (14 Días)</span>
-                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-              </button>
-              
-              <button
-                onClick={onEnterPOS}
-                id="final-demo"
-                aria-label="Probar demo del POS"
-                className="lp-glass w-full sm:w-auto px-10 py-5 rounded-2xl font-bold text-lg text-white hover:bg-white/10 transition-all flex items-center justify-center gap-3"
-                style={{ border: '1px solid rgba(255,255,255,.18)' }}
-              >
-                <Play className="w-5 h-5" style={{ color: '#34d399' }} />
-                <span>Probar Demo del POS</span>
-              </button>
-            </div>
-            
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-8 text-xs" style={{ color: 'rgba(255,255,255,.25)' }}>
-              {['Sin tarjeta de crédito', '14 días completamente gratis', 'Activo en 2 minutos', 'Cancelar cuando quieras'].map(t => (
-                <span key={t}>✓ {t}</span>
-              ))}
-            </div>
-            
+        {/* CTA */}
+        <section className="py-24 bg-[#3b3733] text-white text-center px-4 relative overflow-hidden">
+          <div className="absolute inset-0 bg-[#588157]/10" />
+          <div className="relative z-10 max-w-3xl mx-auto">
+            <h2 className="text-4xl font-black mb-6">Simplifica la gestión hoy mismo.</h2>
+            <p className="text-lg text-white/70 mb-10">Únete a la evolución del software gastronómico en Costa Rica. Sin permanencia.</p>
+            <button onClick={onEnterPOS} className="px-10 py-5 rounded-full font-black text-[#3b3733] bg-white hover:scale-105 transition-transform shadow-xl flex items-center justify-center gap-2 mx-auto">
+              Probar 14 Días Gratis <ArrowRight className="w-5 h-5 text-[#588157]" />
+            </button>
           </div>
         </section>
-
-        {/* FAQ */}
-        <section id="faq" aria-labelledby="faq-h" className="py-24" style={{ background: '#08090a' }}>
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-14">
-              <h2 id="faq-h" className="text-3xl sm:text-5xl font-black tracking-tight mb-4">Preguntas <span className="lp-grad-text">Frecuentes</span></h2>
-              <p className="text-base" style={{ color: 'rgba(255,255,255,.35)' }}>Todo lo que necesitas saber antes de comenzar.</p>
-            </div>
-            <dl className="space-y-4">
-              {[
-                ['¿Saborai POS cumple con la facturación electrónica de Hacienda?', 'Sí. XML según norma v4.3, clave 50 dígitos, IVA diferenciado (13%, 4%, 2%, 1%, Exento). Firma digital XAdES-EPES incluida.'],
-                ['¿Cómo funcionan los pagos con Tilopay?', 'Tarjetas tokenizadas por Tilopay. Cobros automáticos mensuales. Saborai POS nunca almacena datos de tarjeta.'],
-                ['¿Puedo usar Saborai POS sin internet?', 'Sí. Modo Offline con red local Mesh (IndexedDB y WebSockets). Operaciones continuas y sincronización al reconectar.'],
-                ['¿Qué hace diferente la IA de Saborai?', 'La IA está integrada en el núcleo del sistema con acceso directo a comandas, inventario, recetas y ventas en tiempo real.'],
-                ['¿Cuánto cuesta Saborai POS?', 'Express ₡22,000/mes, Pro ₡45,000/mes, Multi-Sucursal ₡85,000/mes por sucursal. Todos con 14 días de prueba.'],
-                ['¿Puedo cancelar mi suscripción?', 'Sí. Sin permanencia. Cancela cuando quieras desde tu panel o contactando soporte vía WhatsApp.'],
-              ].map(([q, a], i) => (
-                <div key={i} className="lp-glass rounded-2xl p-6 lp-card" style={{ border: '1px solid rgba(255,255,255,.07)' }}>
-                  <dt className="font-bold text-white text-base mb-2">{q}</dt>
-                  <dd className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,.4)' }}>{a}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        </section>
-
       </main>
 
       {/* FOOTER */}
-      <footer role="contentinfo" className="py-16" style={{ background: '#050607', borderTop: '1px solid rgba(255,255,255,.05)' }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-12 mb-12">
-            <div>
-              <div className="mb-4"><BrandLogo variant="full" size="sm" /></div>
-              <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,.28)' }}>El primer software gastronómico con Inteligencia Artificial nativa para restaurantes de Costa Rica.</p>
-              <address className="not-italic mt-4 text-xs" style={{ color: 'rgba(255,255,255,.18)' }}>Costa Rica. Soporte vía WhatsApp</address>
-            </div>
-            
-            <nav aria-label="Navegación del pie de página">
-              <p className="text-xs font-bold uppercase tracking-widest mb-5" style={{ color: 'rgba(16,185,129,.6)' }}>Navegación</p>
-              <ul className="space-y-3 text-sm" style={{ color: 'rgba(255,255,255,.3)' }}>
-                {[['#features', 'Funciones'], ['#usage', 'Cómo funciona'], ['#pricing', 'Precios'], ['#faq', 'FAQ']].map(([h, l]) => (
-                  <li key={h}><a href={h} className="hover:text-white transition-colors">{l}</a></li>
-                ))}
-              </ul>
-            </nav>
-            
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest mb-5" style={{ color: 'rgba(16,185,129,.6)' }}>Legal</p>
-              <ul className="space-y-3 text-sm" style={{ color: 'rgba(255,255,255,.22)' }}>
-                {['Términos y Condiciones', 'Política de Privacidad', 'Política de Cookies'].map(t => (
-                  <li key={t}><span>{t}</span></li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs" style={{ borderTop: '1px solid rgba(255,255,255,.05)', color: 'rgba(255,255,255,.18)' }}>
-            <p>2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
-            <p>Hacienda v4.3. Tilopay Costa Rica. IA Nativa</p>
-          </div>
-        </div>
+      <footer className="py-12 bg-[#fcfeff] border-t border-[#a9b994]/20 text-center text-sm text-[#6b686d]">
+        <BrandLogo variant="full" size="sm" />
+        <p className="mt-4 max-w-md mx-auto">Software de Punto de Venta con IA para Restaurantes en Costa Rica. Facturación Hacienda y Tilopay Integrado.</p>
+        <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
       </footer>
-
-      {/* TILOPAY MODAL */}
+      
+      {/* MODAL TILOPAY (Simplified) */}
       {selectedPlanModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 lp-fade-in" style={{ background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(16px)' }}>
-          <div className="lp-glass-dark rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative" style={{ border: '1px solid rgba(255,255,255,.1)' }}>
-            <button onClick={() => setSelectedPlanModal(null)} className="absolute top-5 right-5 p-2 rounded-xl hover:bg-white/10 transition-all" style={{ color: 'rgba(255,255,255,.4)' }} aria-label="Cerrar">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3b3733]/40 backdrop-blur-sm lp-fade-in">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
+            <button onClick={() => setSelectedPlanModal(null)} className="absolute top-5 right-5 text-[#a9b994] hover:text-[#3b3733]">
               <X className="w-5 h-5" />
             </button>
-            
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl" style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)' }}>
-                <CreditCard className="w-5 h-5 text-white" />
-              </div>
+              <div className="p-3 rounded-xl bg-[#f4f7f0]"><CreditCard className="w-6 h-6 text-[#588157]" /></div>
               <div>
-                <h3 className="text-lg font-black text-white">{checkoutStep === 'REGISTRATION' ? 'Paso 1: Tus Datos' : 'Paso 2: Pago Seguro'}</h3>
-                <p className="text-xs" style={{ color: 'rgba(255,255,255,.3)' }}>Suscripción tokenizada en Costa Rica</p>
+                <h3 className="text-lg font-black text-[#3b3733]">{checkoutStep === 'REGISTRATION' ? 'Tus Datos' : 'Pago Seguro'}</h3>
+                <p className="text-xs text-[#6b686d]">Suscripción con TiloPay CR</p>
               </div>
             </div>
             
             {showSuccessOnboarding ? (
-              <div className="py-12 text-center space-y-4">
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto animate-bounce" style={{ background: 'rgba(16,185,129,.2)' }}>
-                  <CheckCircle2 className="w-10 h-10" style={{ color: '#34d399' }} />
-                </div>
-                <h4 className="text-2xl font-black text-white">¡Suscripción Activada!</h4>
-                <p className="text-xs max-w-sm mx-auto" style={{ color: 'rgba(255,255,255,.35)' }}>Webhook verificado. Redirigiendo a tu POS...</p>
+              <div className="text-center py-10 space-y-4">
+                <CheckCircle2 className="w-16 h-16 text-[#588157] mx-auto animate-bounce" />
+                <h4 className="text-2xl font-black text-[#3b3733]">¡Bienvenido a Saborai!</h4>
               </div>
             ) : checkoutStep === 'REGISTRATION' ? (
               <form onSubmit={handleContinueToPayment} className="space-y-4">
-                {checkoutError && <div className="p-3 rounded-xl text-xs font-medium" style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#f87171' }}>{checkoutError}</div>}
-                
-                {[
-                  { lb: 'Nombre del Restaurante', t: 'text', ph: 'Ej. Café y Bistro Escalante', v: restaurantName, fn: (v: string) => setRestaurantName(v) },
-                  { lb: 'Correo Electrónico', t: 'email', ph: 'gerencia@escalante.cr', v: ownerEmail, fn: (v: string) => setOwnerEmail(v) },
-                  { lb: 'Confirmar Correo', t: 'email', ph: 'Vuelve a ingresar tu correo', v: ownerEmailConfirm, fn: (v: string) => setOwnerEmailConfirm(v) }
-                ].map(({ lb, t, ph, v, fn }) => (
-                  <div key={lb}>
-                    <label className="block text-xs font-bold uppercase mb-1.5" style={{ color: 'rgba(255,255,255,.5)' }}>{lb}</label>
-                    <input type={t} required placeholder={ph} value={v} onChange={e => fn(e.target.value)} className="w-full px-4 py-2.5 rounded-xl text-sm text-white bg-white/5 placeholder-white/20 outline-none" style={{ border: '1px solid rgba(255,255,255,.1)' }} onFocus={e => (e.currentTarget.style.borderColor = 'rgba(16,185,129,.5)')} onBlur={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,.1)')} />
-                  </div>
-                ))}
-                
-                <div className="pt-4">
-                  <button type="submit" className="lp-beam w-full py-4 rounded-xl font-bold text-sm text-white hover:opacity-90 transition-all flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 4px 20px rgba(16,185,129,.3)' }}>
-                    <span>Continuar al Pago Seguro</span><ArrowRight className="w-4 h-4" />
-                  </button>
-                </div>
+                {checkoutError && <div className="text-red-500 text-xs font-bold bg-red-50 p-2 rounded">{checkoutError}</div>}
+                <input required type="text" placeholder="Nombre Restaurante" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
+                <input required type="email" placeholder="Correo Electrónico" value={ownerEmail} onChange={e=>setOwnerEmail(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
+                <input required type="email" placeholder="Confirmar Correo" value={ownerEmailConfirm} onChange={e=>setOwnerEmailConfirm(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
+                <button type="submit" className="w-full py-4 bg-[#588157] text-white rounded-xl font-bold hover:opacity-90 transition-opacity">Siguiente Paso</button>
               </form>
             ) : (
-              <form onSubmit={handleSimulateTilopayCheckout} className="space-y-4">
-                {checkoutError && <div className="p-3 rounded-xl text-xs font-medium mb-4" style={{ background: 'rgba(239,68,68,.1)', border: '1px solid rgba(239,68,68,.3)', color: '#f87171' }}>{checkoutError}</div>}
-                
-                <div className="p-5 rounded-2xl text-center" style={{ background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)' }}>
-                  <ShieldCheck className="w-10 h-10 mx-auto mb-3" style={{ color: '#34d399' }} />
-                  <h4 className="text-white font-black text-lg mb-2">Pago 100% Seguro</h4>
-                  <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,.35)' }}>Serás redirigido a la bóveda segura de <strong style={{ color: 'rgba(255,255,255,.6)' }}>TiloPay Costa Rica</strong>. Saborai POS nunca almacena tu tarjeta.</p>
+              <form onSubmit={handleSimulateTilopayCheckout} className="space-y-6">
+                <div className="bg-[#f4f7f0] p-4 rounded-2xl text-center border border-[#a9b994]/30">
+                  <ShieldCheck className="w-8 h-8 text-[#588157] mx-auto mb-2" />
+                  <p className="text-xs text-[#6b686d]">Serás redirigido a TiloPay para procesar tu tarjeta de forma 100% segura.</p>
                 </div>
-                
-                <div className="p-3.5 rounded-2xl flex items-center justify-between text-xs" style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)' }}>
-                  <div><span className="font-bold text-white block mb-0.5">Plan:</span><span style={{ color: 'rgba(255,255,255,.4)' }}>{selectedPlanModal.toUpperCase()}</span></div>
-                  <span className="text-sm font-black text-right">
-                    {selectedPlanModal === 'express' ? <span className="text-white">₡22,000/mes</span> : selectedPlanModal === 'pro' ? (
-                      <><span className="block" style={{ color: '#34d399' }}>14 Días Gratis</span><span className="text-xs" style={{ color: 'rgba(255,255,255,.3)' }}>Luego ₡45,000/mes</span></>
-                    ) : <span className="text-white">₡85,000/mes</span>}
-                  </span>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setCheckoutStep('REGISTRATION')} disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'} className="py-4 px-5 rounded-xl font-bold text-sm hover:bg-white/5 disabled:opacity-50 transition-all" style={{ border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.5)' }}>Atrás</button>
-                  <button type="submit" disabled={checkoutStatus !== 'IDLE' && checkoutStatus !== 'ERROR'} className="flex-1 py-4 rounded-xl font-bold text-sm text-white hover:opacity-90 transition-all flex items-center justify-center gap-2 disabled:opacity-60" style={{ background: 'linear-gradient(135deg,#10b981,#0d9488)', boxShadow: '0 4px 20px rgba(16,185,129,.25)' }}>
-                    {checkoutStatus === 'TOKENIZING' && <span className="animate-pulse">Redirigiendo a TiloPay...</span>}
-                    {checkoutStatus === 'SUCCESS' && <span>¡Aprobada! ✓</span>}
-                    {(checkoutStatus === 'IDLE' || checkoutStatus === 'ERROR') && <><CreditCard className="w-4 h-4" /><span>Ir al Pago Seguro</span></>}
-                  </button>
-                </div>
+                <button type="submit" className="w-full py-4 bg-[#3b3733] text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] transition-transform">Ir a Pagar Seguro</button>
+                <button type="button" onClick={()=>setCheckoutStep('REGISTRATION')} className="w-full text-xs font-bold text-[#6b686d]">Volver</button>
               </form>
             )}
           </div>
         </div>
       )}
-
     </div>
   );
 };
