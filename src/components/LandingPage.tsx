@@ -290,8 +290,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   const tilopayLinks: Record<SubscriptionPlan, string> = {
     express: 'https://checkout.tilopay.com/plan-express-saborai',
     pro: 'https://checkout.tilopay.com/plan-pro-saborai',
-    multibranch: 'https://checkout.tilopay.com/plan-multibranch-saborai',
-    free: ''
+    multibranch: 'https://checkout.tilopay.com/plan-multibranch-saborai'
   };
 
   const handleDirectRegistrationAndPayment = (e: React.FormEvent) => {
