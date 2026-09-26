@@ -281,68 +281,71 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     },
   ];
 
-  const [checkoutStatus, setCheckoutStatus] = useState<'IDLE' | 'TOKENIZING' | 'PROCESSING' | 'SUCCESS' | 'ERROR'>('IDLE');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [checkoutStep, setCheckoutStep] = useState<'REGISTRATION' | 'PAYMENT'>('REGISTRATION');
-  const [ownerEmailConfirm, setOwnerEmailConfirm] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
 
-  const handleContinueToPayment = (e: React.FormEvent) => {
+  // Rutas directas generadas en TiloPay (el cliente configurará los enlaces reales aquí)
+  const tilopayLinks: Record<SubscriptionPlan, string> = {
+    express: 'https://checkout.tilopay.com/plan-express-saborai',
+    pro: 'https://checkout.tilopay.com/plan-pro-saborai',
+    multibranch: 'https://checkout.tilopay.com/plan-multibranch-saborai',
+    free: ''
+  };
+
+  const handleDirectRegistrationAndPayment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (ownerEmail !== ownerEmailConfirm) {
-      setCheckoutError('Los correos electrónicos no coinciden.');
-      return;
-    }
     setCheckoutError(null);
-    setCheckoutStep('PAYMENT');
+    
+    if (!selectedPlanModal) return;
+
+    // Guardar temporalmente los datos del usuario para permitir el inicio de sesión después del pago
+    const pendingUser = {
+      id: Date.now().toString(),
+      name: ownerName,
+      email: ownerEmail,
+      phone: phone,
+      restaurantName: restaurantName,
+      role: 'ADMIN',
+      active: true
+    };
+    
+    try {
+      localStorage.setItem('saborai_pending_user', JSON.stringify(pendingUser));
+      // NOTA: Para un entorno de producción, la contraseña NO se guarda en localStorage plana.
+      // Se haría un POST al backend para crear el usuario en estado "pendiente de pago".
+      localStorage.setItem('saborai_pending_password', password); 
+    } catch {}
+
+    const directLink = tilopayLinks[selectedPlanModal] || tilopayLinks.pro;
+    window.location.href = directLink;
   };
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
+    // Si TiloPay redirige con un parámetro de éxito a la Landing Page
     if (searchParams.get('tilopay_success') === 'true') {
-      const email = searchParams.get('email');
       const plan = searchParams.get('planId') as SubscriptionPlan || 'pro';
-      const token = searchParams.get('token') || searchParams.get('id');
-      if (email) {
-        setSelectedPlanModal(plan);
-        setCheckoutStep('PAYMENT');
-        setCheckoutStatus('PROCESSING');
-        const registerSub = async () => {
-          try {
-            if (token) await tilopayService.createSubscription(plan, token, email);
-            window.history.replaceState({}, document.title, window.location.pathname);
-            setCheckoutStatus('SUCCESS');
-            setShowSuccessOnboarding(true);
-            setTimeout(() => { onStartDemo(plan); onEnterPOS(); }, 2500);
-          } catch (err: any) {
-            setCheckoutStatus('ERROR');
-            setCheckoutError(err.message);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        };
-        registerSub();
-      }
+      setSelectedPlanModal(plan);
+      setShowSuccessOnboarding(true);
+
+      // Promover el usuario pendiente a usuario activo para que pueda iniciar sesión automáticamente
+      try {
+        const pendingUserStr = localStorage.getItem('saborai_pending_user');
+        if (pendingUserStr) {
+          localStorage.setItem('saborai_user', pendingUserStr);
+          // Opcionalmente, se podría registrar aquí en localStorage la contraseña si el AuthScreen verifica localStorage
+        }
+      } catch {}
+
+      setTimeout(() => {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        onStartDemo(plan);
+        onEnterPOS();
+      }, 3000);
     }
   }, [onStartDemo, onEnterPOS]);
-
-  const handleSimulateTilopayCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPlanModal) return;
-    setCheckoutStatus('TOKENIZING');
-    setCheckoutError(null);
-    try {
-      const url = await tilopayService.getPaymentUrl({
-        email: ownerEmail,
-        firstName: restaurantName || 'Saborai',
-        lastName: 'Cliente',
-        planId: selectedPlanModal,
-        redirect: window.location.origin + `?tilopay_success=true&planId=${selectedPlanModal}&email=${encodeURIComponent(ownerEmail)}`,
-      });
-      window.location.href = url;
-    } catch (err: any) {
-      setCheckoutStatus('ERROR');
-      setCheckoutError(err.message);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
@@ -411,7 +414,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
         <span>
           <strong>Saborai POS</strong> — El primer POS en Costa Rica con IA nativa.{' '}
-          <button onClick={onEnterPOS} className="underline underline-offset-2 font-bold hover:no-underline">
+          <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }} className="underline underline-offset-2 font-bold hover:no-underline">
             Prueba gratis 14 días
           </button>
         </span>
@@ -434,14 +437,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           </div>
           <div className="hidden md:flex items-center gap-3">
             <button onClick={onEnterPOS} className="px-4 py-2 text-sm font-bold text-[#3b3733] hover:text-[#588157] transition-colors">
+              Iniciar Sesión
+            </button>
+            <button
+              onClick={() => { onStartDemo('pro'); onEnterPOS(); }}
+              className="px-4 py-2 text-sm font-bold text-[#3b3733] bg-[#f4f7f0] rounded-full hover:bg-[#e8ece1] transition-colors"
+            >
               Probar Demo
             </button>
             <button
-              onClick={onEnterPOS}
+              onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }}
               className="lp-beam px-6 py-2.5 rounded-full font-bold text-sm text-white hover:scale-105 active:scale-95 transition-all shadow-md"
               style={{ background: '#588157' }}
             >
-              Prueba Gratis 14 Días
+              Adquirir POS
             </button>
           </div>
           <button className="md:hidden p-2 text-[#3b3733]" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
@@ -454,8 +463,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               <a key={href} href={href} className="block py-2 font-bold text-[#3b3733]" onClick={() => setMobileMenuOpen(false)}>{label}</a>
             ))}
             <div className="pt-4 flex flex-col gap-3">
-              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
-              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold text-white bg-[#588157]">Prueba Gratis 14 Días</button>
+              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#3b3733]">Iniciar Sesión</button>
+              <button onClick={() => { onStartDemo('pro'); onEnterPOS(); }} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
+              <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); setMobileMenuOpen(false); }} className="w-full py-3 rounded-xl font-bold text-white bg-[#588157]">Adquirir POS</button>
             </div>
           </div>
         )}
@@ -484,14 +494,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
             <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4" style={{ animationDelay: '.3s' }}>
               <button
-                onClick={onEnterPOS}
+                onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }}
                 className="lp-beam w-full sm:w-auto px-8 py-4 rounded-full font-black text-white hover:scale-105 transition-all shadow-lg flex items-center justify-center gap-2"
                 style={{ background: '#588157' }}
               >
                 Comenzar Prueba Gratis <ArrowRight className="w-4 h-4" />
               </button>
               <button
-                onClick={onEnterPOS}
+                onClick={() => { onStartDemo('pro'); onEnterPOS(); }}
                 className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/50 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4 text-[#588157]" /> Probar Demo
@@ -609,7 +619,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                     </li>
                   ))}
                 </ul>
-                <button onClick={onEnterPOS} className={`w-full py-4 rounded-xl font-bold transition-all ${pl.popular ? 'bg-[#588157] text-white hover:opacity-90 shadow-md' : 'bg-[#f4f7f0] text-[#3b3733] hover:bg-[#e8ece1]'}`}>
+                <button onClick={() => setSelectedPlanModal(pl.id)} className={`w-full py-4 rounded-xl font-bold transition-all ${pl.popular ? 'bg-[#588157] text-white hover:opacity-90 shadow-md' : 'bg-[#f4f7f0] text-[#3b3733] hover:bg-[#e8ece1]'}`}>
                   {pl.buttonText}
                 </button>
               </div>
@@ -623,7 +633,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           <div className="relative z-10 max-w-3xl mx-auto">
             <h2 className="text-4xl font-black mb-6">Simplifica la gestión hoy mismo.</h2>
             <p className="text-lg text-white/70 mb-10">Únete a la evolución del software gastronómico en Costa Rica. Sin permanencia.</p>
-            <button onClick={onEnterPOS} className="px-10 py-5 rounded-full font-black text-[#3b3733] bg-white hover:scale-105 transition-transform shadow-xl flex items-center justify-center gap-2 mx-auto">
+            <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }} className="px-10 py-5 rounded-full font-black text-[#3b3733] bg-white hover:scale-105 transition-transform shadow-xl flex items-center justify-center gap-2 mx-auto">
               Probar 14 Días Gratis <ArrowRight className="w-5 h-5 text-[#588157]" />
             </button>
           </div>
@@ -637,18 +647,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
       </footer>
       
-      {/* MODAL TILOPAY (Simplified) */}
+      {/* MODAL TILOPAY DIRECTO */}
       {selectedPlanModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3b3733]/40 backdrop-blur-sm lp-fade-in">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto">
             <button onClick={() => setSelectedPlanModal(null)} className="absolute top-5 right-5 text-[#a9b994] hover:text-[#3b3733]">
               <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-3 mb-6">
               <div className="p-3 rounded-xl bg-[#f4f7f0]"><CreditCard className="w-6 h-6 text-[#588157]" /></div>
               <div>
-                <h3 className="text-lg font-black text-[#3b3733]">{checkoutStep === 'REGISTRATION' ? 'Tus Datos' : 'Pago Seguro'}</h3>
-                <p className="text-xs text-[#6b686d]">Suscripción con TiloPay CR</p>
+                <h3 className="text-lg font-black text-[#3b3733]">Registro de Cuenta</h3>
+                <p className="text-xs text-[#6b686d]">Plan seleccionado: {selectedPlanModal.toUpperCase()}</p>
               </div>
             </div>
             
@@ -656,23 +666,31 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               <div className="text-center py-10 space-y-4">
                 <CheckCircle2 className="w-16 h-16 text-[#588157] mx-auto animate-bounce" />
                 <h4 className="text-2xl font-black text-[#3b3733]">¡Bienvenido a Saborai!</h4>
+                <p className="text-sm text-[#6b686d]">Iniciando tu sesión de inmediato...</p>
               </div>
-            ) : checkoutStep === 'REGISTRATION' ? (
-              <form onSubmit={handleContinueToPayment} className="space-y-4">
-                {checkoutError && <div className="text-red-500 text-xs font-bold bg-red-50 p-2 rounded">{checkoutError}</div>}
-                <input required type="text" placeholder="Nombre Restaurante" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
-                <input required type="email" placeholder="Correo Electrónico" value={ownerEmail} onChange={e=>setOwnerEmail(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
-                <input required type="email" placeholder="Confirmar Correo" value={ownerEmailConfirm} onChange={e=>setOwnerEmailConfirm(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157]" />
-                <button type="submit" className="w-full py-4 bg-[#588157] text-white rounded-xl font-bold hover:opacity-90 transition-opacity">Siguiente Paso</button>
-              </form>
             ) : (
-              <form onSubmit={handleSimulateTilopayCheckout} className="space-y-6">
-                <div className="bg-[#f4f7f0] p-4 rounded-2xl text-center border border-[#a9b994]/30">
-                  <ShieldCheck className="w-8 h-8 text-[#588157] mx-auto mb-2" />
-                  <p className="text-xs text-[#6b686d]">Serás redirigido a TiloPay para procesar tu tarjeta de forma 100% segura.</p>
+              <form onSubmit={handleDirectRegistrationAndPayment} className="space-y-4">
+                {checkoutError && <div className="text-red-500 text-xs font-bold bg-red-50 p-2 rounded">{checkoutError}</div>}
+                
+                <div className="space-y-3">
+                  <input required type="text" placeholder="Nombre de tu Restaurante" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
+                  <input required type="text" placeholder="Tu Nombre Completo" value={ownerName} onChange={e=>setOwnerName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
+                  <input required type="email" placeholder="Correo Electrónico (Tu usuario)" value={ownerEmail} onChange={e=>setOwnerEmail(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
+                  <input required type="tel" placeholder="Número de Teléfono (WhatsApp)" value={phone} onChange={e=>setPhone(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
+                  <input required type="password" placeholder="Crea tu Contraseña" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
                 </div>
-                <button type="submit" className="w-full py-4 bg-[#3b3733] text-white rounded-xl font-bold shadow-lg hover:scale-[1.02] transition-transform">Ir a Pagar Seguro</button>
-                <button type="button" onClick={()=>setCheckoutStep('REGISTRATION')} className="w-full text-xs font-bold text-[#6b686d]">Volver</button>
+
+                <div className="bg-[#f4f7f0] p-4 rounded-2xl text-center border border-[#a9b994]/30 mt-4">
+                  <ShieldCheck className="w-6 h-6 text-[#588157] mx-auto mb-2" />
+                  <p className="text-xs text-[#6b686d] leading-relaxed">
+                    Al continuar, crearás tu cuenta de Saborai y serás redirigido a TiloPay para realizar el primer pago de tu mensualidad de forma segura.
+                  </p>
+                </div>
+
+                <button type="submit" className="w-full py-4 mt-2 bg-[#588157] text-white rounded-xl font-bold hover:scale-[1.02] shadow-md transition-transform flex items-center justify-center gap-2">
+                  <span>Ir al Pago Seguro</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
               </form>
             )}
           </div>
