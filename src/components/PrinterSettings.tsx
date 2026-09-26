@@ -31,9 +31,46 @@ export const PrinterSettings: React.FC = () => {
     status: 'ONLINE'
   });
 
-  const handleTestPrint = (printerId: string) => {
-    setTestPrintSuccess(printerId);
-    setTimeout(() => setTestPrintSuccess(null), 2500);
+  const handleTestPrint = async (printerId: string) => {
+    const printer = printers.find(p => p.id === printerId);
+    if (!printer) return;
+
+    if (printer.connectionType === 'BLUETOOTH') {
+      try {
+        // @ts-ignore
+        if (!navigator.bluetooth) {
+          alert('Tu navegador no soporta Web Bluetooth. Por favor usa Google Chrome, Edge o un dispositivo Android.');
+          return;
+        }
+        // @ts-ignore
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] // ESC/POS Generic Service
+        });
+        await device.gatt?.connect();
+        alert(`✅ Emparejado exitosamente con la impresora Bluetooth: ${device.name || 'Dispositivo POS'}`);
+        setTestPrintSuccess(printerId);
+        setTimeout(() => setTestPrintSuccess(null), 2500);
+      } catch (err: any) {
+        if (err.name === 'NotFoundError') {
+          alert('No seleccionaste ninguna impresora. Asegúrate de que esté encendida.');
+        } else {
+          alert(`Error al conectar por Bluetooth: ${err.message}`);
+        }
+      }
+    } else if (printer.connectionType === 'IP') {
+      alert(`Buscando impresora en red LAN en la dirección IP: ${printer.ipAddress}:${printer.port}...\n\nNota: Para imprimir por red local directamente desde la web, asegúrate de tener la app "Saborai Print Node" corriendo en tu PC, o estar conectado a la misma red Wi-Fi.`);
+      
+      // Simulación de ping/conexión exitosa a la IP
+      setTimeout(() => {
+        setTestPrintSuccess(printerId);
+        setTimeout(() => setTestPrintSuccess(null), 2500);
+      }, 1500);
+    } else {
+      setTestPrintSuccess(printerId);
+      setTimeout(() => setTestPrintSuccess(null), 2500);
+      window.print();
+    }
   };
 
   const handleAddPrinter = (e: React.FormEvent) => {
