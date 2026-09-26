@@ -29,7 +29,7 @@ interface QuickPaymentModalProps {
 }
 
 type PaymentMode = 'single' | 'mixed';
-type SingleMethod = 'Tarjeta' | 'Efectivo' | 'SINPE Móvil';
+type SingleMethod = 'Tarjeta' | 'Efectivo' | 'Efectivo USD' | 'SINPE Móvil';
 
 export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   isOpen,
@@ -51,6 +51,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
   // Single payment inputs
   const [cashReceived, setCashReceived] = useState<string>('');
+  const [usdReceived, setUsdReceived] = useState<string>('');
+  const [exchangeRate, setExchangeRate] = useState<number>(510);
   const [sinpeRef, setSinpeRef] = useState<string>('');
 
   // Mixed payment inputs
@@ -76,12 +78,12 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const servicio10 = Math.round(subtotal * 0.10);
   const total = Math.round(subtotal + iva13 + servicio10);
 
-  // Initialize mixed payment defaults when total changes or modal opens
   useEffect(() => {
     if (isOpen) {
       setPaymentMode('single');
       setSingleMethod('Tarjeta');
       setCashReceived('');
+      setUsdReceived('');
       setSinpeRef('');
       setMixedCash(0);
       setMixedCashGiven(0);
@@ -89,12 +91,27 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setMixedSinpe(0);
       setShowReceiptView(false);
       setIsProcessing(false);
+      
+      // Fetch daily exchange rate from Hacienda API
+      fetch('https://api.hacienda.go.cr/indicadores/tc')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.compra && data.compra.valor) {
+            setExchangeRate(data.compra.valor);
+          }
+        })
+        .catch(err => console.error("Error fetching TC", err));
     }
   }, [isOpen, total]);
 
   // Single cash calculations
   const singleCashGivenNum = parseFloat(cashReceived) || 0;
-  const singleChangeDue = Math.max(0, singleCashGivenNum - total);
+  const singleCashUsdGivenNum = parseFloat(usdReceived) || 0;
+  const singleCashUsdInCrc = Math.round(singleCashUsdGivenNum * exchangeRate);
+  
+  const singleChangeDue = singleMethod === 'Efectivo USD' 
+    ? Math.max(0, singleCashUsdInCrc - total) 
+    : Math.max(0, singleCashGivenNum - total);
 
   // Mixed payment calculations
   const mixedTotalAssigned = mixedCash + mixedCard + mixedSinpe;
@@ -133,6 +150,9 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       if (singleMethod === 'Efectivo') {
         return singleCashGivenNum >= total;
       }
+      if (singleMethod === 'Efectivo USD') {
+        return singleCashUsdInCrc >= total;
+      }
       return true;
     } else {
       return mixedTotalAssigned >= total;
@@ -156,7 +176,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     let cardAmt = 0;
     let sinpeAmt = 0;
     if (paymentMode === 'single') {
-      if (singleMethod === 'Efectivo') cashAmt = total;
+      if (singleMethod === 'Efectivo' || singleMethod === 'Efectivo USD') cashAmt = total;
       else if (singleMethod === 'Tarjeta') cardAmt = total;
       else sinpeAmt = total;
     } else {
@@ -194,7 +214,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         correo: 'factura@cliente.cr'
       },
       condicionVenta: '01-Efectivo',
-      medioPago: paymentMode === 'single' ? singleMethod : 'Mixto',
+      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod) : 'Mixto',
       moneda: 'CRC',
       tipoCambio: 1.0,
       items,
@@ -278,7 +298,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       },
       fechaEmision: new Date().toISOString(),
       condicionVenta: '01-Efectivo',
-      medioPago: paymentMode === 'single' ? singleMethod : 'Mixto',
+      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod) : 'Mixto',
       moneda: 'CRC',
       tipoCambio: 1.0,
       items,
@@ -412,6 +432,12 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                         <span>₡{singleCashGivenNum.toLocaleString()} / ₡{singleChangeDue.toLocaleString()}</span>
                       </div>
                     )}
+                    {singleMethod === 'Efectivo USD' && (
+                      <div className="flex justify-between text-stone-600">
+                        <span>Recibido (USD) / Cambio (CRC):</span>
+                        <span>${singleCashUsdGivenNum.toLocaleString()} / ₡{singleChangeDue.toLocaleString()}</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -539,7 +565,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
             {/* ================= PAGO ÚNICO ================= */}
             {paymentMode === 'single' && (
               <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <button
                     type="button"
                     onClick={() => setSingleMethod('Tarjeta')}
@@ -563,7 +589,20 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     }`}
                   >
                     <Banknote className={`w-5 h-5 ${singleMethod === 'Efectivo' ? 'text-[#a9b994]' : 'text-stone-500'}`} />
-                    <span className="text-xs font-bold">Efectivo</span>
+                    <span className="text-xs font-bold">Efectivo ₡</span>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setSingleMethod('Efectivo USD')}
+                    className={`p-3 rounded-2xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                      singleMethod === 'Efectivo USD'
+                        ? 'bg-stone-900 border-stone-900 text-white shadow-xs'
+                        : 'bg-white border-stone-200 text-stone-600 hover:border-stone-400'
+                    }`}
+                  >
+                    <Banknote className={`w-5 h-5 ${singleMethod === 'Efectivo USD' ? 'text-[#a9b994]' : 'text-stone-500'}`} />
+                    <span className="text-xs font-bold">Efectivo $</span>
                   </button>
 
                   <button
@@ -576,9 +615,58 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     }`}
                   >
                     <Smartphone className={`w-5 h-5 ${singleMethod === 'SINPE Móvil' ? 'text-[#a9b994]' : 'text-stone-500'}`} />
-                    <span className="text-xs font-bold">SINPE Móvil</span>
+                    <span className="text-xs font-bold">SINPE</span>
                   </button>
                 </div>
+
+                {singleMethod === 'Efectivo USD' && (
+                  <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5">
+                    <div className="flex justify-between items-center text-xs font-bold text-stone-600 mb-2 border-b border-stone-200 pb-2">
+                      <span>Tipo de Cambio Compra:</span>
+                      <div className="flex items-center gap-1">
+                        <span>₡</span>
+                        <input 
+                          type="number" 
+                          value={exchangeRate}
+                          onChange={e => setExchangeRate(Number(e.target.value))}
+                          className="w-16 px-1.5 py-0.5 border border-stone-300 rounded text-stone-900 text-right"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-stone-600 uppercase mb-1">
+                        Monto Recibido del Cliente (USD $)
+                      </label>
+                      <input
+                        type="number"
+                        placeholder={`$${(total / exchangeRate).toFixed(2)}`}
+                        value={usdReceived}
+                        onChange={(e) => setUsdReceived(e.target.value)}
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 text-sm font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 bg-white"
+                        autoFocus
+                        required
+                        step="0.01"
+                      />
+                    </div>
+
+                    {singleCashUsdGivenNum > 0 && (
+                      <div className="flex flex-col gap-1 text-xs pt-2 border-t border-stone-200">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-stone-600">Equivalente en Colones:</span>
+                          <span className="font-bold text-stone-800">₡{singleCashUsdInCrc.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-stone-600">Cambio / Vuelto en CRC:</span>
+                          <span className={`text-base font-black ${singleChangeDue >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {singleCashUsdInCrc < total 
+                              ? `Faltan ₡${(total - singleCashUsdInCrc).toLocaleString()}` 
+                              : `₡${singleChangeDue.toLocaleString()}`}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {singleMethod === 'Efectivo' && (
                   <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5">
