@@ -115,8 +115,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const handleAddItem = (product: MenuItem) => {
+    // Buscar un ítem idéntico que AÚN NO se haya enviado al KDS
     const existingIndex = currentOrderItems.findIndex(
-      i => i.name === product.name && i.subAccountId === selectedSubAccount
+      i => i.name === product.name && i.subAccountId === selectedSubAccount && !i.kdsStatus
     );
 
     if (existingIndex > -1) {
@@ -140,6 +141,31 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const handleUpdateQuantity = (itemId: string, delta: number) => {
+    const itemToUpdate = currentOrderItems.find(i => i.id === itemId);
+    if (!itemToUpdate) return;
+
+    // Si el ítem ya fue enviado al KDS y se intenta aumentar la cantidad, crear una nueva línea
+    if (itemToUpdate.kdsStatus && delta > 0) {
+      const unsentIndex = currentOrderItems.findIndex(
+        i => i.name === itemToUpdate.name && i.subAccountId === itemToUpdate.subAccountId && !i.kdsStatus
+      );
+      if (unsentIndex > -1) {
+        const updated = [...currentOrderItems];
+        updated[unsentIndex].quantity += delta;
+        setCurrentOrderItems(updated);
+      } else {
+        const newItem: TableItem = {
+          ...itemToUpdate,
+          id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          quantity: delta,
+          kdsStatus: undefined,
+          kdsOrderId: undefined
+        };
+        setCurrentOrderItems([...currentOrderItems, newItem]);
+      }
+      return;
+    }
+
     const updated = currentOrderItems
       .map(item => {
         if (item.id === itemId) {
