@@ -450,6 +450,9 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               </button>
             </div>
           </div>
+        </div>
+      )}
+
       {/* AI Menu Import Modal */}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
