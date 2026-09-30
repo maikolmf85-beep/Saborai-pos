@@ -87,7 +87,9 @@ function buildDemoSession(email: string, restaurantName = 'Mi Restaurante Demo')
 }
 
 export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivated }) => {
-  const [view, setView] = useState<GateView>('WELCOME');
+  const [view, setView] = useState<GateView>(
+    new URLSearchParams(window.location.search).get('login') === 'true' ? 'LOGIN_FORM' : 'WELCOME'
+  );
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);

@@ -318,9 +318,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
   // Rutas directas generadas en TiloPay (el cliente configurará los enlaces reales aquí)
   const tilopayLinks: Record<SubscriptionPlan, string> = {
-    express: 'https://checkout.tilopay.com/plan-express-saborai',
-    pro: 'https://checkout.tilopay.com/plan-pro-saborai',
-    multibranch: 'https://checkout.tilopay.com/plan-multibranch-saborai'
+    express: selectedCurrency === 'CRC' ? 'https://tp.cr/l/TnpZek5nPT18MQ==' : 'https://tp.cr/l/TnpZMU1RPT18MQ==',
+    pro: selectedCurrency === 'CRC' ? 'https://tp.cr/l/TnpZME9RPT18MQ==' : 'https://tp.cr/l/TnpZMU1nPT18MQ==',
+    multibranch: selectedCurrency === 'CRC' ? 'https://tp.cr/l/TnpZMU1BPT18MQ==' : 'https://tp.cr/l/TnpZMU13PT18MQ=='
   };
 
   const handleDirectRegistrationAndPayment = (e: React.FormEvent) => {
@@ -353,28 +353,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    // Si TiloPay redirige con un parámetro de éxito a la Landing Page
-    if (searchParams.get('tilopay_success') === 'true') {
-      const plan = searchParams.get('planId') as SubscriptionPlan || 'pro';
-      setSelectedPlanModal(plan);
-      setShowSuccessOnboarding(true);
-
-      // Promover el usuario pendiente a usuario activo para que pueda iniciar sesión automáticamente
-      try {
-        const pendingUserStr = localStorage.getItem('saborai_pending_user');
-        if (pendingUserStr) {
-          localStorage.setItem('saborai_user', pendingUserStr);
-          // Opcionalmente, se podría registrar aquí en localStorage la contraseña si el AuthScreen verifica localStorage
-        }
-      } catch {}
-
-      setTimeout(() => {
-        window.history.replaceState({}, document.title, window.location.pathname);
-        onStartDemo(plan);
-        onEnterPOS();
-      }, 3000);
+    if (searchParams.get('login') === 'true') {
+      // The parent component (App or WelcomeGate) handles ?login=true
+      // This ensures LandingPage doesn't do anything weird.
     }
-  }, [onStartDemo, onEnterPOS]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
