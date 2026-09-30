@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MenuItem, TaxRegime } from '../types';
-import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2 } from 'lucide-react';
+import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 
 interface MenuEditorProps {
@@ -17,6 +17,61 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<'IDLE' | 'ANALYZING' | 'SUCCESS'>('IDLE');
+
+  const handleSimulateImport = () => {
+    setImportStatus('ANALYZING');
+    soundService.playKeyClickSound();
+    setTimeout(() => {
+      const newItems: MenuItem[] = [
+        {
+          id: `item_${Date.now()}_ai1`,
+          name: 'Ceviche Especial Copilot',
+          description: 'Pescado fresco, pulpo y camarones marinados en cítricos. (Autogenerado desde PDF)',
+          price: 6500,
+          category: 'Entradas',
+          station: 'Cocina',
+          cabysCode: '0000000000000',
+          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+          available: true,
+          imageIcon: '🦐',
+          ingredients: []
+        },
+        {
+          id: `item_${Date.now()}_ai2`,
+          name: 'Corte Ribeye Premium',
+          description: '350g de Ribeye importado con puré rústico. (Autogenerado desde PDF)',
+          price: 18500,
+          category: 'Platos Fuertes',
+          station: 'Cocina',
+          cabysCode: '0000000000000',
+          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+          available: true,
+          imageIcon: '🥩',
+          ingredients: []
+        },
+        {
+          id: `item_${Date.now()}_ai3`,
+          name: 'Limonada de Hierbabuena',
+          description: 'Refrescante limonada natural con menta fresca. (Autogenerado desde PDF)',
+          price: 2500,
+          category: 'Bebidas',
+          station: 'Bar',
+          cabysCode: '0000000000000',
+          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+          available: true,
+          imageIcon: '🍋',
+          ingredients: []
+        }
+      ];
+      
+      const updatedMenu = [...newItems, ...menuItems];
+      onUpdateMenu(updatedMenu);
+      setImportStatus('SUCCESS');
+      soundService.playSuccessChime();
+    }, 4500);
+  };
 
   const categories = ['Todas', ...Array.from(new Set(menuItems.map(m => m.category)))];
 
@@ -121,6 +176,14 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               className="pl-9 pr-4 py-2 w-full sm:w-64 bg-white border border-stone-200 rounded-xl text-xs focus:outline-none focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
             />
           </div>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
+            title="Sube un PDF o foto de tu menú y deja que la IA lo transcriba por ti."
+          >
+            <Sparkles className="w-4 h-4 text-[#588157]" />
+            <span className="hidden sm:inline">Importar Menú (IA)</span>
+          </button>
           <button
             onClick={() => handleOpenEdit()}
             className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all flex items-center gap-2 shadow-xs shrink-0"
@@ -386,6 +449,70 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                 Guardar Platillo
               </button>
             </div>
+          </div>
+      {/* AI Menu Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl relative">
+            <button 
+              onClick={() => {
+                if (importStatus !== 'ANALYZING') {
+                  setIsImportModalOpen(false);
+                  setImportStatus('IDLE');
+                }
+              }} 
+              className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            
+            {importStatus === 'IDLE' && (
+              <div className="text-center animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-16 h-16 bg-[#588157]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <UploadCloud className="w-8 h-8 text-[#588157]" />
+                </div>
+                <h3 className="text-xl font-black text-stone-900 mb-2">Importar Menú Mágicamente</h3>
+                <p className="text-sm text-stone-500 mb-6">
+                  Sube una foto de tu menú impreso o un archivo PDF. Saborai Copilot analizará el texto, precios y descripciones para crear los platillos automáticamente.
+                </p>
+                
+                <div 
+                  className="border-2 border-dashed border-stone-300 bg-stone-50 rounded-2xl p-8 mb-4 hover:border-[#588157] transition-all cursor-pointer group" 
+                  onClick={handleSimulateImport}
+                >
+                  <p className="text-sm font-bold text-stone-700 group-hover:text-[#588157] transition-colors">Haz clic para seleccionar archivo o arrástralo aquí</p>
+                  <p className="text-xs text-stone-400 mt-2">Soporta PDF, JPG, PNG (Max 5MB)</p>
+                </div>
+                <p className="text-[10px] text-stone-400 font-medium">Descuida, podrás editar o eliminar los platillos después.</p>
+              </div>
+            )}
+            
+            {importStatus === 'ANALYZING' && (
+              <div className="text-center py-8 animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+                  <div className="absolute inset-0 rounded-full border-4 border-[#588157] border-t-transparent animate-spin"></div>
+                  <Sparkles className="w-8 h-8 text-[#588157] animate-pulse" />
+                </div>
+                <h3 className="text-lg font-black text-stone-900 mb-2">Saborai Copilot está leyendo...</h3>
+                <p className="text-sm text-stone-500 px-4">Identificando platillos, extrayendo las descripciones y asignando precios de forma inteligente. Esto puede tomar unos segundos.</p>
+              </div>
+            )}
+            
+            {importStatus === 'SUCCESS' && (
+              <div className="text-center py-6 animate-in fade-in zoom-in-95 duration-200">
+                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
+                </div>
+                <h3 className="text-xl font-black text-stone-900 mb-2">¡Menú Importado con Éxito!</h3>
+                <p className="text-sm text-stone-500 mb-6 px-4">Se han agregado los nuevos platillos a tu catálogo basándose en el documento.</p>
+                <button 
+                  onClick={() => { setIsImportModalOpen(false); setImportStatus('IDLE'); }} 
+                  className="w-full py-3 bg-stone-900 text-white rounded-xl text-sm font-black hover:bg-stone-800 transition-colors shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
+                >
+                  Ver Catálogo Actualizado
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
