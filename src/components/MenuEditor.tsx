@@ -482,13 +482,24 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   Sube una foto de tu menú impreso o un archivo PDF. Saborai Copilot analizará el texto, precios y descripciones para crear los platillos automáticamente.
                 </p>
                 
-                <div 
-                  className="border-2 border-dashed border-stone-300 bg-stone-50 rounded-2xl p-8 mb-4 hover:border-[#588157] transition-all cursor-pointer group" 
-                  onClick={handleSimulateImport}
+                <label 
+                  htmlFor="menu-upload"
+                  className="border-2 border-dashed border-stone-300 bg-stone-50 rounded-2xl p-8 mb-4 hover:border-[#588157] transition-all cursor-pointer group block" 
                 >
                   <p className="text-sm font-bold text-stone-700 group-hover:text-[#588157] transition-colors">Haz clic para seleccionar archivo o arrástralo aquí</p>
                   <p className="text-xs text-stone-400 mt-2">Soporta PDF, JPG, PNG (Max 5MB)</p>
-                </div>
+                  <input 
+                    id="menu-upload" 
+                    type="file" 
+                    accept="image/*,.pdf" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        handleSimulateImport();
+                      }
+                    }} 
+                  />
+                </label>
                 <p className="text-[10px] text-stone-400 font-medium">Descuida, podrás editar o eliminar los platillos después.</p>
               </div>
             )}

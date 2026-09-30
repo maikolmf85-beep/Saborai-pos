@@ -323,29 +323,42 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     multibranch: selectedCurrency === 'CRC' ? 'https://tp.cr/l/TnpZMU1BPT18MQ==' : 'https://tp.cr/l/TnpZMU13PT18MQ=='
   };
 
-  const handleDirectRegistrationAndPayment = (e: React.FormEvent) => {
+  const handleDirectRegistrationAndPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     setCheckoutError(null);
     
     if (!selectedPlanModal) return;
 
-    // Guardar temporalmente los datos del usuario para permitir el inicio de sesión después del pago
-    const pendingUser = {
-      id: Date.now().toString(),
-      name: ownerName,
-      email: ownerEmail,
-      phone: phone,
-      restaurantName: restaurantName,
-      role: 'ADMIN',
-      active: true
-    };
-    
     try {
+      // 1. Register the user before redirecting to TiloPay
+      await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: ownerEmail,
+          password: password,
+          name: ownerName || 'Admin',
+          phone: phone || '',
+          restaurantName: restaurantName || 'Restaurante',
+          plan: selectedPlanModal
+        })
+      });
+
+      // Guardar temporalmente como respaldo local (útil para la simulación frontend sin backend real)
+      const pendingUser = {
+        id: Date.now().toString(),
+        name: ownerName,
+        email: ownerEmail,
+        phone: phone,
+        restaurantName: restaurantName,
+        role: 'ADMIN',
+        active: true
+      };
       localStorage.setItem('saborai_pending_user', JSON.stringify(pendingUser));
-      // NOTA: Para un entorno de producción, la contraseña NO se guarda en localStorage plana.
-      // Se haría un POST al backend para crear el usuario en estado "pendiente de pago".
       localStorage.setItem('saborai_pending_password', password); 
-    } catch {}
+    } catch (err) {
+      console.error('Error registrando usuario antes del pago:', err);
+    }
 
     const directLink = tilopayLinks[selectedPlanModal] || tilopayLinks.pro;
     window.location.href = directLink;
