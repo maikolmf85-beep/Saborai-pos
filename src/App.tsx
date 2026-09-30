@@ -787,6 +787,7 @@ export function App() {
             menuItems={menuItems} 
             onUpdateMenu={handleUpdateMenu} 
             taxRegime={tenant.taxRegime || 'TRADITIONAL'}
+            plan={tenant.plan}
           />
         )}
 
@@ -995,6 +996,17 @@ export function App() {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
             } else if (cmd.type === 'AUTO_REPAIR') {
+               if (tenant.plan === 'express') {
+                 addNotification({
+                   id: `nysa_err_${Date.now()}`,
+                   type: 'NEW_ORDER',
+                   title: 'Saborai Copilot',
+                   message: 'El diagnóstico automático y soporte 24/7 requiere un Plan de mayor nivel.',
+                   timestamp: new Date()
+                 });
+                 setIsCopilotOpen(false);
+                 return;
+               }
                setIsCopilotOpen(false);
                setIsRepairing(true);
                setRepairStep(0);

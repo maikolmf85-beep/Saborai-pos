@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MenuItem, TaxRegime } from '../types';
+import { MenuItem, TaxRegime, SubscriptionPlan } from '../types';
 import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 
@@ -7,9 +7,10 @@ interface MenuEditorProps {
   menuItems: MenuItem[];
   onUpdateMenu: (items: MenuItem[]) => void;
   taxRegime: TaxRegime;
+  plan: SubscriptionPlan;
 }
 
-export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime }) => {
+export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime, plan }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -176,14 +177,16 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               className="pl-9 pr-4 py-2 w-full sm:w-64 bg-white border border-stone-200 rounded-xl text-xs focus:outline-none focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
             />
           </div>
-          <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
-            title="Sube un PDF o foto de tu menú y deja que la IA lo transcriba por ti."
-          >
-            <Sparkles className="w-4 h-4 text-[#588157]" />
-            <span className="hidden sm:inline">Importar Menú (IA)</span>
-          </button>
+          {plan !== 'express' && (
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
+              title="Sube un PDF o foto de tu menú y deja que la IA lo transcriba por ti."
+            >
+              <Sparkles className="w-4 h-4 text-[#588157]" />
+              <span className="hidden sm:inline">Importar Menú (IA)</span>
+            </button>
+          )}
           <button
             onClick={() => handleOpenEdit()}
             className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all flex items-center gap-2 shadow-xs shrink-0"
