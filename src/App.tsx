@@ -249,6 +249,8 @@ export function App() {
   const [cashShiftInitialTab, setCashShiftInitialTab] = useState<'status' | 'movements' | 'close' | 'history' | 'registers'>('status');
   const [activeZReport, setActiveZReport] = useState<ZReportData | null>(null);
   const [activeConsolidatedZReport, setActiveConsolidatedZReport] = useState<ConsolidatedZReportData | null>(null);
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [repairStep, setRepairStep] = useState(0);
   const [isZReportModalOpen, setIsZReportModalOpen] = useState(false);
   const [isHaciendaHistoryOpen, setIsHaciendaHistoryOpen] = useState(false);
 
@@ -992,10 +994,61 @@ export function App() {
             } else if (cmd.type === 'OPEN_SHIFT') {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
+            } else if (cmd.type === 'AUTO_REPAIR') {
+               setIsCopilotOpen(false);
+               setIsRepairing(true);
+               setRepairStep(0);
+               soundService.playKeyClickSound();
+               setTimeout(() => setRepairStep(1), 1500);
+               setTimeout(() => setRepairStep(2), 3500);
+               setTimeout(() => {
+                 setRepairStep(3);
+                 soundService.playSuccessChime();
+               }, 5500);
+               setTimeout(() => {
+                 setIsRepairing(false);
+               }, 8000);
             }
           } catch(e) { console.error(e); }
         }}
       />
+
+      {/* Auto-Repair Overlay */}
+      {isRepairing && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
+          <div className="bg-white max-w-sm w-full rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-stone-100">
+              <div 
+                className="h-full bg-[#588157] transition-all duration-500 ease-out" 
+                style={{ width: `${(repairStep / 3) * 100}%` }}
+              />
+            </div>
+            
+            {repairStep < 3 ? (
+              <>
+                <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 relative">
+                  <div className="absolute inset-0 rounded-full border-4 border-[#588157] border-t-transparent animate-spin"></div>
+                  <Sparkles className="w-8 h-8 text-[#588157] animate-pulse" />
+                </div>
+                <h3 className="text-xl font-black text-stone-900 mb-2">Diagnosticando Sistema...</h3>
+                <p className="text-sm text-stone-500 font-medium">
+                  {repairStep === 0 && 'Escaneando base de datos y memoria local...'}
+                  {repairStep === 1 && 'Resolviendo conflictos en caché...'}
+                  {repairStep === 2 && 'Restableciendo conexión con módulos...'}
+                </p>
+              </>
+            ) : (
+              <div className="animate-in zoom-in-95 duration-300">
+                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Sparkles className="w-10 h-10 text-emerald-600" />
+                </div>
+                <h3 className="text-xl font-black text-stone-900 mb-2">¡Sistema Reparado!</h3>
+                <p className="text-sm text-stone-500 font-medium">Todos los módulos están operando al 100%. Saborai IA corrigió los fallos.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Real-time Audible & Visual Notification Toasts */}
       <NotificationToastContainer

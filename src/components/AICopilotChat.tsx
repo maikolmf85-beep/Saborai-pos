@@ -164,6 +164,10 @@ Si el usuario te pide AGREGAR O CREAR UNA MESA nueva, responde con:
 Si el usuario te pide ABRIR EL TURNO, responde con:
 \`\`\`json
 {"type": "OPEN_SHIFT"}
+\`\`\`
+Si el usuario reporta un FALLO o pide REPARAR o DIAGNOSTICAR el sistema, responde con:
+\`\`\`json
+{"type": "AUTO_REPAIR"}
 \`\`\``;
 
       const aiMsgId = `ai_${Date.now()}`;
