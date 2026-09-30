@@ -114,7 +114,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   }, []);
 
   useEffect(() => {
-    const t = setInterval(() => setActiveFeature(f => (f + 1) % 6), 4000);
+    const t = setInterval(() => setActiveFeature(f => (f + 1) % 8), 4000);
     return () => clearInterval(t);
   }, []);
 
@@ -151,6 +151,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         'Subcuentas y división de cuentas en mesa',
         'KDS Cocina y Bar con alertas de tiempo',
         'Sincronización Offline en Red Local (Mesh)',
+        'Importar Menú desde PDF o Fotos con IA',
+        'Soporte 24/7 con Auto-Reparación IA',
       ],
       popular: true,
       accent: '#588157',
@@ -169,6 +171,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         'Consolidación financiera y stock',
         'Multi-caja y conciliación Tilopay',
         'Soporte prioritario 24/7 y Onboarding VIP',
+        'Importar Menú desde PDF o Fotos con IA',
+        'Auto-Reparación IA del sistema incluida',
       ],
       popular: false,
       accent: '#3b3733',
@@ -253,6 +257,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         { role: 'ai', msg: 'Impresora Cocina IP 192.168.1.10: OK.' },
         { role: 'user', msg: 'Se desconectó la cocina.' },
         { role: 'ai', msg: 'Comanda redirigida a la impresora de bar.' },
+      ],
+    },
+    {
+      emoji: '📄',
+      label: 'Menú IA',
+      title: 'Importar Menú Mágico',
+      badge: 'Ahorra horas',
+      desc: 'Sube una foto o PDF de tu menú actual y la IA extraerá platillos, precios y descripciones automáticamente. Configura tu POS en minutos.',
+      color: '#588157',
+      chat: [
+        { role: 'user', msg: 'Subí el menú en PDF.' },
+        { role: 'ai', msg: 'Detecté 28 platillos. Creando catálogo...' },
+        { role: 'ai', msg: '¡Listo! 28 productos con precios y categorías.' },
+      ],
+    },
+    {
+      emoji: '🛡️',
+      label: 'Soporte 24/7',
+      title: 'Auto-Reparación IA',
+      badge: 'Tu TI virtual',
+      desc: 'Si algo falla, díselo a Nysa y el sistema se diagnosticará y reparará a sí mismo. Sin esperar técnicos ni tickets de soporte.',
+      color: '#3b3733',
+      chat: [
+        { role: 'user', msg: 'Algo no funciona bien en caja.' },
+        { role: 'ai', msg: 'Escaneando módulos... Conflicto de caché detectado.' },
+        { role: 'ai', msg: '¡Reparado! Sistema operando al 100%.' },
       ],
     },
   ];
