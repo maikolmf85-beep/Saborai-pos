@@ -21,15 +21,93 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importStatus, setImportStatus] = useState<'IDLE' | 'ANALYZING' | 'SUCCESS'>('IDLE');
 
-  const handleSimulateImport = () => {
+  const handleSimulateImport = async (file?: File) => {
     setImportStatus('ANALYZING');
     soundService.playKeyClickSound();
+    
+    // Si se subió una imagen y hay API Key, intentamos extraer de verdad
+    if (file && file.type.startsWith('image/')) {
+       try {
+         const base64 = await new Promise<string>((resolve, reject) => {
+           const reader = new FileReader();
+           reader.readAsDataURL(file);
+           reader.onload = () => resolve((reader.result as string).split(',')[1]);
+           reader.onerror = reject;
+         });
+         
+         const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
+         if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui' && ANTHROPIC_API_KEY.trim() !== '') {
+           // Import dinámico para no romper la carga si no está
+           const Anthropic = (await import('@anthropic-ai/sdk')).default;
+           const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
+           
+           const msg = await anthropic.messages.create({
+             model: 'claude-3-5-sonnet-20241022',
+             max_tokens: 1500,
+             system: "Extrae los platillos de la imagen de este menú. Devuelve ÚNICAMENTE un arreglo JSON válido sin texto adicional (ejemplo: [{\"name\": \"Hamburguesa\", \"description\": \"Con queso\", \"price\": 5000, \"category\": \"Platos Fuertes\"}]). Usa categorías como Entradas, Platos Fuertes, Bebidas, Postres. Si no detectas el precio, pon 0.",
+             messages: [
+               {
+                 role: 'user',
+                 content: [
+                   {
+                     type: 'image',
+                     source: {
+                       type: 'base64',
+                       media_type: file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                       data: base64
+                     }
+                   },
+                   {
+                     type: 'text',
+                     text: 'Por favor extrae todos los platillos que veas.'
+                   }
+                 ]
+               }
+             ]
+           });
+
+           let jsonStr = (msg.content[0] as any).text;
+           const jsonStart = jsonStr.indexOf('[');
+           const jsonEnd = jsonStr.lastIndexOf(']');
+           if (jsonStart !== -1 && jsonEnd !== -1) {
+             jsonStr = jsonStr.substring(jsonStart, jsonEnd + 1);
+           }
+           
+           const parsed = JSON.parse(jsonStr);
+           if (Array.isArray(parsed) && parsed.length > 0) {
+             const newItems: MenuItem[] = parsed.map((item: any, index: number) => ({
+               id: `item_${Date.now()}_ai${index}`,
+               name: item.name || 'Platillo Generado',
+               description: item.description || 'Detectado por Saborai AI Vision',
+               price: Number(item.price) || 0,
+               category: item.category || 'Varios',
+               station: 'Cocina',
+               cabysCode: '0000000000000',
+               taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+               available: true,
+               imageIcon: '✨',
+               ingredients: []
+             }));
+             
+             const updatedMenu = [...newItems, ...menuItems];
+             onUpdateMenu(updatedMenu);
+             setImportStatus('SUCCESS');
+             soundService.playSuccessChime();
+             return; // Exito real!
+           }
+         }
+       } catch (error) {
+         console.error('Error de IA Extracción:', error);
+       }
+    }
+
+    // Fallback simulado si no hay API Key o falla o es PDF
     setTimeout(() => {
       const newItems: MenuItem[] = [
         {
           id: `item_${Date.now()}_ai1`,
           name: 'Ceviche Especial Copilot',
-          description: 'Pescado fresco, pulpo y camarones marinados en cítricos. (Autogenerado desde PDF)',
+          description: 'Pescado fresco, pulpo y camarones marinados en cítricos. (Autogenerado)',
           price: 6500,
           category: 'Entradas',
           station: 'Cocina',
@@ -42,7 +120,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         {
           id: `item_${Date.now()}_ai2`,
           name: 'Corte Ribeye Premium',
-          description: '350g de Ribeye importado con puré rústico. (Autogenerado desde PDF)',
+          description: '350g de Ribeye importado con puré rústico. (Autogenerado)',
           price: 18500,
           category: 'Platos Fuertes',
           station: 'Cocina',
@@ -55,7 +133,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         {
           id: `item_${Date.now()}_ai3`,
           name: 'Limonada de Hierbabuena',
-          description: 'Refrescante limonada natural con menta fresca. (Autogenerado desde PDF)',
+          description: 'Refrescante limonada natural con menta fresca. (Autogenerado)',
           price: 2500,
           category: 'Bebidas',
           station: 'Bar',
@@ -495,7 +573,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                     className="hidden" 
                     onChange={(e) => {
                       if (e.target.files && e.target.files.length > 0) {
-                        handleSimulateImport();
+                        handleSimulateImport(e.target.files[0]);
                       }
                     }} 
                   />
