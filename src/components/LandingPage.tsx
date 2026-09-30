@@ -331,7 +331,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
     try {
       // 1. Register the user before redirecting to TiloPay
-      await fetch('/api/auth/register', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -343,6 +343,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           plan: selectedPlanModal
         })
       });
+
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setCheckoutError(data.error || 'Error al registrar usuario. Por favor intenta de nuevo.');
+        return; // Detener flujo, no redirigir a TiloPay
+      }
 
       // Guardar temporalmente como respaldo local (útil para la simulación frontend sin backend real)
       const pendingUser = {
@@ -695,8 +702,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               </div>
             ) : (
               <form onSubmit={handleDirectRegistrationAndPayment} className="space-y-4">
-                {checkoutError && <div className="text-red-500 text-xs font-bold bg-red-50 p-2 rounded">{checkoutError}</div>}
-                
+                {checkoutError && (
+                  <div className="p-3 mb-4 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm text-center font-medium">
+                    {checkoutError}
+                  </div>
+                )}
                 <div className="space-y-3">
                   <input required type="text" placeholder="Nombre de tu Restaurante" value={restaurantName} onChange={e=>setRestaurantName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
                   <input required type="text" placeholder="Tu Nombre Completo" value={ownerName} onChange={e=>setOwnerName(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
