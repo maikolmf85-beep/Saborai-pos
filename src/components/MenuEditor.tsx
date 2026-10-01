@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MenuItem, TaxRegime, SubscriptionPlan } from '../types';
-import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X } from 'lucide-react';
+import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 
 interface MenuEditorProps {
@@ -18,138 +18,50 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importStatus, setImportStatus] = useState<'IDLE' | 'ANALYZING' | 'SUCCESS'>('IDLE');
+  
+  // Bulk Add State
+  const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
+  const [bulkItems, setBulkItems] = useState<Array<{ name: string; price: number; category: string; station: 'Cocina' | 'Bar' | 'Cafetería' }>>([
+    { name: '', price: 0, category: 'Platos Fuertes', station: 'Cocina' }
+  ]);
 
-  const handleSimulateImport = async (file?: File) => {
-    setImportStatus('ANALYZING');
-    soundService.playKeyClickSound();
-    
-    // Si se subió una imagen y hay API Key, intentamos extraer de verdad
-    if (file && file.type.startsWith('image/')) {
-       try {
-         const base64 = await new Promise<string>((resolve, reject) => {
-           const reader = new FileReader();
-           reader.readAsDataURL(file);
-           reader.onload = () => resolve((reader.result as string).split(',')[1]);
-           reader.onerror = reject;
-         });
-         
-         const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY;
-         if (ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui' && ANTHROPIC_API_KEY.trim() !== '') {
-           // Import dinámico para no romper la carga si no está
-           const Anthropic = (await import('@anthropic-ai/sdk')).default;
-           const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY, dangerouslyAllowBrowser: true });
-           
-           const msg = await anthropic.messages.create({
-             model: 'claude-3-5-sonnet-20241022',
-             max_tokens: 1500,
-             system: "Extrae los platillos de la imagen de este menú. Devuelve ÚNICAMENTE un arreglo JSON válido sin texto adicional (ejemplo: [{\"name\": \"Hamburguesa\", \"description\": \"Con queso\", \"price\": 5000, \"category\": \"Platos Fuertes\"}]). Usa categorías como Entradas, Platos Fuertes, Bebidas, Postres. Si no detectas el precio, pon 0.",
-             messages: [
-               {
-                 role: 'user',
-                 content: [
-                   {
-                     type: 'image',
-                     source: {
-                       type: 'base64',
-                       media_type: file.type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-                       data: base64
-                     }
-                   },
-                   {
-                     type: 'text',
-                     text: 'Por favor extrae todos los platillos que veas.'
-                   }
-                 ]
-               }
-             ]
-           });
+  const handleAddBulkRow = () => {
+    setBulkItems([...bulkItems, { name: '', price: 0, category: 'Platos Fuertes', station: 'Cocina' }]);
+  };
 
-           let jsonStr = (msg.content[0] as any).text;
-           const jsonStart = jsonStr.indexOf('[');
-           const jsonEnd = jsonStr.lastIndexOf(']');
-           if (jsonStart !== -1 && jsonEnd !== -1) {
-             jsonStr = jsonStr.substring(jsonStart, jsonEnd + 1);
-           }
-           
-           const parsed = JSON.parse(jsonStr);
-           if (Array.isArray(parsed) && parsed.length > 0) {
-             const newItems: MenuItem[] = parsed.map((item: any, index: number) => ({
-               id: `item_${Date.now()}_ai${index}`,
-               name: item.name || 'Platillo Generado',
-               description: item.description || 'Detectado por Saborai AI Vision',
-               price: Number(item.price) || 0,
-               category: item.category || 'Varios',
-               station: 'Cocina',
-               cabysCode: '0000000000000',
-               taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
-               available: true,
-               imageIcon: '✨',
-               ingredients: []
-             }));
-             
-             const updatedMenu = [...newItems, ...menuItems];
-             onUpdateMenu(updatedMenu);
-             setImportStatus('SUCCESS');
-             soundService.playSuccessChime();
-             return; // Exito real!
-           }
-         }
-       } catch (error) {
-         console.error('Error de IA Extracción:', error);
-       }
-    }
+  const handleUpdateBulkItem = (index: number, field: string, value: any) => {
+    const updated = [...bulkItems];
+    updated[index] = { ...updated[index], [field]: value };
+    setBulkItems(updated);
+  };
 
-    // Fallback simulado si no hay API Key o falla o es PDF
-    setTimeout(() => {
-      const newItems: MenuItem[] = [
-        {
-          id: `item_${Date.now()}_ai1`,
-          name: 'Ceviche Especial Copilot',
-          description: 'Pescado fresco, pulpo y camarones marinados en cítricos. (Autogenerado)',
-          price: 6500,
-          category: 'Entradas',
-          station: 'Cocina',
-          cabysCode: '0000000000000',
-          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
-          available: true,
-          imageIcon: '🦐',
-          ingredients: []
-        },
-        {
-          id: `item_${Date.now()}_ai2`,
-          name: 'Corte Ribeye Premium',
-          description: '350g de Ribeye importado con puré rústico. (Autogenerado)',
-          price: 18500,
-          category: 'Platos Fuertes',
-          station: 'Cocina',
-          cabysCode: '0000000000000',
-          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
-          available: true,
-          imageIcon: '🥩',
-          ingredients: []
-        },
-        {
-          id: `item_${Date.now()}_ai3`,
-          name: 'Limonada de Hierbabuena',
-          description: 'Refrescante limonada natural con menta fresca. (Autogenerado)',
-          price: 2500,
-          category: 'Bebidas',
-          station: 'Bar',
-          cabysCode: '0000000000000',
-          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
-          available: true,
-          imageIcon: '🍋',
-          ingredients: []
-        }
-      ];
-      
-      const updatedMenu = [...newItems, ...menuItems];
-      onUpdateMenu(updatedMenu);
-      setImportStatus('SUCCESS');
-      soundService.playSuccessChime();
-    }, 4500);
+  const handleRemoveBulkRow = (index: number) => {
+    const updated = bulkItems.filter((_, i) => i !== index);
+    setBulkItems(updated);
+  };
+
+  const handleSaveBulk = () => {
+    const validItems = bulkItems.filter(b => b.name.trim() !== '');
+    if (validItems.length === 0) return;
+
+    const newItems: MenuItem[] = validItems.map((item, index) => ({
+      id: `item_${Date.now()}_bulk${index}`,
+      name: item.name,
+      description: '',
+      price: item.price,
+      category: item.category,
+      station: item.station,
+      cabysCode: '0000000000000',
+      taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+      available: true,
+      imageIcon: '🍽️',
+      ingredients: []
+    }));
+
+    onUpdateMenu([...newItems, ...menuItems]);
+    setIsBulkAddOpen(false);
+    setBulkItems([{ name: '', price: 0, category: 'Platos Fuertes', station: 'Cocina' }]);
+    soundService.playSuccessChime();
   };
 
   const categories = ['Todas', ...Array.from(new Set(menuItems.map(m => m.category)))];
@@ -255,16 +167,14 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               className="pl-9 pr-4 py-2 w-full sm:w-64 bg-white border border-stone-200 rounded-xl text-xs focus:outline-none focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
             />
           </div>
-          {plan !== 'express' && (
-            <button
-              onClick={() => setIsImportModalOpen(true)}
-              className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
-              title="Sube un PDF o foto de tu menú y deja que la IA lo transcriba por ti."
-            >
-              <Sparkles className="w-4 h-4 text-[#588157]" />
-              <span className="hidden sm:inline">Importar Menú (IA)</span>
-            </button>
-          )}
+          <button
+            onClick={() => setIsBulkAddOpen(true)}
+            className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
+            title="Agrega múltiples productos al mismo tiempo."
+          >
+            <ListPlus className="w-4 h-4 text-[#588157]" />
+            <span className="hidden sm:inline">Agregar Varios</span>
+          </button>
           <button
             onClick={() => handleOpenEdit()}
             className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all flex items-center gap-2 shadow-xs shrink-0"
@@ -534,80 +444,115 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         </div>
       )}
 
-      {/* AI Menu Import Modal */}
-      {isImportModalOpen && (
+      {/* Bulk Add Products Modal */}
+      {isBulkAddOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 sm:p-8 shadow-2xl relative">
-            <button 
-              onClick={() => {
-                if (importStatus !== 'ANALYZING') {
-                  setIsImportModalOpen(false);
-                  setImportStatus('IDLE');
-                }
-              }} 
-              className="absolute top-5 right-5 p-2 rounded-xl text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            
-            {importStatus === 'IDLE' && (
-              <div className="text-center animate-in fade-in zoom-in-95 duration-200">
-                <div className="w-16 h-16 bg-[#588157]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <UploadCloud className="w-8 h-8 text-[#588157]" />
-                </div>
-                <h3 className="text-xl font-black text-stone-900 mb-2">Importar Menú Mágicamente</h3>
-                <p className="text-sm text-stone-500 mb-6">
-                  Sube una foto de tu menú impreso o un archivo PDF. Saborai Copilot analizará el texto, precios y descripciones para crear los platillos automáticamente.
+          <div className="bg-white w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl overflow-hidden shadow-2xl relative">
+            <div className="p-6 border-b border-stone-200 bg-stone-50 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="text-xl font-black text-stone-900 flex items-center gap-2">
+                  <ListPlus className="w-6 h-6 text-[#588157]" />
+                  Carga Múltiple de Productos
+                </h3>
+                <p className="text-xs text-stone-500 mt-1">
+                  Añade varios productos al catálogo al mismo tiempo de manera ágil.
                 </p>
-                
-                <label 
-                  htmlFor="menu-upload"
-                  className="border-2 border-dashed border-stone-300 bg-stone-50 rounded-2xl p-8 mb-4 hover:border-[#588157] transition-all cursor-pointer group block" 
-                >
-                  <p className="text-sm font-bold text-stone-700 group-hover:text-[#588157] transition-colors">Haz clic para seleccionar archivo o arrástralo aquí</p>
-                  <p className="text-xs text-stone-400 mt-2">Soporta PDF, JPG, PNG (Max 5MB)</p>
-                  <input 
-                    id="menu-upload" 
-                    type="file" 
-                    accept="image/*,.pdf" 
-                    className="hidden" 
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        handleSimulateImport(e.target.files[0]);
-                      }
-                    }} 
-                  />
-                </label>
-                <p className="text-[10px] text-stone-400 font-medium">Descuida, podrás editar o eliminar los platillos después.</p>
               </div>
-            )}
+              <button 
+                onClick={() => setIsBulkAddOpen(false)} 
+                className="p-2 rounded-xl text-stone-400 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
             
-            {importStatus === 'ANALYZING' && (
-              <div className="text-center py-8 animate-in fade-in zoom-in-95 duration-200">
-                <div className="w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mx-auto mb-6 relative">
-                  <div className="absolute inset-0 rounded-full border-4 border-[#588157] border-t-transparent animate-spin"></div>
-                  <Sparkles className="w-8 h-8 text-[#588157] animate-pulse" />
+            <div className="flex-1 overflow-y-auto p-6 bg-white custom-scrollbar">
+              <div className="space-y-3">
+                <div className="grid grid-cols-12 gap-3 pb-2 border-b border-stone-200 text-xs font-bold text-stone-500 uppercase px-2">
+                  <div className="col-span-5">Nombre del Producto</div>
+                  <div className="col-span-2">Precio (₡)</div>
+                  <div className="col-span-2">Categoría</div>
+                  <div className="col-span-2">Estación</div>
+                  <div className="col-span-1 text-center">Acción</div>
                 </div>
-                <h3 className="text-lg font-black text-stone-900 mb-2">Saborai Copilot está leyendo...</h3>
-                <p className="text-sm text-stone-500 px-4">Identificando platillos, extrayendo las descripciones y asignando precios de forma inteligente. Esto puede tomar unos segundos.</p>
+
+                {bulkItems.map((item, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-3 items-center bg-stone-50 p-2 rounded-xl border border-stone-200">
+                    <div className="col-span-5">
+                      <input
+                        type="text"
+                        placeholder="Ej: Hamburguesa Clásica"
+                        value={item.name}
+                        onChange={(e) => handleUpdateBulkItem(index, 'name', e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="number"
+                        placeholder="Precio"
+                        value={item.price || ''}
+                        onChange={(e) => handleUpdateBulkItem(index, 'price', Number(e.target.value) || 0)}
+                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        type="text"
+                        placeholder="Ej: Platos Fuertes"
+                        value={item.category}
+                        onChange={(e) => handleUpdateBulkItem(index, 'category', e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <select
+                        value={item.station}
+                        onChange={(e) => handleUpdateBulkItem(index, 'station', e.target.value)}
+                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg bg-white focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
+                      >
+                        <option value="Cocina">Cocina</option>
+                        <option value="Bar">Bar</option>
+                        <option value="Cafetería">Cafetería</option>
+                      </select>
+                    </div>
+                    <div className="col-span-1 flex justify-center">
+                      <button
+                        onClick={() => handleRemoveBulkRow(index)}
+                        className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Eliminar fila"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            )}
-            
-            {importStatus === 'SUCCESS' && (
-              <div className="text-center py-6 animate-in fade-in zoom-in-95 duration-200">
-                <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-600" />
-                </div>
-                <h3 className="text-xl font-black text-stone-900 mb-2">¡Menú Importado con Éxito!</h3>
-                <p className="text-sm text-stone-500 mb-6 px-4">Se han agregado los nuevos platillos a tu catálogo basándose en el documento.</p>
-                <button 
-                  onClick={() => { setIsImportModalOpen(false); setImportStatus('IDLE'); }} 
-                  className="w-full py-3 bg-stone-900 text-white rounded-xl text-sm font-black hover:bg-stone-800 transition-colors shadow-md hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0"
-                >
-                  Ver Catálogo Actualizado
-                </button>
-              </div>
-            )}
+
+              <button
+                onClick={handleAddBulkRow}
+                className="mt-4 px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold border border-stone-300 rounded-xl flex items-center gap-2 transition-colors"
+              >
+                <Plus className="w-4 h-4 text-[#588157]" />
+                Añadir Fila
+              </button>
+            </div>
+
+            <div className="p-6 border-t border-stone-200 bg-stone-50 flex items-center justify-end gap-3 shrink-0">
+              <button
+                onClick={() => setIsBulkAddOpen(false)}
+                className="px-6 py-2.5 bg-white border border-stone-300 hover:bg-stone-100 text-stone-700 rounded-xl text-sm font-bold transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveBulk}
+                className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-sm font-black transition-all shadow-md flex items-center gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
+                Guardar Productos ({bulkItems.filter(b => b.name.trim() !== '').length})
+              </button>
+            </div>
           </div>
         </div>
       )}
