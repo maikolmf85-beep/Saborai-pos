@@ -12,7 +12,7 @@ import {
   Download,
   UserCheck
 } from 'lucide-react';
-import { Table, TableItem, TenantInfo } from '../types';
+import { Table, TableItem, TenantInfo, UserProfile } from '../types';
 import { generateHaciendaXmlV43, downloadXmlFile } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
