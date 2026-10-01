@@ -21,7 +21,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   
   // Bulk Add State
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
-  const [bulkItems, setBulkItems] = useState<Array<{ name: string; price: number; category: string; station: 'Cocina' | 'Bar' | 'Cafetería' }>>([
+  const [bulkItems, setBulkItems] = useState<Array<{ name: string; price: number; category: string; station: 'Cocina' | 'Bar' | 'Postres' }>>([
     { name: '', price: 0, category: 'Platos Fuertes', station: 'Cocina' }
   ]);
 
@@ -513,7 +513,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                       >
                         <option value="Cocina">Cocina</option>
                         <option value="Bar">Bar</option>
-                        <option value="Cafetería">Cafetería</option>
+                        <option value="Postres">Postres/Cafetería</option>
                       </select>
                     </div>
                     <div className="col-span-1 flex justify-center">
