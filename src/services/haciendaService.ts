@@ -180,9 +180,15 @@ class HaciendaService {
     }
   }
 
+  public voidInvoice(clave: string, onStatusChange?: (status: string) => void) {
+    // Aquí en un sistema real se enviaría una Nota de Crédito a Hacienda
+    this.updateInvoiceStatus(clave, 'ANULADO');
+    if (onStatusChange) onStatusChange('ANULADO');
+  }
+
   private updateInvoiceStatus(
     clave: string, 
-    status: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO',
+    status: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO' | 'ANULADO',
     signedXmlBase64?: string
   ) {
     this.invoices = this.invoices.map(inv => {

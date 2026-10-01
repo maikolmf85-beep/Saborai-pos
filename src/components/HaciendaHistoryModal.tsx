@@ -8,7 +8,9 @@ import {
   XCircle, 
   Clock, 
   RefreshCw,
-  Building2
+  Building2,
+  Printer,
+  Ban
 } from 'lucide-react';
 import { ElectronicInvoiceCR, TenantInfo } from '../types';
 import { haciendaService } from '../services/haciendaService';
@@ -23,6 +25,7 @@ interface HaciendaHistoryModalProps {
 export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOpen, onClose, tenant }) => {
   const [invoices, setInvoices] = useState<ElectronicInvoiceCR[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [invoiceToPrint, setInvoiceToPrint] = useState<ElectronicInvoiceCR | null>(null);
   
   useEffect(() => {
     if (isOpen) {
@@ -52,6 +55,12 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
             <XCircle className="w-3 h-3" /> RECHAZADO
           </span>
         );
+      case 'ANULADO':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-300">
+            <Ban className="w-3 h-3" /> ANULADO
+          </span>
+        );
       case 'PROCESANDO':
       default:
         return (
@@ -64,6 +73,21 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
 
   const handleResend = (clave: string) => {
     haciendaService.resendInvoice(clave);
+  };
+
+  const handleAnular = (clave: string) => {
+    if (confirm('¿Estás seguro de que deseas anular esta factura? En un sistema real esto emitirá una Nota de Crédito a Hacienda.')) {
+      haciendaService.voidInvoice(clave);
+    }
+  };
+
+  const handleReimprimir = (invoice: ElectronicInvoiceCR) => {
+    setInvoiceToPrint(invoice);
+    setTimeout(() => {
+      try {
+        window.print();
+      } catch (e) {}
+    }, 500);
   };
 
   return (
@@ -136,6 +160,22 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleReimprimir(inv)}
+                      className="p-2 text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold"
+                      title="Reimprimir Tiquete"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                    {inv.estadoHacienda !== 'ANULADO' && (
+                      <button
+                        onClick={() => handleAnular(inv.clave50Digitos)}
+                        className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold"
+                        title="Anular Factura"
+                      >
+                        <Ban className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {inv.xmlContent && (
                       <button
                         onClick={() => downloadXmlFile(inv.xmlContent!, `Factura_${inv.consecutivo}.xml`)}
@@ -164,6 +204,47 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
         </div>
 
       </div>
+
+      {/* Tiquete para impresión */}
+      {invoiceToPrint && (
+        <div className="print-only fixed inset-0 bg-white z-[9999] p-4 text-black w-[80mm] mx-auto text-sm font-mono">
+          <div className="text-center mb-4">
+            <h2 className="font-bold text-lg">{tenant.name}</h2>
+            <p className="text-xs">Cédula: {tenant.cedulaJuridica}</p>
+            <p className="text-xs">{tenant.email}</p>
+            <p className="text-xs mt-2 font-bold">{invoiceToPrint.estadoHacienda === 'ANULADO' ? '*** FACTURA ANULADA ***' : 'FACTURA ELECTRÓNICA'}</p>
+            <p className="text-xs break-all mt-1">Clave: {invoiceToPrint.clave50Digitos}</p>
+            <p className="text-xs">Fecha: {invoiceToPrint.fechaEmision.toLocaleString()}</p>
+          </div>
+
+          <div className="border-t border-b border-black py-2 mb-2">
+            <div className="flex justify-between font-bold text-xs">
+              <span>Cant</span>
+              <span>Desc</span>
+              <span>Total</span>
+            </div>
+            {invoiceToPrint.items.map((item, idx) => (
+              <div key={idx} className="flex justify-between text-xs mt-1">
+                <span className="w-8">{item.quantity}</span>
+                <span className="flex-1 px-1 truncate">{item.name}</span>
+                <span className="w-16 text-right">₡{(item.price * item.quantity).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-right text-xs space-y-1">
+            <p>Subtotal: ₡{invoiceToPrint.subtotal.toLocaleString()}</p>
+            <p>I.V.A: ₡{invoiceToPrint.iva13.toLocaleString()}</p>
+            {invoiceToPrint.servicio10 > 0 && <p>Servicio 10%: ₡{invoiceToPrint.servicio10.toLocaleString()}</p>}
+            <p className="font-bold text-sm mt-2 border-t border-black pt-1">Total: ₡{invoiceToPrint.totalComprobante.toLocaleString()}</p>
+          </div>
+
+          <div className="text-center mt-6 text-xs text-gray-500">
+            <p>¡Gracias por su visita!</p>
+            <p>Emitido por Saborai POS</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

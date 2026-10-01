@@ -170,6 +170,6 @@ export interface ElectronicInvoiceCR {
   iva1: number;
   servicio10: number;
   totalComprobante: number;
-  estadoHacienda: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO';
+  estadoHacienda: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO' | 'ANULADO';
   xmlContent?: string;
 }
