@@ -9,7 +9,8 @@ import {
   Printer, 
   ShieldCheck,
   SplitSquareVertical,
-  Download
+  Download,
+  UserCheck
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo } from '../types';
 import { generateHaciendaXmlV43, downloadXmlFile } from '../services/haciendaXml';
@@ -26,10 +27,11 @@ interface QuickPaymentModalProps {
   dinerName?: string;
   onPaymentComplete: (method: string, amount: number) => void;
   onNotify?: (notif: PosNotification) => void;
+  staffList?: UserProfile[];
 }
 
 type PaymentMode = 'single' | 'mixed';
-type SingleMethod = 'Tarjeta' | 'Efectivo' | 'Efectivo USD' | 'SINPE Móvil';
+type SingleMethod = 'Tarjeta' | 'Efectivo' | 'Efectivo USD' | 'SINPE Móvil' | 'Crédito Funcionario';
 
 export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   isOpen,
@@ -39,7 +41,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   subAccountId = 'ALL',
   dinerName,
   onPaymentComplete,
-  onNotify
+  onNotify,
+  staffList = []
 }) => {
   const currentRegister = cashShiftService.getCurrentRegister();
   const terminalCode = currentRegister.terminalCode || '00001';
@@ -54,6 +57,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const [usdReceived, setUsdReceived] = useState<string>('');
   const [exchangeRate, setExchangeRate] = useState<number>(510);
   const [sinpeRef, setSinpeRef] = useState<string>('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
 
   // Mixed payment inputs
   const [mixedCash, setMixedCash] = useState<number>(0);
@@ -85,6 +89,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setCashReceived('');
       setUsdReceived('');
       setSinpeRef('');
+      setSelectedEmployeeId('');
       setMixedCash(0);
       setMixedCashGiven(0);
       setMixedCard(0);
@@ -153,6 +158,9 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       if (singleMethod === 'Efectivo USD') {
         return singleCashUsdInCrc >= total;
       }
+      if (singleMethod === 'Crédito Funcionario') {
+        return selectedEmployeeId !== '';
+      }
       return true;
     } else {
       return mixedTotalAssigned >= total;
@@ -175,25 +183,31 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     let cashAmt = 0;
     let cardAmt = 0;
     let sinpeAmt = 0;
-    if (paymentMode === 'single') {
-      if (singleMethod === 'Efectivo' || singleMethod === 'Efectivo USD') cashAmt = total;
-      else if (singleMethod === 'Tarjeta') cardAmt = total;
-      else sinpeAmt = total;
-    } else {
-      cashAmt = mixedCash;
-      cardAmt = mixedCard;
-      sinpeAmt = mixedSinpe;
-    }
+    
+    // Si NO es crédito de funcionario, afecta la caja
+    const isCreditoFuncionario = paymentMode === 'single' && singleMethod === 'Crédito Funcionario';
+    
+    if (!isCreditoFuncionario) {
+      if (paymentMode === 'single') {
+        if (singleMethod === 'Efectivo' || singleMethod === 'Efectivo USD') cashAmt = total;
+        else if (singleMethod === 'Tarjeta') cardAmt = total;
+        else sinpeAmt = total;
+      } else {
+        cashAmt = mixedCash;
+        cardAmt = mixedCard;
+        sinpeAmt = mixedSinpe;
+      }
 
-    cashShiftService.recordSalePayment({
-      cashAmount: cashAmt,
-      cardAmount: cardAmt,
-      sinpeAmount: sinpeAmt,
-      subtotal,
-      tax: iva13,
-      service10: servicio10,
-      registerId: currentRegister.id
-    });
+      cashShiftService.recordSalePayment({
+        cashAmount: cashAmt,
+        cardAmount: cardAmt,
+        sinpeAmount: sinpeAmt,
+        subtotal,
+        tax: iva13,
+        service10: servicio10,
+        registerId: currentRegister.id
+      });
+    }
 
     // Hacienda Simulation Integration
     const invoiceObj: any = {
@@ -208,13 +222,15 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         terminal: terminalCode
       },
       receptor: {
-        nombre: "Cliente General Contado",
+        nombre: isCreditoFuncionario 
+          ? `[CRÉDITO FUNCIONARIO] ${staffList.find(s => s.id === selectedEmployeeId)?.name || 'Desconocido'}`
+          : "Cliente General Contado",
         tipoIdentificacion: '01-Fisica',
         identificacion: '1-0000-0000',
         correo: 'factura@cliente.cr'
       },
-      condicionVenta: '01-Efectivo',
-      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod) : 'Mixto',
+      condicionVenta: isCreditoFuncionario ? '04-Credito' : '01-Efectivo',
+      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod === 'Crédito Funcionario' ? 'Otros' : singleMethod) : 'Mixto',
       moneda: 'CRC',
       tipoCambio: 1.0,
       items,
@@ -297,8 +313,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         correo: 'factura@cliente.cr'
       },
       fechaEmision: new Date().toISOString(),
-      condicionVenta: '01-Efectivo',
-      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod) : 'Mixto',
+      condicionVenta: (paymentMode === 'single' && singleMethod === 'Crédito Funcionario') ? '04-Credito' : '01-Efectivo',
+      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod === 'Crédito Funcionario' ? 'Otros' : singleMethod) : 'Mixto',
       moneda: 'CRC',
       tipoCambio: 1.0,
       items,
@@ -565,7 +581,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
             {/* ================= PAGO ÚNICO ================= */}
             {paymentMode === 'single' && (
               <div className="space-y-3">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                   <button
                     type="button"
                     onClick={() => setSingleMethod('Tarjeta')}
@@ -617,7 +633,41 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     <Smartphone className={`w-5 h-5 ${singleMethod === 'SINPE Móvil' ? 'text-[#a9b994]' : 'text-stone-500'}`} />
                     <span className="text-xs font-bold">SINPE</span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSingleMethod('Crédito Funcionario')}
+                    className={`p-3 rounded-2xl border-2 text-center transition-all flex flex-col items-center justify-center gap-1 ${
+                      singleMethod === 'Crédito Funcionario'
+                        ? 'bg-stone-900 border-stone-900 text-white shadow-xs'
+                        : 'bg-white border-stone-200 text-stone-600 hover:border-stone-400'
+                    }`}
+                  >
+                    <UserCheck className={`w-5 h-5 ${singleMethod === 'Crédito Funcionario' ? 'text-[#a9b994]' : 'text-stone-500'}`} />
+                    <span className="text-[10px] sm:text-xs font-bold leading-tight">Crédito<br/>Funcionario</span>
+                  </button>
                 </div>
+
+                {singleMethod === 'Crédito Funcionario' && (
+                  <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5">
+                    <label className="block text-xs font-bold text-stone-600 mb-1">
+                      Seleccionar Funcionario
+                    </label>
+                    <select
+                      value={selectedEmployeeId}
+                      onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                      className="w-full px-3.5 py-3 rounded-xl border border-stone-300 bg-white text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 text-sm font-medium"
+                    >
+                      <option value="">-- Seleccionar --</option>
+                      {staffList.map(staff => (
+                        <option key={staff.id} value={staff.id}>{staff.name} ({staff.role})</option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-stone-500 leading-tight">
+                      * Este cobro NO se reflejará en el dinero de caja, pero la factura se guardará a nombre del funcionario.
+                    </p>
+                  </div>
+                )}
 
                 {singleMethod === 'Efectivo USD' && (
                   <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2.5">

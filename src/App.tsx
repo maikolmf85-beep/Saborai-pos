@@ -754,6 +754,7 @@ export function App() {
               onNotify={addNotification}
               userRole={currentUser?.role || 'SALONERO'}
               onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
+              staffList={staffList}
             />
           ) : (
             <TableMap

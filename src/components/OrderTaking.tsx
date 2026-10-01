@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MenuItem, Table, TableItem, SubAccount, TenantInfo, UserRole } from '../types';
+import { MenuItem, Table, TableItem, SubAccount, TenantInfo, UserRole, UserProfile } from '../types';
 import { 
   Sparkles, 
   Plus, 
@@ -30,6 +30,7 @@ interface OrderTakingProps {
   onNotify?: (notif: PosNotification) => void;
   userRole?: UserRole;
   onOpenQuickSwitch?: () => void;
+  staffList?: UserProfile[];
 }
 
 export const OrderTaking: React.FC<OrderTakingProps> = ({
@@ -41,7 +42,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   onDirectInvoice,
   onNotify,
   userRole,
-  onOpenQuickSwitch
+  onOpenQuickSwitch,
+  staffList = []
 }) => {
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [searchTerm, setSearchTerm] = useState('');
@@ -806,6 +808,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         subAccountId={paymentTargetDiner.id}
         dinerName={paymentTargetDiner.name}
         onPaymentComplete={handlePaymentComplete}
+        staffList={staffList}
+        onNotify={onNotify}
       />
 
     </div>
