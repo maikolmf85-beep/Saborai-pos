@@ -20,6 +20,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { NysaOnboarding } from './components/NysaOnboarding';
 import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
 import { MenuEditor } from './components/MenuEditor';
+import { ReportsDashboard } from './components/ReportsDashboard';
 import { WelcomeGate, SaboraiSubscription } from './components/WelcomeGate';
 import { ResetPasswordScreen } from './components/ResetPasswordScreen';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
@@ -805,6 +806,11 @@ export function App() {
             }}
             onOpenHaciendaHistory={() => setIsHaciendaHistoryOpen(true)}
           />
+        )}
+
+        {/* Reportes y Estadísticas */}
+        {activeTab === 'reports' && ['ADMIN', 'CAJERO'].includes(currentUser.role) && (
+          <ReportsDashboard tenant={tenant} />
         )}
       </main>
     </div>

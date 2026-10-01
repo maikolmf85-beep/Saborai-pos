@@ -15,11 +15,12 @@ import {
   UserPlus,
   Banknote,
   Vault,
-  Landmark
+  Landmark,
+  BarChart3
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
-export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu';
+export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu' | 'reports';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -209,6 +210,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             sublabel="Cobro rápido y Hacienda DGT v4.3"
             isActive={activeTab === 'billing'}
           />
+
+          {/* Reportes */}
+          {['ADMIN', 'CAJERO'].includes(user?.role || '') && (
+            <NavVerticalItem
+              id="nav-tab-reports"
+              onClick={() => setActiveTab('reports')}
+              icon={<BarChart3 className="w-5 h-5" />}
+              label="Reportes y Estadísticas"
+              sublabel="Ventas, propinas y cierres"
+              isActive={activeTab === 'reports'}
+            />
+          )}
         </div>
 
         <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
