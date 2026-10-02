@@ -387,25 +387,39 @@ export function App() {
       ...tenant,
       plan: plan,
       status: 'ACTIVE',
-      monthlyFee: plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000
+      monthlyFee: plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000,
+      onboardingCompleted: true
     };
     setTenant(updatedTenant);
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updatedTenant));
     } catch {}
-    // Save subscription from landing page checkout
-    if (!subscription) {
-      const trialEnd = new Date();
-      trialEnd.setDate(trialEnd.getDate() + 14);
-      const sub: SaboraiSubscription = {
-        mode: 'TRIAL',
-        plan,
-        trialEndsAt: trialEnd.toISOString(),
-        activatedAt: new Date().toISOString(),
-      };
-      try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
-      setSubscription(sub);
-    }
+
+    // Force subscription to DEMO mode
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 14);
+    const sub: SaboraiSubscription = {
+      mode: 'DEMO',
+      plan,
+      trialEndsAt: trialEnd.toISOString(),
+      activatedAt: new Date().toISOString(),
+    };
+    try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+    setSubscription(sub);
+
+    // Set a fake demo user so we skip WelcomeGate entirely
+    const demoUser: UserProfile = {
+      id: `demo_${Date.now()}`,
+      name: 'Usuario Demo',
+      email: 'demo@saborai.site',
+      phone: '88888888',
+      restaurantName: 'Saborai Demo',
+      role: 'ADMIN',
+      active: true
+    };
+    try { localStorage.setItem('saborai_user', JSON.stringify(demoUser)); } catch {}
+    setCurrentUser(demoUser);
+
     setActiveTab('pos');
   };
 
