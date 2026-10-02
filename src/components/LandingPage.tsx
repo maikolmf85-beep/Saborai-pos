@@ -20,7 +20,7 @@ import { tilopayService } from '../services/tilopayService';
 
 interface LandingPageProps {
   onStartDemo: (plan: SubscriptionPlan) => void;
-  onEnterPOS: () => void;
+  onEnterPOS: (isDemo?: boolean) => void;
 }
 
 function useCountUp(target: number, duration = 1800, start = false) {
@@ -398,8 +398,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     }
     setIsSubmittingDemo(false);
     setDemoEmailModal(false);
-    onStartDemo('pro');
-    onEnterPOS();
+    onEnterPOS(true);
   };
 
   return (
@@ -518,7 +517,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               <a key={href} href={href} className="block py-2 font-bold text-[#3b3733]" onClick={() => setMobileMenuOpen(false)}>{label}</a>
             ))}
             <div className="pt-4 flex flex-col gap-3">
-              <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#3b3733]">Iniciar Sesión</button>
+              <button onClick={() => onEnterPOS(false)} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#3b3733]">Iniciar Sesión</button>
               <button onClick={() => setDemoEmailModal(true)} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
               <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); setMobileMenuOpen(false); }} className="w-full py-3 rounded-xl font-bold text-white bg-[#588157]">Adquirir POS</button>
             </div>

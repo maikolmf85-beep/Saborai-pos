@@ -196,7 +196,15 @@ export function App() {
     };
 
     if (appDomain === 'POS') {
-      validateSession();
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get('demo') === 'true') {
+        // Automatically start demo
+        handleStartDemo('pro');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        setIsLoadingAuth(false);
+      } else {
+        validateSession();
+      }
     } else {
       setIsLoadingAuth(false);
     }
@@ -521,11 +529,12 @@ export function App() {
       <div className="h-screen w-screen overflow-y-auto bg-[#fafaf9]">
         <LandingPage 
           onStartDemo={handleStartDemo} 
-          onEnterPOS={() => {
+          onEnterPOS={(isDemo?: boolean) => {
             if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+              if (isDemo) handleStartDemo('pro');
               setAppDomain('POS'); // Local dev override
             } else {
-              window.location.href = 'https://pos.saborai.site';
+              window.location.href = isDemo ? 'https://pos.saborai.site?demo=true' : 'https://pos.saborai.site';
             }
           }}
         />
