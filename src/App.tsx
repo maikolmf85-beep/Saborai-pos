@@ -23,6 +23,7 @@ import { MenuEditor } from './components/MenuEditor';
 import { ReportsDashboard } from './components/ReportsDashboard';
 import { WelcomeGate, SaboraiSubscription } from './components/WelcomeGate';
 import { ResetPasswordScreen } from './components/ResetPasswordScreen';
+import { GuidedTour } from './components/GuidedTour';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
@@ -639,6 +640,8 @@ export function App() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#fafaf9] text-stone-900 flex flex-row font-sans selection:bg-[#a9b994]/30">
+      
+      <GuidedTour />
       
       {/* Minimalist Vertical Sidebar Navbar */}
       <Navbar

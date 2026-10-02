@@ -323,7 +323,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   return (
-    <div className="w-full h-full flex flex-col p-2.5 sm:p-3.5 gap-2.5 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
+    <div className="tour-table-map w-full h-full flex flex-col p-2.5 sm:p-3.5 gap-2.5 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
       {/* Top Header & Compact Live Control Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-stone-200/80 shrink-0">

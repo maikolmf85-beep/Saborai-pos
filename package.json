@@ -15,6 +15,7 @@
     "@xmldom/xmldom": "^0.9.12",
     "bcryptjs": "^3.0.3",
     "dotenv": "^18.0.1",
+    "driver.js": "^1.8.0",
     "haciendacostarica-signer": "^1.0.2",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.46.0",

@@ -94,6 +94,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   const [activeFeature, setActiveFeature] = useState(0);
   const [activeUsage, setActiveUsage] = useState(0);
   const [scrolled, setScrolled] = useState(false);
+  
+  const [demoEmailModal, setDemoEmailModal] = useState(false);
+  const [demoEmail, setDemoEmail] = useState('');
+  const [isSubmittingDemo, setIsSubmittingDemo] = useState(false);
 
   const { ref: statsRef, inView: statsInView } = useInView();
 
@@ -379,6 +383,25 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     }
   }, []);
 
+  const handleDemoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!demoEmail) return;
+    setIsSubmittingDemo(true);
+    try {
+      await fetch('/api/demo/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: demoEmail })
+      });
+    } catch (err) {
+      console.error(err);
+    }
+    setIsSubmittingDemo(false);
+    setDemoEmailModal(false);
+    onStartDemo('pro');
+    onEnterPOS();
+  };
+
   return (
     <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
       <style>{`
@@ -472,7 +495,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               Iniciar Sesión
             </button>
             <button
-              onClick={() => { onStartDemo('pro'); onEnterPOS(); }}
+              onClick={() => setDemoEmailModal(true)}
               className="px-4 py-2 text-sm font-bold text-[#3b3733] bg-[#f4f7f0] rounded-full hover:bg-[#e8ece1] transition-colors"
             >
               Probar Demo
@@ -496,7 +519,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             ))}
             <div className="pt-4 flex flex-col gap-3">
               <button onClick={onEnterPOS} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#3b3733]">Iniciar Sesión</button>
-              <button onClick={() => { onStartDemo('pro'); onEnterPOS(); }} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
+              <button onClick={() => setDemoEmailModal(true)} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#588157]">Probar Demo</button>
               <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); setMobileMenuOpen(false); }} className="w-full py-3 rounded-xl font-bold text-white bg-[#588157]">Adquirir POS</button>
             </div>
           </div>
@@ -533,7 +556,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 Comenzar Prueba Gratis <ArrowRight className="w-4 h-4" />
               </button>
               <button
-                onClick={() => { onStartDemo('pro'); onEnterPOS(); }}
+                onClick={() => setDemoEmailModal(true)}
                 className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/50 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2"
               >
                 <Play className="w-4 h-4 text-[#588157]" /> Probar Demo
@@ -728,6 +751,33 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
                 </button>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DEMO EMAIL CAPTURE */}
+      {demoEmailModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-[#3b3733]/40 backdrop-blur-sm lp-fade-in">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl relative">
+            <button onClick={() => setDemoEmailModal(false)} className="absolute top-5 right-5 text-[#a9b994] hover:text-[#3b3733]">
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-3 rounded-xl bg-[#f4f7f0]"><Play className="w-6 h-6 text-[#588157]" /></div>
+              <div>
+                <h3 className="text-lg font-black text-[#3b3733]">Ingresar al Demo</h3>
+                <p className="text-xs text-[#6b686d]">Descubre el POS con IA</p>
+              </div>
+            </div>
+            <form onSubmit={handleDemoSubmit} className="space-y-4">
+              <p className="text-sm text-[#6b686d] mb-4">
+                Ingresa tu correo para acceder directamente al entorno de demostración de Saborai POS.
+              </p>
+              <input required type="email" placeholder="Tu Correo Electrónico" value={demoEmail} onChange={e=>setDemoEmail(e.target.value)} className="w-full p-3 rounded-xl border border-[#a9b994]/40 bg-[#f4f7f0] outline-none focus:border-[#588157] text-sm" />
+              <button type="submit" disabled={isSubmittingDemo} className="w-full py-3 bg-[#588157] text-white rounded-xl font-bold hover:scale-[1.02] shadow-md transition-transform disabled:opacity-70">
+                {isSubmittingDemo ? 'Iniciando...' : 'Comenzar Demo'}
+              </button>
+            </form>
           </div>
         </div>
       )}
