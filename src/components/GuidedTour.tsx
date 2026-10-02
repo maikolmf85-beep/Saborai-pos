@@ -21,7 +21,7 @@ export function GuidedTour() {
             popover: {
               title: '¡Bienvenido a Saborai POS!',
               description: 'El primer sistema con IA nativa diseñado para Costa Rica. Vamos a dar un rápido recorrido por las funciones principales.',
-              side: "over",
+              side: "bottom",
               align: 'center'
             }
           },
