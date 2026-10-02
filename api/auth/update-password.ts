@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabase } from '../utils/supabase.js';
+import { supabaseAdmin as supabase } from '../utils/supabase.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';

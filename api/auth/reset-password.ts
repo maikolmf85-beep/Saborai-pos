@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabase } from '../utils/supabase.js';
+import { supabaseAdmin as supabase } from '../utils/supabase.js';
 import { Resend } from 'resend';
 import jwt from 'jsonwebtoken';
 
@@ -75,8 +75,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const resend = new Resend(resendApiKey);
-    // Use the onboarding domain by default to avoid verification errors in testing
-    const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+    // Usamos un correo del dominio verificado saborai.site
+    const fromEmail = process.env.RESEND_FROM_EMAIL || 'soporte@saborai.site';
 
     const emailResponse = await resend.emails.send({
       from: fromEmail,
