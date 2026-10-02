@@ -241,6 +241,7 @@ export const TableMap: React.FC<TableMapProps> = ({
       zones: [...tenantZones, cleanName]
     });
     setNewZoneName('');
+    setSelectedZone(cleanName);
   };
 
   const handleDeleteZone = (zone: string) => {
@@ -424,7 +425,10 @@ export const TableMap: React.FC<TableMapProps> = ({
               </button>
 
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => {
+                  setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
+                  setShowAddModal(true);
+                }}
                 className="h-8 flex items-center gap-1.5 px-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-xs cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5 text-[#a9b994]" />
