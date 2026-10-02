@@ -299,26 +299,48 @@ export const TableMap: React.FC<TableMapProps> = ({
     setTableForPinAuth(null);
   };
 
-  // Helper to render chairs around circular table
-  const renderChairs = (seats: number) => {
+  // Helper to render chairs based on table shape
+  const renderChairs = (seats: number, shape: 'round' | 'square' | 'bar' = 'round') => {
     const chairs = [];
     const count = Math.min(seats, 8);
-    for (let i = 0; i < count; i++) {
-      const angle = (i * (360 / count)) * (Math.PI / 180);
-      const radius = 32; // distance from center in px
-      const cx = 32 + radius * Math.cos(angle);
-      const cy = 32 + radius * Math.sin(angle);
-
-      chairs.push(
-        <span
-          key={i}
-          className="absolute w-2.5 h-2.5 rounded-full bg-stone-300 border border-stone-400 pointer-events-none transition-transform group-hover:scale-115"
-          style={{
-            left: `${cx - 5}px`,
-            top: `${cy - 5}px`,
-          }}
-        />
-      );
+    
+    if (shape === 'round') {
+      for (let i = 0; i < count; i++) {
+        const angle = (i * (360 / count)) * (Math.PI / 180);
+        const radius = 32;
+        const cx = 32 + radius * Math.cos(angle);
+        const cy = 32 + radius * Math.sin(angle);
+        chairs.push(
+          <span key={i} className="absolute w-2.5 h-2.5 rounded-full bg-stone-300 border border-stone-400 pointer-events-none transition-transform group-hover:scale-115"
+            style={{ left: `${cx - 5}px`, top: `${cy - 5}px` }} />
+        );
+      }
+    } else if (shape === 'square') {
+      for (let i = 0; i < count; i++) {
+        // distribute around square conceptually, but circular math is visually fine just with square chairs
+        const angle = (i * (360 / count)) * (Math.PI / 180);
+        const radius = 30;
+        const cx = 32 + radius * Math.cos(angle);
+        const cy = 32 + radius * Math.sin(angle);
+        chairs.push(
+          <span key={i} className="absolute w-2 h-2 rounded-[2px] bg-stone-300 border border-stone-400 pointer-events-none"
+            style={{ left: `${cx - 4}px`, top: `${cy - 4}px`, transform: `rotate(${angle + Math.PI/4}rad)` }} />
+        );
+      }
+    } else if (shape === 'bar') {
+      const spacing = 16;
+      for (let i = 0; i < count; i++) {
+        const isTop = i % 2 === 0;
+        const col = Math.floor(i / 2);
+        const totalCols = Math.ceil(count / 2);
+        const startX = 32 - ((totalCols - 1) * spacing) / 2;
+        const cx = startX + col * spacing;
+        const cy = isTop ? 14 : 50;
+        chairs.push(
+          <span key={i} className="absolute w-2.5 h-2.5 rounded-full bg-stone-300 border border-stone-400 pointer-events-none"
+            style={{ left: `${cx - 5}px`, top: `${cy - 5}px` }} />
+        );
+      }
     }
     return chairs;
   };
@@ -518,12 +540,16 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <div className="relative w-16 h-16 flex items-center justify-center">
                     
                     {/* Cute Chairs around the Table */}
-                    {renderChairs(table.seats)}
+                    {renderChairs(table.seats, table.shape || 'round')}
 
-                    {/* The Circular Table Button */}
+                    {/* The Table */}
                     <div
-                      className={`w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center shadow-md transition-all ${tableBgClass} ${
+                      className={`border-2 flex flex-col items-center justify-center shadow-md transition-all ${tableBgClass} ${
                         isSelected ? 'ring-3 ring-stone-900 ring-offset-2' : ''
+                      } ${
+                        (table.shape || 'round') === 'round' ? 'w-12 h-12 rounded-full' : 
+                        table.shape === 'square' ? 'w-12 h-12 rounded-xl' :
+                        'w-16 h-10 rounded-lg'
                       }`}
                     >
                       {/* Table Name */}
@@ -737,7 +763,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div>
                   <label className="block mb-1">Zona</label>
                   <select
@@ -754,16 +780,29 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </div>
 
                 <div>
-                  <label className="block mb-1">Número de Sillas</label>
+                  <label className="block mb-1">Sillas</label>
                   <select
                     value={newTableSeats}
                     onChange={(e) => setNewTableSeats(Number(e.target.value))}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 focus:outline-none"
                   >
-                    <option value={2}>2 comensales</option>
-                    <option value={4}>4 comensales</option>
-                    <option value={6}>6 comensales</option>
-                    <option value={8}>8 comensales</option>
+                    <option value={2}>2 comens.</option>
+                    <option value={4}>4 comens.</option>
+                    <option value={6}>6 comens.</option>
+                    <option value={8}>8 comens.</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block mb-1">Forma</label>
+                  <select
+                    value={newTableShape}
+                    onChange={(e) => setNewTableShape(e.target.value as 'round' | 'square' | 'bar')}
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 focus:outline-none"
+                  >
+                    <option value="round">Circular</option>
+                    <option value="square">Cuadrada</option>
+                    <option value="bar">Rectangular</option>
                   </select>
                 </div>
               </div>
