@@ -490,7 +490,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             ))}
           </div>
           <div className="hidden md:flex items-center gap-3">
-            <button onClick={onEnterPOS} className="px-4 py-2 text-sm font-bold text-[#3b3733] hover:text-[#588157] transition-colors">
+            <button onClick={() => onEnterPOS(false)} className="px-4 py-2 text-sm font-bold text-[#3b3733] hover:text-[#588157] transition-colors">
               Iniciar Sesión
             </button>
             <button
