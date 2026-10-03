@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin as supabase } from '../utils/supabase.js';
+import { supabaseAdmin as supabase } from '../_utils/supabase.js';
 import { Resend } from 'resend';
 
 const resendApiKey = process.env.RESEND_API_KEY;
