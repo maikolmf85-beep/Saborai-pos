@@ -44,6 +44,22 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
   const [selectedTenantForEdit, setSelectedTenantForEdit] = useState<TenantInfo | null>(null);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
+  // Authentication State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState(false);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loginPassword === 'admin') {
+      setIsAuthenticated(true);
+      setLoginError(false);
+    } else {
+      setLoginError(true);
+    }
+  };
+
+
   const [tenantsList, setTenantsList] = useState<TenantInfo[]>([
     currentTenant
   ]);
@@ -133,6 +149,34 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
     const matchesStatus = filterStatus === 'ALL' || t.status === filterStatus;
     return matchesSearch && matchesPlan && matchesStatus;
   });
+
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center p-4 font-sans selection:bg-[#a9b994]/30">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-stone-950 to-stone-950 pointer-events-none"></div>
+        <form onSubmit={handleLogin} className="w-full max-w-sm bg-stone-900/50 backdrop-blur-xl border border-stone-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center relative z-10">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
+            <ShieldAlert className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2">Acceso Restringido</h2>
+          <p className="text-stone-400 text-sm text-center mb-8">Área exclusiva de administración. Ingresa la clave maestra.</p>
+          
+          <input
+            type="password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            placeholder="Contraseña"
+            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-4 text-center tracking-widest font-bold"
+            autoFocus
+          />
+          {loginError && <p className="text-red-400 text-xs font-bold mb-4 animate-in fade-in slide-in-from-top-1">Contraseña incorrecta</p>}
+          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/50 hover:shadow-emerald-900/80 hover:-translate-y-0.5">
+            Ingresar al Panel
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 font-sans selection:bg-[#a9b994]/30 overflow-y-auto">
@@ -253,23 +297,26 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
             </div>
           </div>
 
-          {/* Suspended Restaurants */}
-          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-rose-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-rose-900/20 flex flex-col justify-between">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-rose-500/10 rounded-full blur-2xl group-hover:bg-rose-500/20 transition-all duration-500"></div>
+          {/* Traffic / Demos */}
+          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-purple-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-900/20 flex flex-col justify-between">
+            <div className="absolute -right-6 -top-6 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
             <div className="relative z-10">
               <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold uppercase tracking-wider mb-3">
-                <span>Cuentas Suspendidas</span>
-                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-rose-500/10 transition-colors">
-                  <ShieldAlert className="w-4 h-4 text-rose-400" />
+                <span>Visitas Landing (7D)</span>
+                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-purple-500/10 transition-colors">
+                  <Zap className="w-4 h-4 text-purple-400" />
                 </div>
               </div>
-              <div className="text-4xl font-black text-rose-500 tracking-tight">
-                {suspendedCount}
+              <div className="text-4xl font-black text-white tracking-tight flex items-baseline gap-2">
+                1,245 <span className="text-lg text-stone-500 font-medium tracking-normal">Visitas</span>
               </div>
             </div>
-            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 text-xs text-rose-500/80 font-medium flex items-center gap-1.5">
-              <Ban className="w-3.5 h-3.5" />
-              <span>Modo lectura activado</span>
+            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 flex items-center justify-between text-xs">
+              <span className="text-purple-400 font-bold flex items-center gap-1 bg-purple-400/10 px-2 py-1 rounded-lg">
+                <Users className="w-3.5 h-3.5" />
+                <span>84 Leads</span>
+              </span>
+              <span className="text-stone-500 font-medium">6.7% Conversión</span>
             </div>
           </div>
 
