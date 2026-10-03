@@ -80,12 +80,12 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
   }
 
   return (
-    <div className="relative flex items-center justify-start w-full my-0.5 px-1.5 sm:px-2">
+    <div className="relative flex items-center justify-center sm:justify-start w-auto sm:w-full my-0 sm:my-0.5 px-0 sm:px-2">
       <button
         id={id}
         type="button"
         onClick={onClick}
-        className={`w-full h-11 rounded-2xl flex items-center justify-start px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
+        className={`w-12 h-12 sm:w-full sm:h-11 rounded-full sm:rounded-2xl flex items-center justify-center sm:justify-start sm:px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
         title={label}
       >
         <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
@@ -93,7 +93,7 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
           {badge}
         </div>
         
-        <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
+        <div className="hidden sm:flex ml-3 flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-bold">{label}</span>
             {isActive && (
@@ -134,16 +134,16 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   return (
     <aside 
-      className="group/sidebar absolute top-0 left-0 w-16 sm:w-[68px] hover:w-[280px] transition-all duration-300 h-screen bg-stone-950/95 text-white flex flex-col justify-between items-start py-3 border-r border-stone-800/80 shadow-2xl z-50 overflow-y-auto overflow-x-hidden backdrop-blur-xl scrollbar-none"
+      className="group/sidebar fixed sm:absolute bottom-0 sm:top-0 left-0 w-full sm:w-[68px] sm:hover:w-[280px] h-16 sm:h-screen bg-stone-950/95 sm:bg-stone-950/95 text-white flex flex-row sm:flex-col justify-around sm:justify-between items-center sm:items-start py-0 sm:py-3 border-t sm:border-r border-stone-800/80 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] sm:shadow-2xl z-50 overflow-y-hidden sm:overflow-y-auto overflow-x-auto sm:overflow-x-hidden backdrop-blur-xl sm:scrollbar-none px-2 sm:px-0"
       aria-label="Navegación vertical SaborAI POS"
       onMouseEnter={() => {}}
       onMouseLeave={() => {}}
     >
       {/* Top Group: Brand Logo & Operational Modules */}
-      <div className="w-full flex flex-col items-start">
+      <div className="w-full h-full sm:h-auto flex flex-row sm:flex-col items-center sm:items-start gap-1 sm:gap-0">
         
-        {/* Brand Isotype / Logo */}
-        <div className="relative flex items-center justify-start w-full mb-2 px-1.5 sm:px-2">
+        {/* Brand Isotype / Logo (Hidden on very small screens, visible on desktop) */}
+        <div className="hidden sm:flex relative items-center justify-start w-full mb-2 px-1.5 sm:px-2">
           <button
             type="button"
             onClick={() => setActiveTab('pos')}
@@ -163,12 +163,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </div>
 
-        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+        <div className="hidden sm:block w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
           <div className="w-full h-[1px] bg-stone-800/80" />
         </div>
 
         {/* Operational Modules Navigation */}
-        <div className="w-full flex flex-col items-start gap-0.5">
+        <div className="w-full flex flex-row sm:flex-col justify-around sm:justify-start items-center sm:items-start gap-2 sm:gap-0.5">
           {/* Mesas y Salones */}
           <NavVerticalItem
             id="nav-tab-pos"
@@ -224,12 +224,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
+        <div className="hidden sm:block w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
           <div className="w-full h-[1px] bg-stone-800/80" />
         </div>
 
-        {/* Cash Drawer & Shift Management */}
-        <div className="w-full flex flex-col items-start gap-0.5">
+        {/* Cash Drawer & Shift Management (Mobile Hidden, Desktop Sidebar) */}
+        <div className="hidden sm:flex w-full flex-col items-start gap-0.5">
           {/* Turno & Caja Status */}
           {/* Turno & Caja Status */}
           {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && onOpenCashShift && (
@@ -322,7 +322,7 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
 
       {/* Bottom Group: Tools, AI, Status & Logout */}
-      <div className="w-full flex flex-col items-start gap-0.5 mt-auto">
+      <div className="hidden sm:flex w-full flex-col items-start gap-0.5 mt-auto">
         
         {/* Copilot IA */}
         <NavVerticalItem

@@ -662,11 +662,11 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#fafaf9] text-stone-900 flex flex-row font-sans selection:bg-[#a9b994]/30">
+    <div className="h-screen w-screen overflow-hidden bg-[#fafaf9] text-stone-900 flex flex-col sm:flex-row font-sans selection:bg-[#a9b994]/30">
       
       <GuidedTour />
       
-      {/* Minimalist Vertical Sidebar Navbar */}
+      {/* Navbar: Bottom on mobile, Vertical on Desktop */}
       <Navbar
         activeTab={activeTab}
         setActiveTab={(tab) => {
@@ -692,11 +692,11 @@ export function App() {
         activeRegisterName={cashShiftService.getCurrentRegister().name}
       />
 
-      {/* Spacer to push content because Navbar is absolute and overlays on hover */}
-      <div className="w-16 sm:w-[68px] h-full shrink-0 z-0 bg-stone-950/20 block"></div>
+      {/* Spacer to push content because Navbar is absolute/fixed */}
+      <div className="hidden sm:block w-[68px] h-full shrink-0 z-0 bg-stone-950/20"></div>
 
       {/* Main Workspace Container */}
-      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden relative">
+      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden relative pb-16 sm:pb-0">
         {/* Demo Mode Banner */}
         {subscription?.mode === 'DEMO' && activeTab !== 'landing' && (
           <div className="bg-gradient-to-r from-stone-800 to-stone-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between shadow-sm shrink-0 gap-3">

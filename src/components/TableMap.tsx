@@ -595,7 +595,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
         {/* Selected Table Detail Drawer (Collapsible for 100% full-width floor plan) */}
         {showDetailsDrawer && (
-          <div className="w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex flex-col justify-between h-full overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200">
+          <div className="w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex flex-col justify-between h-[45vh] lg:h-full overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200">
           
           {selectedTable ? (
             <div className="space-y-4">
