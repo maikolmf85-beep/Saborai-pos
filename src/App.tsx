@@ -545,7 +545,7 @@ export function App() {
   // If ADMIN domain, completely bypass auth and POS UI (can add its own auth later)
   if (appDomain === 'ADMIN') {
     return (
-      <div className="h-screen w-screen overflow-hidden">
+      <div className="h-screen w-screen overflow-y-auto">
         <SuperAdminBackoffice 
           currentTenant={tenant}
           onSelectTenant={(t) => handleUpdateTenant(t)}
