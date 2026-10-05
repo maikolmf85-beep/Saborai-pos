@@ -505,7 +505,11 @@ export function App() {
       }
 
       if (newKdsOrders.length > 0) {
-        setKdsOrders(prev => [...prev, ...newKdsOrders]);
+        setKdsOrders(prev => {
+          const next = [...prev, ...newKdsOrders];
+          broadcastKdsOrders(next);
+          return next;
+        });
       }
     }
 

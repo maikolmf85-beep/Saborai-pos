@@ -66,6 +66,16 @@ export const TableMap: React.FC<TableMapProps> = ({
     return initialTablesList;
   });
 
+  useEffect(() => {
+    setTables(prev => {
+      const nextTables = initialTablesList.map(incoming => {
+        const local = prev.find(p => p.id === incoming.id);
+        return local ? { ...incoming, x: local.x, y: local.y } : incoming;
+      });
+      return nextTables;
+    });
+  }, [initialTablesList]);
+
   const [selectedZone, setSelectedZone] = useState<string>('Todas');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
