@@ -61,26 +61,6 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
   }, [orders, stationFilter]);
   
   const handleUpdateStatus = (orderId: string, nextStatus: KDSOrder['status']) => {
-    const targetOrder = orders.find(o => o.id === orderId);
-
-    // If marked as READY, sound the service bell & notify waiters!
-    if (nextStatus === 'READY' && targetOrder) {
-      soundService.playOrderReadySound();
-
-      if (onNotify) {
-        onNotify({
-          id: `ready_${Date.now()}`,
-          type: 'ORDER_READY',
-          title: `🛎️ ¡${targetOrder.station === 'Bar' ? 'Bebida Lista' : 'Platillo Listo'} para Servir!`,
-          message: `${targetOrder.tableName} tiene su comanda lista en ${targetOrder.station}.`,
-          station: targetOrder.station,
-          tableNumber: targetOrder.tableNumber,
-          server: targetOrder.server,
-          timestamp: new Date()
-        });
-      }
-    }
-
     onUpdateStatus(orderId, nextStatus);
   };
 

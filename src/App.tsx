@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { LandingPage } from './components/LandingPage';
 import { TableMap } from './components/TableMap';
@@ -103,6 +103,7 @@ export function App() {
 
   // KDS Orders State
   const [kdsOrders, setKdsOrders] = useState<KDSOrder[]>([]);
+  const prevKdsOrdersRef = useRef<Record<string, string>>({});
 
   const handleUpdateKdsOrder = (orderId: string, status: KDSOrder['status'], skipBroadcast = false) => {
     setKdsOrders(prev => {
@@ -380,6 +381,26 @@ export function App() {
   const dismissNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
   };
+
+  useEffect(() => {
+    kdsOrders.forEach(order => {
+      const prevStatus = prevKdsOrdersRef.current[order.id];
+      if (prevStatus && prevStatus !== 'READY' && order.status === 'READY') {
+        soundService.playOrderReadySound();
+        addNotification({
+          id: `ready_${Date.now()}_${order.id}`,
+          type: 'ORDER_READY',
+          title: `🛎️ ¡${order.station === 'Bar' ? 'Bebida Lista' : 'Platillo Listo'} para Servir!`,
+          message: `${order.tableName} tiene su comanda lista en ${order.station}.`,
+          station: order.station,
+          tableNumber: order.tableNumber,
+          server: order.server,
+          timestamp: new Date()
+        });
+      }
+      prevKdsOrdersRef.current[order.id] = order.status;
+    });
+  }, [kdsOrders]);
 
   // Initialize DB and subscribe to offline/online events
   useEffect(() => {
