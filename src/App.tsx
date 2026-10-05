@@ -590,7 +590,18 @@ export function App() {
   };
 
   const handleSyncComplete = (_syncedCount: number) => {
-    // sync handled by localDB
+    // Re-broadcast all state to ensure other devices get the offline changes
+    broadcastTables(tables);
+    broadcastKdsOrders(kdsOrders);
+    broadcastShifts(cashShiftService.getAllActiveShiftsMap());
+    
+    addNotification({
+      id: `sync_p2p_${Date.now()}`,
+      type: 'HACIENDA_UPDATE',
+      title: 'Sincronización P2P Completada',
+      message: 'Las comandas creadas offline han sido enviadas a Cocina y Bar.',
+      timestamp: new Date()
+    });
   };
 
   // If LANDING domain, completely bypass auth and POS UI
