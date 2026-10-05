@@ -6,15 +6,16 @@ export function useRealtimeSync(
   tenantId: string | undefined,
   onUpdateTables: (tables: Table[], skipBroadcast: boolean) => void,
   onUpdateKdsOrders: (orders: KDSOrder[], skipBroadcast: boolean) => void,
-  onUpdateMenuItems: (items: MenuItem[], skipBroadcast: boolean) => void
+  onUpdateMenuItems: (items: MenuItem[], skipBroadcast: boolean) => void,
+  onUpdateShifts: (shiftsMap: any, skipBroadcast: boolean) => void
 ) {
   const channelRef = useRef<any>(null);
 
   // Keep references to the latest callbacks so we don't re-subscribe on every render
-  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems });
+  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts });
   useEffect(() => {
-    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems };
-  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems]);
+    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts };
+  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -31,6 +32,9 @@ export function useRealtimeSync(
       })
       .on('broadcast', { event: 'sync-menu' }, ({ payload }) => {
         callbacksRef.current.onUpdateMenuItems(payload.menuItems, true);
+      })
+      .on('broadcast', { event: 'sync-shifts' }, ({ payload }) => {
+        callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -76,5 +80,15 @@ export function useRealtimeSync(
     }
   };
 
-  return { broadcastTables, broadcastKdsOrders, broadcastMenuItems };
+  const broadcastShifts = (shiftsMap: any) => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'sync-shifts',
+        payload: { shiftsMap },
+      });
+    }
+  };
+
+  return { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts };
 }

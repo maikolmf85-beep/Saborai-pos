@@ -247,6 +247,15 @@ class CashShiftService {
 
   // --- Active Shifts Management (Per Register) ---
 
+  syncShiftsMap(incomingMap: Record<string, CashShift>): void {
+    this.activeShiftsMap = incomingMap;
+    this.saveToStorage();
+  }
+
+  getAllActiveShiftsMap(): Record<string, CashShift> {
+    return this.activeShiftsMap;
+  }
+
   getActiveShift(registerId?: string): CashShift | null {
     const targetId = registerId || this.currentTerminalId;
     return this.activeShiftsMap[targetId] || null;

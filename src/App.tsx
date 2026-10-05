@@ -260,12 +260,21 @@ export function App() {
     } catch {}
   };
 
+  const [shiftsVersion, setShiftsVersion] = useState(0);
+
+  const handleUpdateShifts = (shiftsMap: any, skipBroadcast = false) => {
+    cashShiftService.syncShiftsMap(shiftsMap);
+    setShiftsVersion(v => v + 1);
+    if (!skipBroadcast) broadcastShifts(shiftsMap);
+  };
+
   // Realtime Sync Hook
-  const { broadcastTables, broadcastKdsOrders, broadcastMenuItems } = useRealtimeSync(
+  const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts } = useRealtimeSync(
     tenant.id,
     handleUpdateTables,
     setKdsOrders,
-    handleUpdateMenu
+    handleUpdateMenu,
+    handleUpdateShifts
   );
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
@@ -922,7 +931,10 @@ export function App() {
       {/* Cash Shift & Cash Drawer Management Modal */}
       <CashShiftModal
         isOpen={isCashShiftModalOpen}
-        onClose={() => setIsCashShiftModalOpen(false)}
+        onClose={() => {
+          setIsCashShiftModalOpen(false);
+          handleUpdateShifts(cashShiftService.getAllActiveShiftsMap(), false);
+        }}
         tenant={tenant}
         currentUser={currentUser}
         staffList={staffList}
