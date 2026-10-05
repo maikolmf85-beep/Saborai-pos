@@ -28,11 +28,37 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
   const [viewMode, setViewMode] = useState<'TICKETS' | 'CONSOLIDATED'>('TICKETS');
   const [loadMultiplier, setLoadMultiplier] = useState<number>(1);
   const [now, setNow] = useState(Date.now());
+  const seenOrderIds = React.useRef<Set<string>>(new Set(orders.map(o => o.id)));
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 10000); // 10s for better responsiveness
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const newOrders = orders.filter(o => !seenOrderIds.current.has(o.id));
+    
+    if (newOrders.length > 0) {
+      const relevantNewOrders = stationFilter === 'ALL' 
+        ? newOrders 
+        : newOrders.filter(o => o.station === stationFilter);
+
+      if (relevantNewOrders.length > 0) {
+         const isCocina = relevantNewOrders.some(o => o.station === 'Cocina');
+         const isBar = relevantNewOrders.some(o => o.station === 'Bar');
+         
+         if (isCocina && isBar) {
+           soundService.playNewOrderSound('General');
+         } else if (isCocina) {
+           soundService.playNewOrderSound('Cocina');
+         } else if (isBar) {
+           soundService.playNewOrderSound('Bar');
+         }
+      }
+    }
+
+    orders.forEach(o => seenOrderIds.current.add(o.id));
+  }, [orders, stationFilter]);
   
   const handleUpdateStatus = (orderId: string, nextStatus: KDSOrder['status']) => {
     const targetOrder = orders.find(o => o.id === orderId);
