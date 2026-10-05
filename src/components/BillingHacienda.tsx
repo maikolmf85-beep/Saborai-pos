@@ -144,7 +144,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
   const handleSearchHacienda = async () => {
     if (!customerCedula || customerCedula.length < 9) {
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)' });
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)', timestamp: new Date() });
       return;
     }
     setIsSearchingHacienda(true);
