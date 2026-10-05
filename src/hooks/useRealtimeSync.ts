@@ -43,7 +43,17 @@ export function useRealtimeSync(
         // Only accept tenant sync if we are in demo/empty, or if the incoming tenant has the same ID (to update settings)
         const currentState = callbacksRef.current.getCurrentState();
         if (currentState.tenant?.id === 'tnt_demo_123' || currentState.tenant?.id === payload.tenant.id) {
-          callbacksRef.current.onUpdateTenant(payload.tenant, true);
+          // Merge zones to prevent stale devices from wiping newly created zones
+          const localZones = currentState.tenant?.zones || [];
+          const incomingZones = payload.tenant?.zones || [];
+          const mergedZones = Array.from(new Set([...localZones, ...incomingZones]));
+          
+          const mergedTenant = {
+            ...payload.tenant,
+            zones: mergedZones
+          };
+          
+          callbacksRef.current.onUpdateTenant(mergedTenant, true);
         }
       })
       .on('broadcast', { event: 'sync-staff' }, ({ payload }) => {
