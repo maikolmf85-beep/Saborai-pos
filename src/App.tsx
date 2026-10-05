@@ -80,8 +80,14 @@ export function App() {
     }
   });
 
-  const handleUpdateTenant = (updated: TenantInfo) => {
+  const broadcastTenantRef = useRef<((t: TenantInfo) => void) | null>(null);
+  const broadcastStaffRef = useRef<((s: UserProfile[]) => void) | null>(null);
+
+  const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
     setTenant(updated);
+    if (!skipBroadcast && broadcastTenantRef.current) {
+      broadcastTenantRef.current(updated);
+    }
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updated));
       if (updated.haciendaConfig) {
@@ -269,21 +275,40 @@ export function App() {
     if (!skipBroadcast) broadcastShifts(shiftsMap);
   };
 
+  const handleUpdateStaff = (newStaff: UserProfile[], skipBroadcast = false) => {
+    setStaffList(newStaff);
+    if (!skipBroadcast && broadcastStaffRef.current) {
+      broadcastStaffRef.current(newStaff);
+    }
+    try {
+      localStorage.setItem('saborai_staff', JSON.stringify(newStaff));
+    } catch {}
+  };
+
   // Realtime Sync Hook
-  const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts } = useRealtimeSync(
+  const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts, broadcastTenant, broadcastStaff } = useRealtimeSync(
     tenant.id,
     handleUpdateTables,
     setKdsOrders,
     handleUpdateMenu,
     handleUpdateShifts,
+    handleUpdateTenant,
+    handleUpdateStaff,
     () => ({
       shiftsMap: cashShiftService.getAllActiveShiftsMap(),
       tables,
       kdsOrders,
       menuItems,
-      hasLocalData: !!localStorage.getItem('saborai_menu') || !!localStorage.getItem('saborai_tables') || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0
+      tenant,
+      staff: staffList,
+      hasLocalData: !!localStorage.getItem('saborai_menu') || !!localStorage.getItem('saborai_tables') || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0 || !!localStorage.getItem('saborai_tenant')
     })
   );
+
+  useEffect(() => {
+    broadcastTenantRef.current = broadcastTenant;
+    broadcastStaffRef.current = broadcastStaff;
+  }, [broadcastTenant, broadcastStaff]);
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -320,10 +345,7 @@ export function App() {
 
   const handleAddStaffMember = (newMember: UserProfile) => {
     const updated = [newMember, ...staffList];
-    setStaffList(updated);
-    try {
-      localStorage.setItem('saborai_staff', JSON.stringify(updated));
-    } catch {}
+    handleUpdateStaff(updated);
   };
 
   const handleSelectUser = (user: UserProfile) => {

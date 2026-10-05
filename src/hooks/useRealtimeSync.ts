@@ -8,15 +8,17 @@ export function useRealtimeSync(
   onUpdateKdsOrders: (orders: KDSOrder[], skipBroadcast: boolean) => void,
   onUpdateMenuItems: (items: MenuItem[], skipBroadcast: boolean) => void,
   onUpdateShifts: (shiftsMap: any, skipBroadcast: boolean) => void,
+  onUpdateTenant: (tenant: any, skipBroadcast: boolean) => void,
+  onUpdateStaff: (staff: any[], skipBroadcast: boolean) => void,
   getCurrentState: () => any
 ) {
   const channelRef = useRef<any>(null);
 
   // Keep references to the latest callbacks so we don't re-subscribe on every render
-  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState });
+  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState });
   useEffect(() => {
-    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState };
-  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState]);
+    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState };
+  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -37,6 +39,12 @@ export function useRealtimeSync(
       .on('broadcast', { event: 'sync-shifts' }, ({ payload }) => {
         callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
       })
+      .on('broadcast', { event: 'sync-tenant' }, ({ payload }) => {
+        callbacksRef.current.onUpdateTenant(payload.tenant, true);
+      })
+      .on('broadcast', { event: 'sync-staff' }, ({ payload }) => {
+        callbacksRef.current.onUpdateStaff(payload.staff, true);
+      })
       .on('broadcast', { event: 'request-sync' }, () => {
         const state = callbacksRef.current.getCurrentState();
         if (state && state.hasLocalData) {
@@ -44,6 +52,8 @@ export function useRealtimeSync(
           channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
           channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
+          channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant } });
+          channel.send({ type: 'broadcast', event: 'sync-staff', payload: { staff: state.staff } });
         }
       })
       .subscribe((status) => {
@@ -101,5 +111,25 @@ export function useRealtimeSync(
     }
   };
 
-  return { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts };
+  const broadcastTenant = (tenant: any) => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'sync-tenant',
+        payload: { tenant },
+      });
+    }
+  };
+
+  const broadcastStaff = (staff: any[]) => {
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'sync-staff',
+        payload: { staff },
+      });
+    }
+  };
+
+  return { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts, broadcastTenant, broadcastStaff };
 }
