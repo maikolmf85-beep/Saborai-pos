@@ -114,9 +114,9 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
       }, {} as Record<string, { name: string, station: string, total: number, completed: number }>)
   ).sort((a, b) => b.total - a.total);
 
-  const pendingCount = orders.filter(o => o.status === 'PENDING').length;
-  const inPrepCount = orders.filter(o => o.status === 'IN_PREPARATION').length;
-  const readyCount = orders.filter(o => o.status === 'READY').length;
+  const pendingCount = activeOrders.filter(o => o.status === 'PENDING').length;
+  const inPrepCount = activeOrders.filter(o => o.status === 'IN_PREPARATION').length;
+  const readyCount = activeOrders.filter(o => o.status === 'READY').length;
 
   return (
     <div className="p-4 sm:p-6 max-w-[1700px] mx-auto space-y-6 animate-in fade-in duration-150">
@@ -198,7 +198,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Todas ({orders.length})
+              Todas ({activeOrders.length})
             </button>
 
             <button
@@ -210,7 +210,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
               }`}
             >
               <ChefHat className={`w-3.5 h-3.5 ${stationFilter === 'Cocina' ? 'text-[#588157]' : 'text-stone-400'}`} />
-              <span>Cocina ({orders.filter(o => o.station === 'Cocina').length})</span>
+              <span>Cocina ({activeOrders.filter(o => o.station === 'Cocina').length})</span>
             </button>
 
             <button
@@ -222,7 +222,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
               }`}
             >
               <Wine className={`w-3.5 h-3.5 ${stationFilter === 'Bar' ? 'text-[#588157]' : 'text-stone-400'}`} />
-              <span>Bar ({orders.filter(o => o.station === 'Bar').length})</span>
+              <span>Bar ({activeOrders.filter(o => o.station === 'Bar').length})</span>
             </button>
           </div>
 
