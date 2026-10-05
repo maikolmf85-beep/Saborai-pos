@@ -77,7 +77,7 @@ export const TableMap: React.FC<TableMapProps> = ({
     });
   }, [initialTablesList]);
 
-  const [selectedZone, setSelectedZone] = useState<string>('Todas');
+  const [selectedZone, setSelectedZone] = useState<string>(tenantZones[0] || 'General');
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -132,9 +132,7 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   }, [tables, tenant.id]);
 
-  const filteredTables = selectedZone === 'Todas' 
-    ? tables 
-    : tables.filter(t => t.zone === selectedZone);
+  const filteredTables = tables.filter(t => t.zone === selectedZone);
 
   const calculateTableTotal = (table: Table) => {
     if (!table.activeOrder) return 0;
@@ -385,7 +383,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {['Todas', ...tenantZones].map((zone) => (
+            {tenantZones.map((zone) => (
               <button
                 key={zone}
                 onClick={() => setSelectedZone(zone)}
@@ -395,7 +393,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                     : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
                 }`}
               >
-                {zone === 'Todas' ? 'Todas' : zone}
+                {zone}
               </button>
             ))}
             {isAdmin && (
