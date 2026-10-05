@@ -144,7 +144,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
   const handleSearchHacienda = async () => {
     if (!customerCedula || customerCedula.length < 9) {
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'ERROR', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)' });
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)' });
       return;
     }
     setIsSearchingHacienda(true);
@@ -159,7 +159,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
           setCustomerEmail(found.email || '');
           setCustomerActivityCode(found.activityCode || '');
           setIsSearchingHacienda(false);
-          if (onNotify) onNotify({ id: Date.now().toString(), type: 'SUCCESS', title: 'Cliente Encontrado', message: 'Datos cargados desde clientes guardados', timestamp: new Date() });
+          if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Cliente Encontrado', message: 'Datos cargados desde clientes guardados', timestamp: new Date() });
           return;
         }
       }
@@ -173,9 +173,9 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       if (data.actividades && data.actividades.length > 0) {
         setCustomerActivityCode(data.actividades[0].codigo || '');
       }
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'SUCCESS', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón', timestamp: new Date() });
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón', timestamp: new Date() });
     } catch (err) {
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'ERROR', title: 'No encontrado', message: 'No se encontró el contribuyente en Hacienda', timestamp: new Date() });
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'No encontrado', message: 'No se encontró el contribuyente en Hacienda', timestamp: new Date() });
     } finally {
       setIsSearchingHacienda(false);
     }
@@ -312,7 +312,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       if (onNotify) {
         onNotify({
           id: `err_shift_${Date.now()}`,
-          type: 'ERROR',
+          type: 'HACIENDA_UPDATE',
           title: 'Turno no iniciado',
           message: 'Debe abrir un turno de caja antes de facturar.',
           timestamp: new Date()
@@ -327,7 +327,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
         if (onNotify) {
           onNotify({
             id: `err_form_${Date.now()}`,
-            type: 'ERROR',
+            type: 'HACIENDA_UPDATE',
             title: 'Datos Incompletos',
             message: 'Debe llenar todos los datos para Factura Electrónica.',
             timestamp: new Date()
