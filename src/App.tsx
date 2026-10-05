@@ -28,6 +28,7 @@ import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { soundService } from './services/soundEffects';
+import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
 
@@ -103,21 +104,29 @@ export function App() {
   // KDS Orders State
   const [kdsOrders, setKdsOrders] = useState<KDSOrder[]>([]);
 
-  const handleUpdateKdsOrder = (orderId: string, status: KDSOrder['status']) => {
-    setKdsOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  const handleUpdateKdsOrder = (orderId: string, status: KDSOrder['status'], skipBroadcast = false) => {
+    setKdsOrders(prev => {
+      const next = prev.map(o => o.id === orderId ? { ...o, status } : o);
+      if (!skipBroadcast) broadcastKdsOrders(next);
+      return next;
+    });
   };
 
-  const handleToggleKdsItem = (orderId: string, itemId: string) => {
-    setKdsOrders(prev => prev.map(order => {
-      if (order.id !== orderId) return order;
-      const updatedItems = order.items.map(it => it.id === itemId ? { ...it, completed: !it.completed } : it);
-      const allCompleted = updatedItems.length > 0 && updatedItems.every(it => it.completed);
-      let nextStatus = order.status;
-      if (allCompleted && order.status !== 'READY' && order.status !== 'SERVED') {
-        nextStatus = 'READY';
-      }
-      return { ...order, items: updatedItems, status: nextStatus };
-    }));
+  const handleToggleKdsItem = (orderId: string, itemId: string, skipBroadcast = false) => {
+    setKdsOrders(prev => {
+      const next = prev.map(order => {
+        if (order.id !== orderId) return order;
+        const updatedItems = order.items.map(it => it.id === itemId ? { ...it, completed: !it.completed } : it);
+        const allCompleted = updatedItems.length > 0 && updatedItems.every(it => it.completed);
+        let nextStatus = order.status;
+        if (allCompleted && order.status !== 'READY' && order.status !== 'SERVED') {
+          nextStatus = 'READY';
+        }
+        return { ...order, items: updatedItems, status: nextStatus };
+      });
+      if (!skipBroadcast) broadcastKdsOrders(next);
+      return next;
+    });
   };
 
   // JWT Token validation on load
@@ -224,8 +233,9 @@ export function App() {
     return sampleMenuItems;
   });
 
-  const handleUpdateMenu = (updatedMenu: MenuItem[]) => {
+  const handleUpdateMenu = (updatedMenu: MenuItem[], skipBroadcast = false) => {
     setMenuItems(updatedMenu);
+    if (!skipBroadcast) broadcastMenuItems(updatedMenu);
     try {
       localStorage.setItem('saborai_menu', JSON.stringify(updatedMenu));
     } catch {}
@@ -242,12 +252,21 @@ export function App() {
     return initialTables;
   });
 
-  const handleUpdateTables = (updatedTables: Table[]) => {
+  const handleUpdateTables = (updatedTables: Table[], skipBroadcast = false) => {
     setTables(updatedTables);
+    if (!skipBroadcast) broadcastTables(updatedTables);
     try {
       localStorage.setItem('saborai_tables', JSON.stringify(updatedTables));
     } catch {}
   };
+
+  // Realtime Sync Hook
+  const { broadcastTables, broadcastKdsOrders, broadcastMenuItems } = useRealtimeSync(
+    tenant.id,
+    handleUpdateTables,
+    setKdsOrders,
+    handleUpdateMenu
+  );
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
