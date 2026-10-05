@@ -274,7 +274,13 @@ export function App() {
     handleUpdateTables,
     setKdsOrders,
     handleUpdateMenu,
-    handleUpdateShifts
+    handleUpdateShifts,
+    () => ({
+      shiftsMap: cashShiftService.getAllActiveShiftsMap(),
+      tables,
+      kdsOrders,
+      menuItems
+    })
   );
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);

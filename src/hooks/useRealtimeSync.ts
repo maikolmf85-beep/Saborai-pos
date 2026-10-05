@@ -7,15 +7,16 @@ export function useRealtimeSync(
   onUpdateTables: (tables: Table[], skipBroadcast: boolean) => void,
   onUpdateKdsOrders: (orders: KDSOrder[], skipBroadcast: boolean) => void,
   onUpdateMenuItems: (items: MenuItem[], skipBroadcast: boolean) => void,
-  onUpdateShifts: (shiftsMap: any, skipBroadcast: boolean) => void
+  onUpdateShifts: (shiftsMap: any, skipBroadcast: boolean) => void,
+  getCurrentState: () => any
 ) {
   const channelRef = useRef<any>(null);
 
   // Keep references to the latest callbacks so we don't re-subscribe on every render
-  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts });
+  const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState });
   useEffect(() => {
-    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts };
-  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts]);
+    callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState };
+  }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, getCurrentState]);
 
   useEffect(() => {
     if (!tenantId) return;
@@ -36,9 +37,18 @@ export function useRealtimeSync(
       .on('broadcast', { event: 'sync-shifts' }, ({ payload }) => {
         callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
       })
+      .on('broadcast', { event: 'request-sync' }, () => {
+        const state = callbacksRef.current.getCurrentState();
+        if (state && Object.keys(state.shiftsMap || {}).length > 0) {
+          channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
+          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables } });
+          channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
+        }
+      })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log(`Connected to realtime channel: ${channelName}`);
+          channel.send({ type: 'broadcast', event: 'request-sync', payload: {} });
         }
       });
 
