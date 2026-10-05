@@ -78,6 +78,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [paymentTargetDiner, setPaymentTargetDiner] = useState<{ id: number | 'ALL'; name?: string }>({ id: 'ALL' });
   const [orderSentBanner, setOrderSentBanner] = useState(false);
 
+  // Modifiers state
+  const [selectedProductForMods, setSelectedProductForMods] = useState<import('../types').MenuItem | null>(null);
+  const [currentModSelections, setCurrentModSelections] = useState<{ modifierName: string; choiceName: string; extraPrice: number }[]>([]);
+
   const categories = ['Todas', 'Entradas', 'Platos Fuertes', 'Bebidas', 'Cafetería', 'Postres'];
 
   const currentDiner = subAccounts.find(s => s.id === selectedSubAccount) || subAccounts[0];
@@ -117,9 +121,21 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const handleAddItem = (product: MenuItem) => {
+    if (product.modifiers && product.modifiers.length > 0) {
+      setSelectedProductForMods(product);
+      setCurrentModSelections([]);
+      return;
+    }
+    _executeAddItem(product, []);
+  };
+
+  const _executeAddItem = (product: MenuItem, modifiers: { modifierName: string; choiceName: string; extraPrice: number }[]) => {
     // Buscar un ítem idéntico que AÚN NO se haya enviado al KDS
     const existingIndex = currentOrderItems.findIndex(
-      i => i.name === product.name && i.subAccountId === selectedSubAccount && !i.kdsStatus
+      i => i.name === product.name && 
+           i.subAccountId === selectedSubAccount && 
+           !i.kdsStatus &&
+           JSON.stringify(i.selectedModifiers || []) === JSON.stringify(modifiers)
     );
 
     if (existingIndex > -1) {
@@ -127,18 +143,25 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       updated[existingIndex].quantity += 1;
       setCurrentOrderItems(updated);
     } else {
+      const extraPrice = modifiers.reduce((sum, mod) => sum + (mod.extraPrice || 0), 0);
       const newItem: TableItem = {
         id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         name: product.name,
-        price: product.price,
+        price: product.price + extraPrice,
         quantity: 1,
         subAccountId: selectedSubAccount,
         dinerName: currentDiner.name,
         cabysCode: product.cabysCode,
         taxRate: product.taxRate,
         category: product.station === 'Bar' ? 'Bar' : 'Cocina',
+        selectedModifiers: modifiers.length > 0 ? modifiers : undefined
       };
       setCurrentOrderItems([...currentOrderItems, newItem]);
+    }
+    
+    if (selectedProductForMods) {
+      setSelectedProductForMods(null);
+      setCurrentModSelections([]);
     }
   };
 
@@ -579,6 +602,12 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                           Nota: {item.notes}
                         </p>
                       )}
+                      
+                      {item.selectedModifiers && item.selectedModifiers.length > 0 && (
+                        <p className="text-[10px] text-stone-500 font-medium leading-tight mt-0.5">
+                          {item.selectedModifiers.map(m => m.choiceName).join(', ')}
+                        </p>
+                      )}
 
                       <div className="flex items-center gap-2 mt-1">
                         <span className="text-[11px] text-stone-400">
@@ -812,6 +841,99 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         onNotify={onNotify}
       />
 
+      />
+
+      {/* Modifier Selection Modal */}
+      {selectedProductForMods && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
+            <div className="p-4 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
+              <div>
+                <h3 className="font-black text-stone-900 text-lg">Opciones: {selectedProductForMods.name}</h3>
+                <p className="text-xs text-stone-500">Selecciona los modificadores</p>
+              </div>
+              <button onClick={() => setSelectedProductForMods(null)} className="p-2 text-stone-500 hover:bg-stone-200 rounded-full">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto max-h-[60vh] space-y-4">
+              {(selectedProductForMods.modifiers || []).map(mod => {
+                const selectedChoices = currentModSelections.filter(s => s.modifierName === mod.name);
+                
+                return (
+                  <div key={mod.id} className="border border-stone-200 rounded-xl p-3">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-bold text-stone-800 text-sm">{mod.name}</span>
+                      {mod.isRequired && <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded uppercase">Obligatorio</span>}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      {mod.choices.map((choice, idx) => {
+                        const isSelected = selectedChoices.some(s => s.choiceName === choice.name);
+                        return (
+                          <label key={idx} className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-[#588157] bg-[#588157]/5' : 'border-stone-200 hover:bg-stone-50'}`}>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type={mod.multiple ? "checkbox" : "radio"}
+                                name={mod.id}
+                                checked={isSelected}
+                                onChange={() => {
+                                  let newSelections = [...currentModSelections];
+                                  if (isSelected) {
+                                    newSelections = newSelections.filter(s => !(s.modifierName === mod.name && s.choiceName === choice.name));
+                                  } else {
+                                    if (!mod.multiple) {
+                                      newSelections = newSelections.filter(s => s.modifierName !== mod.name);
+                                    }
+                                    newSelections.push({
+                                      modifierName: mod.name,
+                                      choiceName: choice.name,
+                                      extraPrice: choice.extraPrice || 0
+                                    });
+                                  }
+                                  setCurrentModSelections(newSelections);
+                                }}
+                                className="text-[#588157] focus:ring-[#588157]"
+                              />
+                              <span className="text-sm font-medium text-stone-700">{choice.name}</span>
+                            </div>
+                            {choice.extraPrice ? (
+                              <span className="text-xs font-bold text-stone-500">+₡{choice.extraPrice.toLocaleString()}</span>
+                            ) : null}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-4 border-t border-stone-200 bg-stone-50">
+              <button
+                onClick={() => {
+                  // Verify required modifiers
+                  const missingRequired = (selectedProductForMods.modifiers || []).find(
+                    m => m.isRequired && !currentModSelections.some(s => s.modifierName === m.name)
+                  );
+                  if (missingRequired) {
+                    alert(`Debes seleccionar al menos una opción en: ${missingRequired.name}`);
+                    return;
+                  }
+                  _executeAddItem(selectedProductForMods, currentModSelections);
+                }}
+                className="w-full py-3 bg-[#588157] hover:bg-[#3a5a3a] text-white rounded-xl text-sm font-bold shadow flex items-center justify-center gap-2"
+              >
+                <Check className="w-5 h-5" />
+                Añadir a la comanda
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
+

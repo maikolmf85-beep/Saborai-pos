@@ -445,6 +445,133 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   </div>
                 </div>
 
+                <div className="pt-4 border-t border-stone-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-[10px] font-bold text-stone-500 uppercase">Modificadores y Opciones (Ej. Término de carne)</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newMod = { id: `mod_${Date.now()}`, name: '', isRequired: false, multiple: false, choices: [] };
+                        setEditingItem({ ...editingItem, modifiers: [...(editingItem.modifiers || []), newMod] });
+                      }}
+                      className="text-xs font-bold text-[#588157] hover:text-[#3a5a3a] flex items-center gap-1 bg-stone-100 px-2 py-1 rounded-lg"
+                    >
+                      <Plus className="w-3 h-3" /> Añadir Grupo
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {(editingItem.modifiers || []).map((mod, modIdx) => (
+                      <div key={mod.id} className="bg-stone-50 border border-stone-200 rounded-xl p-3">
+                        <div className="flex gap-2 mb-3">
+                          <input
+                            type="text"
+                            placeholder="Nombre del grupo (Ej. Término, Salsa)"
+                            value={mod.name}
+                            onChange={(e) => {
+                              const newMods = [...(editingItem.modifiers || [])];
+                              newMods[modIdx].name = e.target.value;
+                              setEditingItem({ ...editingItem, modifiers: newMods });
+                            }}
+                            className="flex-1 px-3 py-1.5 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newMods = [...(editingItem.modifiers || [])];
+                              newMods.splice(modIdx, 1);
+                              setEditingItem({ ...editingItem, modifiers: newMods });
+                            }}
+                            className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 mb-3 text-xs">
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={mod.isRequired}
+                              onChange={(e) => {
+                                const newMods = [...(editingItem.modifiers || [])];
+                                newMods[modIdx].isRequired = e.target.checked;
+                                setEditingItem({ ...editingItem, modifiers: newMods });
+                              }}
+                              className="rounded text-[#588157] focus:ring-[#588157]"
+                            />
+                            <span className="font-bold text-stone-600">Obligatorio</span>
+                          </label>
+                          <label className="flex items-center gap-1 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={mod.multiple}
+                              onChange={(e) => {
+                                const newMods = [...(editingItem.modifiers || [])];
+                                newMods[modIdx].multiple = e.target.checked;
+                                setEditingItem({ ...editingItem, modifiers: newMods });
+                              }}
+                              className="rounded text-[#588157] focus:ring-[#588157]"
+                            />
+                            <span className="font-bold text-stone-600">Selección Múltiple</span>
+                          </label>
+                        </div>
+
+                        <div className="space-y-2">
+                          {mod.choices.map((choice, choiceIdx) => (
+                            <div key={choiceIdx} className="flex gap-2">
+                              <input
+                                type="text"
+                                placeholder="Opción (Ej. 3/4)"
+                                value={choice.name}
+                                onChange={(e) => {
+                                  const newMods = [...(editingItem.modifiers || [])];
+                                  newMods[modIdx].choices[choiceIdx].name = e.target.value;
+                                  setEditingItem({ ...editingItem, modifiers: newMods });
+                                }}
+                                className="flex-1 px-2 py-1 text-xs border border-stone-200 rounded bg-white"
+                              />
+                              <input
+                                type="number"
+                                placeholder="Precio extra (+₡)"
+                                value={choice.extraPrice || ''}
+                                onChange={(e) => {
+                                  const newMods = [...(editingItem.modifiers || [])];
+                                  newMods[modIdx].choices[choiceIdx].extraPrice = parseFloat(e.target.value) || 0;
+                                  setEditingItem({ ...editingItem, modifiers: newMods });
+                                }}
+                                className="w-24 px-2 py-1 text-xs border border-stone-200 rounded bg-white"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newMods = [...(editingItem.modifiers || [])];
+                                  newMods[modIdx].choices.splice(choiceIdx, 1);
+                                  setEditingItem({ ...editingItem, modifiers: newMods });
+                                }}
+                                className="p-1 text-stone-400 hover:text-red-500"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newMods = [...(editingItem.modifiers || [])];
+                              newMods[modIdx].choices.push({ name: '', extraPrice: 0 });
+                              setEditingItem({ ...editingItem, modifiers: newMods });
+                            }}
+                            className="text-[10px] font-bold text-stone-500 hover:text-stone-700 flex items-center gap-1 mt-1"
+                          >
+                            <Plus className="w-3 h-3" /> Añadir Opción
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-2 mt-4">
                   <ShieldAlert className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   <p className="text-[10px] text-blue-800 leading-tight">

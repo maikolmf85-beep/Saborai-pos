@@ -399,9 +399,16 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                   <span>Total</span>
                 </div>
                 {items.map((it, idx) => (
-                  <div key={idx} className="flex justify-between">
-                    <span>{it.quantity}x {it.name.substring(0, 20)}</span>
-                    <span>₡{(it.price * it.quantity).toLocaleString()}</span>
+                  <div key={idx} className="flex flex-col">
+                    <div className="flex justify-between">
+                      <span>{it.quantity}x {it.name.substring(0, 20)}</span>
+                      <span>₡{(it.price * it.quantity).toLocaleString()}</span>
+                    </div>
+                    {it.selectedModifiers && it.selectedModifiers.length > 0 && (
+                      <div className="text-[8px] text-stone-600 pl-3 leading-tight italic">
+                        {it.selectedModifiers.map(m => m.choiceName).join(', ')}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

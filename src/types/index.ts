@@ -58,6 +58,19 @@ export interface SubAccount {
   name: string; // Nombre del comensal (ej. "Carlos Gómez", "María P.", "Invitado 1")
 }
 
+export interface MenuModifierChoice {
+  name: string;
+  extraPrice?: number;
+}
+
+export interface MenuModifier {
+  id: string;
+  name: string; // e.g. "Término de la carne", "Salsa", "Acompañamiento"
+  isRequired: boolean;
+  multiple: boolean; // if true, can select multiple choices
+  choices: MenuModifierChoice[];
+}
+
 export interface TableItem {
   id: string;
   name: string;
@@ -70,6 +83,7 @@ export interface TableItem {
   taxRate: number; // 0.13, 0.04, 0.02, 0.01, 0
   category: string; // Dynamic custom categories
   recipeIngredients?: { ingredient: string; qty: number; unit: string }[];
+  selectedModifiers?: { modifierName: string; choiceName: string; extraPrice?: number }[];
   kdsStatus?: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
   kdsOrderId?: string;
 }
@@ -110,6 +124,7 @@ export interface MenuItem {
   ingredients: { name: string; requiredQty: number; unit: string; currentStock: number }[];
   aiSuggestedPairing?: string;
   prepTime?: number; // Tiempo estimado de preparación en minutos
+  modifiers?: MenuModifier[]; // Opciones/modificadores para el platillo
 }
 
 export interface KDSOrder {
@@ -126,6 +141,7 @@ export interface KDSOrder {
     name: string;
     quantity: number;
     notes?: string;
+    modifiers?: string[]; // Modificadores elegidos
     completed?: boolean;
   }[];
 }

@@ -385,6 +385,15 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                               Nota: {it.notes}
                             </p>
                           )}
+                          {it.modifiers && it.modifiers.length > 0 && (
+                            <div className="pl-7 mt-1 space-y-0.5">
+                              {it.modifiers.map((mod, midx) => (
+                                <span key={midx} className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${it.completed ? 'bg-stone-100 text-stone-400' : 'bg-amber-100 text-amber-800'} mr-1`}>
+                                  {mod}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>

@@ -549,7 +549,14 @@ export function App() {
           status: 'PENDING',
           station: 'Cocina',
           targetPrepTime: maxPrepTime > 0 ? maxPrepTime : undefined,
-          items: newKitchenItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
+          items: newKitchenItems.map(i => ({ 
+            id: i.id, 
+            name: i.name, 
+            quantity: i.quantity, 
+            notes: i.notes, 
+            modifiers: i.selectedModifiers?.map(m => m.choiceName),
+            completed: false 
+          }))
         });
       }
 
@@ -569,7 +576,14 @@ export function App() {
           status: 'PENDING',
           station: 'Bar',
           targetPrepTime: maxPrepTime > 0 ? maxPrepTime : undefined,
-          items: newBarItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
+          items: newBarItems.map(i => ({ 
+            id: i.id, 
+            name: i.name, 
+            quantity: i.quantity, 
+            notes: i.notes, 
+            modifiers: i.selectedModifiers?.map(m => m.choiceName),
+            completed: false 
+          }))
         });
       }
 
