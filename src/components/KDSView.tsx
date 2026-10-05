@@ -90,8 +90,9 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
     ? activeOrders
     : activeOrders.filter(o => o.station === stationFilter);
 
-  const getElapsedTimeInMinutes = (date: Date) => {
-    return Math.floor((now - date.getTime()) / 60000);
+  const getElapsedTimeInMinutes = (date: Date | string) => {
+    const time = typeof date === 'string' ? new Date(date).getTime() : date.getTime();
+    return Math.floor((now - time) / 60000);
   };
 
   const consolidatedItems = Object.values(
