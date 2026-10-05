@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { MenuItem, TaxRegime, SubscriptionPlan } from '../types';
-import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus } from 'lucide-react';
+import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 
 interface MenuEditorProps {
@@ -408,15 +408,20 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Tiempo Prep. (Min)</label>
+                  <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 relative overflow-hidden group/prep">
+                    <div className="absolute top-0 right-0 p-1 opacity-10 group-hover/prep:opacity-20 transition-opacity">
+                      <Clock className="w-12 h-12 text-amber-600" />
+                    </div>
+                    <label className="block text-[10px] font-black text-amber-800 uppercase mb-1 relative z-10 flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> Tiempo Prep. (Min)
+                    </label>
                     <input
                       type="number"
                       min="0"
-                      placeholder="Ej: 15"
+                      placeholder="Opcional (Ej: 15)"
                       value={editingItem.prepTime || ''}
                       onChange={e => setEditingItem({...editingItem, prepTime: parseInt(e.target.value) || 0})}
-                      className="w-full px-3 py-2 text-sm font-black border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
+                      className="w-full px-3 py-1.5 text-sm font-black bg-white/80 border border-amber-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all relative z-10 text-amber-900 placeholder:text-amber-300"
                     />
                   </div>
                 </div>

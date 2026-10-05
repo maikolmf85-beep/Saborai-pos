@@ -493,6 +493,10 @@ export function App() {
       if (newKitchenItems.length > 0) {
         const orderId = `kds_c_${Date.now()}`;
         newKitchenItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        const maxPrepTime = Math.max(0, ...newKitchenItems.map(i => {
+          const menuIt = menuItems.find(m => m.name === i.name);
+          return menuIt?.prepTime || 0;
+        }));
         newKdsOrders.push({
           id: orderId,
           tableNumber: updatedTable.number,
@@ -501,6 +505,7 @@ export function App() {
           timestamp,
           status: 'PENDING',
           station: 'Cocina',
+          targetPrepTime: maxPrepTime > 0 ? maxPrepTime : undefined,
           items: newKitchenItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
         });
       }
@@ -508,6 +513,10 @@ export function App() {
       if (newBarItems.length > 0) {
         const orderId = `kds_b_${Date.now()}`;
         newBarItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        const maxPrepTime = Math.max(0, ...newBarItems.map(i => {
+          const menuIt = menuItems.find(m => m.name === i.name);
+          return menuIt?.prepTime || 0;
+        }));
         newKdsOrders.push({
           id: orderId,
           tableNumber: updatedTable.number,
@@ -516,6 +525,7 @@ export function App() {
           timestamp,
           status: 'PENDING',
           station: 'Bar',
+          targetPrepTime: maxPrepTime > 0 ? maxPrepTime : undefined,
           items: newBarItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, notes: i.notes, completed: false }))
         });
       }

@@ -118,6 +118,7 @@ export interface KDSOrder {
   timestamp: Date;
   status: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
   station: 'Cocina' | 'Bar';
+  targetPrepTime?: number; // Maximum prep time in minutes for items in this order
   items: {
     id?: string;
     name: string;
