@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MenuItem, TaxRegime, SubscriptionPlan } from '../types';
+import { TenantInfo, MenuItem, TaxRegime, SubscriptionPlan } from '../types';
 import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 
@@ -8,13 +8,19 @@ interface MenuEditorProps {
   onUpdateMenu: (items: MenuItem[]) => void;
   taxRegime: TaxRegime;
   plan: SubscriptionPlan;
+  tenant: TenantInfo;
+  onUpdateTenant: (tenant: TenantInfo) => void;
 }
 
-export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime, plan }) => {
+export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime, plan, tenant, onUpdateTenant }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
+  
+  // Custom categories management
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
   
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -60,11 +66,15 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
     onUpdateMenu([...newItems, ...menuItems]);
     setIsBulkAddOpen(false);
-    setBulkItems([{ name: '', price: 0, category: 'Platos Fuertes', station: 'Cocina' }]);
+    setBulkItems([{ name: '', price: 0, category: tenant.menuCategories?.[0] || 'Platos Fuertes', station: 'Cocina' }]);
     soundService.playSuccessChime();
   };
 
-  const categories = ['Todas', ...Array.from(new Set(menuItems.map(m => m.category)))];
+  const dynamicCategories = tenant.menuCategories && tenant.menuCategories.length > 0 
+    ? tenant.menuCategories 
+    : ['Platos Fuertes', 'Bebidas', 'Postres'];
+
+  const categories = ['Todas', ...dynamicCategories];
 
   const filteredItems = menuItems.filter(item => {
     const matchesCategory = activeCategory === 'Todas' || item.category === activeCategory;
@@ -173,7 +183,15 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
             title="Agrega múltiples productos al mismo tiempo."
           >
             <ListPlus className="w-4 h-4 text-[#588157]" />
-            <span className="hidden sm:inline">Agregar Varios</span>
+            <span className="hidden sm:inline">Varios</span>
+          </button>
+          <button
+            onClick={() => setIsCategoryModalOpen(true)}
+            className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
+            title="Administrar categorías"
+          >
+            <Settings2 className="w-4 h-4 text-[#588157]" />
+            <span className="hidden sm:inline">Categorías</span>
           </button>
           <button
             onClick={() => handleOpenEdit()}
@@ -357,17 +375,18 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   <div>
                     <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Categoría</label>
                     <div className="relative">
-                      <input
-                        type="text"
+                      <select
                         required
-                        list="categories-list"
                         value={editingItem.category || ''}
                         onChange={e => setEditingItem({...editingItem, category: e.target.value})}
-                        className="w-full px-3 py-2 text-sm border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
-                      />
-                      <datalist id="categories-list">
-                        {categories.filter(c => c !== 'Todas').map(c => <option key={c} value={c} />)}
-                      </datalist>
+                        className="w-full px-3 py-2 text-sm border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all appearance-none"
+                      >
+                        <option value="" disabled>Seleccione una...</option>
+                        {Array.from(new Set([
+                          ...(editingItem.category && !dynamicCategories.includes(editingItem.category) ? [editingItem.category] : []),
+                          ...dynamicCategories
+                        ])).map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
                       <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
@@ -502,13 +521,13 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                       />
                     </div>
                     <div className="col-span-2">
-                      <input
-                        type="text"
-                        placeholder="Ej: Platos Fuertes"
+                      <select
                         value={item.category}
                         onChange={(e) => handleUpdateBulkItem(index, 'category', e.target.value)}
-                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994]"
-                      />
+                        className="w-full px-3 py-2 text-sm font-bold border border-stone-300 rounded-lg focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] bg-white"
+                      >
+                        {dynamicCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
                     </div>
                     <div className="col-span-2">
                       <select
@@ -561,6 +580,75 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
           </div>
         </div>
       )}
+
+      {/* Category Management Modal */}
+      {isCategoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-stone-200">
+            <div className="p-5 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-stone-900 flex items-center gap-2">
+                  <Settings2 className="w-5 h-5 text-[#588157]" />
+                  Categorías de Menú
+                </h3>
+                <p className="text-xs text-stone-500 mt-1">
+                  Administra las categorías de tus platillos y bebidas.
+                </p>
+              </div>
+              <button onClick={() => setIsCategoryModalOpen(false)} className="w-8 h-8 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:bg-stone-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-5 flex-1 min-h-0 overflow-y-auto space-y-4">
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = newCategoryName.trim();
+                if (trimmed && !dynamicCategories.includes(trimmed)) {
+                  onUpdateTenant({
+                    ...tenant,
+                    menuCategories: [...dynamicCategories, trimmed]
+                  });
+                  setNewCategoryName('');
+                }
+              }} className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nueva categoría (ej. Ensaladas)"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#588157]"
+                />
+                <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800">
+                  Añadir
+                </button>
+              </form>
+
+              <div className="space-y-2 mt-4">
+                {dynamicCategories.map(cat => (
+                  <div key={cat} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl">
+                    <span className="text-sm font-bold text-stone-700">{cat}</span>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}"? Los platillos seguirán existiendo pero debes reasignarlos.`)) {
+                          onUpdateTenant({
+                            ...tenant,
+                            menuCategories: dynamicCategories.filter(c => c !== cat)
+                          });
+                        }
+                      }}
+                      className="w-8 h-8 rounded-full hover:bg-red-50 text-stone-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+

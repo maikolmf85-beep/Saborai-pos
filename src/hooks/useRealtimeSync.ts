@@ -48,9 +48,15 @@ export function useRealtimeSync(
           const incomingZones = payload.tenant?.zones || [];
           const mergedZones = Array.from(new Set([...localZones, ...incomingZones]));
           
+          // Merge menuCategories
+          const localCats = currentState.tenant?.menuCategories || [];
+          const incomingCats = payload.tenant?.menuCategories || [];
+          const mergedCats = Array.from(new Set([...localCats, ...incomingCats]));
+          
           const mergedTenant = {
             ...payload.tenant,
-            zones: mergedZones
+            zones: mergedZones,
+            menuCategories: mergedCats
           };
           
           callbacksRef.current.onUpdateTenant(mergedTenant, true);

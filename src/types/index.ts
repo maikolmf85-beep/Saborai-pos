@@ -33,6 +33,7 @@ export interface TenantInfo {
   taxRegime?: TaxRegime;
   includeService10ByDefault?: boolean;
   zones?: string[]; // Dynamic zones for the tenant
+  menuCategories?: string[]; // Custom dynamic categories for menu items
   onboardingCompleted?: boolean;
   haciendaConfig?: HaciendaConfig;
 }
@@ -67,7 +68,7 @@ export interface TableItem {
   notes?: string;
   cabysCode: string;
   taxRate: number; // 0.13, 0.04, 0.02, 0.01, 0
-  category: 'Cocina' | 'Bar' | 'Cafetería' | 'Postres';
+  category: string; // Dynamic custom categories
   recipeIngredients?: { ingredient: string; qty: number; unit: string }[];
   kdsStatus?: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
   kdsOrderId?: string;

@@ -919,6 +919,8 @@ export function App() {
             onUpdateMenu={handleUpdateMenu} 
             taxRegime={tenant.taxRegime || 'TRADITIONAL'}
             plan={tenant.plan}
+            tenant={tenant}
+            onUpdateTenant={handleUpdateTenant}
           />
         )}
 
