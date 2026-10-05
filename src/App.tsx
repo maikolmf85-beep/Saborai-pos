@@ -279,7 +279,8 @@ export function App() {
       shiftsMap: cashShiftService.getAllActiveShiftsMap(),
       tables,
       kdsOrders,
-      menuItems
+      menuItems,
+      hasLocalData: !!localStorage.getItem('saborai_menu') || !!localStorage.getItem('saborai_tables') || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0
     })
   );
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);

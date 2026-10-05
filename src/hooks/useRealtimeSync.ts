@@ -39,10 +39,11 @@ export function useRealtimeSync(
       })
       .on('broadcast', { event: 'request-sync' }, () => {
         const state = callbacksRef.current.getCurrentState();
-        if (state && Object.keys(state.shiftsMap || {}).length > 0) {
+        if (state && state.hasLocalData) {
           channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
           channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
+          channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
         }
       })
       .subscribe((status) => {
