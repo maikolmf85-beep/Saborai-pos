@@ -14,7 +14,9 @@ import {
   Plus,
   X,
   Receipt,
-  Lock
+  Lock,
+  Search,
+  Save
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
 import { generateHaciendaXmlV43, downloadXmlFile } from '../services/haciendaXml';
@@ -113,10 +115,13 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   }, [selectedTable]);
 
   // Customer form state
-  const [customerName, setCustomerName] = useState('Cliente General Contado');
-  const [customerCedula, setCustomerCedula] = useState('1-0987-0654');
-  const [customerEmail, setCustomerEmail] = useState('factura@cliente.cr');
+  const [isFacturaElectronica, setIsFacturaElectronica] = useState(false);
+  const [customerName, setCustomerName] = useState('');
+  const [customerCedula, setCustomerCedula] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerActivityCode, setCustomerActivityCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil'>('02-Tarjeta');
+  const [isSearchingHacienda, setIsSearchingHacienda] = useState(false);
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
 
   // Filter items based on active subaccount tab
@@ -136,6 +141,45 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
   const clave50Digitos = `50616092600${tenant.cedulaJuridica.replace(/[^0-9]/g, '').padEnd(12, '0')}${branchCode}${terminalCode}010000008921100987654`;
   const consecutivo = `${branchCode}${terminalCode}010000008921`;
+
+  const handleSearchHacienda = async () => {
+    if (!customerCedula || customerCedula.length < 9) {
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'ERROR', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)' });
+      return;
+    }
+    setIsSearchingHacienda(true);
+    try {
+      // Check local saved customers first
+      const saved = localStorage.getItem('saborai_customers');
+      if (saved) {
+        const customers = JSON.parse(saved);
+        const found = customers.find((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
+        if (found) {
+          setCustomerName(found.name || '');
+          setCustomerEmail(found.email || '');
+          setCustomerActivityCode(found.activityCode || '');
+          setIsSearchingHacienda(false);
+          if (onNotify) onNotify({ id: Date.now().toString(), type: 'SUCCESS', title: 'Cliente Encontrado', message: 'Datos cargados desde clientes guardados', timestamp: new Date() });
+          return;
+        }
+      }
+
+      // Fetch from Hacienda
+      const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${customerCedula.replace(/[-]/g, '')}`);
+      if (!res.ok) throw new Error('Not found');
+      const data = await res.json();
+      
+      setCustomerName(data.nombre || '');
+      if (data.actividades && data.actividades.length > 0) {
+        setCustomerActivityCode(data.actividades[0].codigo || '');
+      }
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'SUCCESS', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón', timestamp: new Date() });
+    } catch (err) {
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'ERROR', title: 'No encontrado', message: 'No se encontró el contribuyente en Hacienda', timestamp: new Date() });
+    } finally {
+      setIsSearchingHacienda(false);
+    }
+  };
 
   // Create another subaccount (e.g. Cuenta 3)
   const handleAddSubAccount = () => {
@@ -264,6 +308,54 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   };
 
   const handleEmitToHacienda = () => {
+    if (!currentShift) {
+      if (onNotify) {
+        onNotify({
+          id: `err_shift_${Date.now()}`,
+          type: 'ERROR',
+          title: 'Turno no iniciado',
+          message: 'Debe abrir un turno de caja antes de facturar.',
+          timestamp: new Date()
+        });
+      }
+      if (onOpenCashShift) onOpenCashShift('status');
+      return;
+    }
+
+    if (isFacturaElectronica) {
+      if (!customerName || !customerCedula || !customerEmail || !customerActivityCode) {
+        if (onNotify) {
+          onNotify({
+            id: `err_form_${Date.now()}`,
+            type: 'ERROR',
+            title: 'Datos Incompletos',
+            message: 'Debe llenar todos los datos para Factura Electrónica.',
+            timestamp: new Date()
+          });
+        }
+        return;
+      }
+
+      // Save customer for future
+      try {
+        const saved = localStorage.getItem('saborai_customers');
+        let customers = saved ? JSON.parse(saved) : [];
+        const newCustomer = {
+          cedula: customerCedula,
+          name: customerName,
+          email: customerEmail,
+          activityCode: customerActivityCode
+        };
+        const existingIdx = customers.findIndex((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
+        if (existingIdx >= 0) {
+          customers[existingIdx] = newCustomer;
+        } else {
+          customers.push(newCustomer);
+        }
+        localStorage.setItem('saborai_customers', JSON.stringify(customers));
+      } catch (err) {}
+    }
+
     setIsInvoiceEmitted(true);
 
     // Record transaction into active cash shift of the current register
@@ -567,33 +659,63 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
           {/* ================= SECTION 2: DATOS DEL RECEPTOR / CLIENTE ================= */}
           <div className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
               <h3 className="font-bold text-sm text-stone-900 flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[#588157]" />
                 <span>Datos del Receptor / Cliente</span>
               </h3>
-              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700">
-                {selectedSubAccount === 'ALL' ? 'Facturando Cuenta Total' : `Facturando Cuenta ${selectedSubAccount}`}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700">
+                  {selectedSubAccount === 'ALL' ? 'Facturando Cuenta Total' : `Facturando Cuenta ${selectedSubAccount}`}
+                </span>
+                
+                {/* Toggle Factura Electrónica */}
+                {!isSimplified && (
+                  <label className="flex items-center gap-2 cursor-pointer bg-stone-50 border border-stone-200 px-3 py-1.5 rounded-xl hover:bg-stone-100 transition-colors">
+                    <input 
+                      type="checkbox" 
+                      checked={isFacturaElectronica}
+                      onChange={(e) => setIsFacturaElectronica(e.target.checked)}
+                      className="rounded border-stone-300 text-[#588157] focus:ring-[#588157]"
+                    />
+                    <span className="text-xs font-bold text-stone-800">
+                      Solicitar Factura Electrónica
+                    </span>
+                  </label>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-semibold text-stone-700">
-              <div>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-semibold text-stone-700 transition-opacity ${!isFacturaElectronica && !isSimplified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              
+              <div className="sm:col-span-2 md:col-span-1">
+                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cédula / Identificación</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={customerCedula}
+                    onChange={(e) => setCustomerCedula(e.target.value)}
+                    placeholder="Ej. 101230456"
+                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                  />
+                  <button
+                    onClick={handleSearchHacienda}
+                    disabled={isSearchingHacienda || !customerCedula}
+                    className="px-4 py-2.5 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    title="Buscar en Padrón de Hacienda"
+                  >
+                    {isSearchingHacienda ? <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="sm:col-span-2 md:col-span-1">
                 <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Nombre o Razón Social</label>
                 <input
                   type="text"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cédula / Identificación</label>
-                <input
-                  type="text"
-                  value={customerCedula}
-                  onChange={(e) => setCustomerCedula(e.target.value)}
+                  placeholder="Extraído de Hacienda"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                 />
               </div>
@@ -604,11 +726,23 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                   type="email"
                   value={customerEmail}
                   onChange={(e) => setCustomerEmail(e.target.value)}
+                  placeholder="factura@cliente.cr"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                 />
               </div>
 
               <div>
+                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cod. Actividad Económica</label>
+                <input
+                  type="text"
+                  value={customerActivityCode}
+                  onChange={(e) => setCustomerActivityCode(e.target.value)}
+                  placeholder="Ej. 722003"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
                 <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Medio de Pago</label>
                 <select
                   value={paymentMethod}
@@ -701,13 +835,13 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
             {isInvoiceEmitted ? (
               <>
                 <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
-                <span>{isSimplified ? 'Comprobante Registrado con Éxito ✓' : 'Factura Transmitida con Éxito a Hacienda CR ✓'}</span>
+                <span>{isSimplified ? 'Comprobante Registrado con Éxito ✓' : isFacturaElectronica ? 'Factura Transmitida con Éxito a Hacienda CR ✓' : 'Tiquete Electrónico Emitido con Éxito ✓'}</span>
               </>
             ) : (
               <>
                 <Send className="w-4 h-4 text-[#a9b994]" />
                 <span>
-                  {isSimplified ? 'Emitir Comprobante Simplificado' : 'Emitir Factura Electrónica'} de {selectedSubAccount === 'ALL' ? 'Cuenta Total' : `Cuenta ${selectedSubAccount}`} (₡{total.toLocaleString()})
+                  {isSimplified ? 'Emitir Comprobante Simplificado' : isFacturaElectronica ? 'Emitir Factura Electrónica' : 'Emitir Tiquete Electrónico'} de {selectedSubAccount === 'ALL' ? 'Cuenta Total' : `Cuenta ${selectedSubAccount}`} (₡{total.toLocaleString()})
                 </span>
               </>
             )}
@@ -751,13 +885,16 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
               <div className="font-bold text-center uppercase">
                 {isSimplified
                   ? (selectedSubAccount === 'ALL' ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : `COMPROBANTE RÉGIMEN SIMPLIFICADO - CUENTA ${selectedSubAccount}`)
-                  : (selectedSubAccount === 'ALL' ? 'TIQUETE ELECTRÓNICO v4.3' : `TIQUETE ELECTRÓNICO - CUENTA ${selectedSubAccount}`)}
+                  : isFacturaElectronica
+                    ? (selectedSubAccount === 'ALL' ? 'FACTURA ELECTRÓNICA v4.3' : `FACTURA ELECTRÓNICA - CUENTA ${selectedSubAccount}`)
+                    : (selectedSubAccount === 'ALL' ? 'TIQUETE ELECTRÓNICO v4.3' : `TIQUETE ELECTRÓNICO - CUENTA ${selectedSubAccount}`)}
               </div>
               <div>Consecutivo: {consecutivo}</div>
               <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
               <div>Mesa: {selectedTable.name}</div>
-              <div>Cliente: {customerName}</div>
-              <div>Cédula: {customerCedula}</div>
+              <div>Cliente: {isFacturaElectronica ? customerName : 'Cliente Contado'}</div>
+              {isFacturaElectronica && <div>Cédula: {customerCedula}</div>}
+              {isFacturaElectronica && <div>Actividad: {customerActivityCode}</div>}
               <div>Pago: {paymentMethod}</div>
             </div>
 
