@@ -40,14 +40,29 @@ export function useRealtimeSync(
         callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
       })
       .on('broadcast', { event: 'sync-tenant' }, ({ payload }) => {
-        callbacksRef.current.onUpdateTenant(payload.tenant, true);
+        // Only accept tenant sync if we are in demo/empty, or if the incoming tenant has the same ID (to update settings)
+        const currentState = callbacksRef.current.getCurrentState();
+        if (currentState.tenant?.id === 'tnt_demo_123' || currentState.tenant?.id === payload.tenant.id) {
+          callbacksRef.current.onUpdateTenant(payload.tenant, true);
+        }
       })
       .on('broadcast', { event: 'sync-staff' }, ({ payload }) => {
-        callbacksRef.current.onUpdateStaff(payload.staff, true);
+        const currentState = callbacksRef.current.getCurrentState();
+        // Don't let an empty staff list overwrite a populated one unless we explicitly want to
+        if (payload.staff && payload.staff.length > 0 || (currentState.staff?.length === 0)) {
+          callbacksRef.current.onUpdateStaff(payload.staff, true);
+        }
       })
       .on('broadcast', { event: 'request-sync' }, () => {
         const state = callbacksRef.current.getCurrentState();
         if (state && state.hasLocalData) {
+          // Prevent broadcasting if this is a fresh/demo instance with no real data
+          const isFreshDemo = state.tenant?.id === 'tnt_demo_123' && (!state.staff || state.staff.length === 0) && (!state.tables || state.tables.length === 0);
+          if (isFreshDemo) {
+            console.log('Skipping broadcast of fresh demo state to avoid overwriting network.');
+            return;
+          }
+
           channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
           channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
