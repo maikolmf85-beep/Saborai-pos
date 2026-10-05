@@ -91,6 +91,7 @@ export interface Table {
   zone: string;
   x: number;
   y: number;
+  rotation?: number; // Added rotation for rectangular/bar tables
   activeOrder?: ActiveOrder;
 }
 

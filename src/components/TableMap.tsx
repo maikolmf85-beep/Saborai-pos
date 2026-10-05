@@ -19,7 +19,8 @@ import {
   Maximize2,
   Minimize2,
   PanelRightClose,
-  PanelRight
+  PanelRight,
+  RefreshCw
 } from 'lucide-react';
 
 interface TableMapProps {
@@ -238,6 +239,20 @@ export const TableMap: React.FC<TableMapProps> = ({
       if (selectedTable?.id === tableId) {
         setSelectedTable(null);
       }
+    }
+  };
+
+  const handleRotateTable = (tableId: string) => {
+    const updatedTables = tables.map(t => {
+      if (t.id === tableId) {
+        return { ...t, rotation: ((t.rotation || 0) + 90) % 360 };
+      }
+      return t;
+    });
+    setTables(updatedTables);
+    if (onUpdateTables) onUpdateTables(updatedTables);
+    if (selectedTable?.id === tableId) {
+      setSelectedTable(updatedTables.find(t => t.id === tableId) || null);
     }
   };
 
@@ -539,7 +554,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   style={{
                     left: `${table.x}%`,
                     top: `${table.y}%`,
-                    transform: 'translate(-50%, -50%)',
+                    transform: `translate(-50%, -50%) rotate(${table.rotation || 0}deg)`,
                   }}
                   className={`group absolute z-10 select-none transition-transform ${
                     isDragging ? 'scale-110 z-30 cursor-grabbing' : isEditMode ? 'cursor-grab hover:scale-105' : 'cursor-pointer hover:scale-105'
@@ -563,7 +578,10 @@ export const TableMap: React.FC<TableMapProps> = ({
                       }`}
                     >
                       {/* Table Name */}
-                      <span className="text-[9px] font-black leading-tight text-center px-1 overflow-hidden text-ellipsis line-clamp-2">
+                      <span 
+                        className="text-[9px] font-black leading-tight text-center px-1 overflow-hidden text-ellipsis line-clamp-2"
+                        style={{ transform: `rotate(-${table.rotation || 0}deg)` }}
+                      >
                         {table.name}
                       </span>
 
@@ -697,13 +715,22 @@ export const TableMap: React.FC<TableMapProps> = ({
               {isEditMode && (
                 <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs space-y-2">
                   <span className="font-bold text-amber-900 block text-[11px] uppercase">Ajustes de Mesa</span>
-                  <button
-                    onClick={() => handleDeleteTable(selectedTable.id)}
-                    className="w-full py-2 bg-white text-red-600 hover:bg-red-50 border border-red-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Eliminar esta mesa del mapa</span>
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleRotateTable(selectedTable.id)}
+                      className="flex-1 py-2 bg-white text-stone-700 hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Girar</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTable(selectedTable.id)}
+                      className="flex-1 py-2 bg-white text-red-600 hover:bg-red-50 border border-red-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Eliminar</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
