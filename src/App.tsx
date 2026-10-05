@@ -1022,6 +1022,35 @@ export function App() {
         }}
       />
 
+      {/* EMERGENCY RECOVERY BUTTON */}
+      <button
+        onClick={() => {
+          const req = indexedDB.open('saborai_pos_local_db');
+          req.onsuccess = (e) => {
+            const db = (e.target as any).result;
+            const tx = db.transaction(['tables', 'menu_items'], 'readonly');
+            
+            tx.objectStore('tables').getAll().onsuccess = (evt: any) => {
+              const t = evt.target.result;
+              if (t && t.length > 0) localStorage.setItem('saborai_tables', JSON.stringify(t));
+            };
+            
+            tx.objectStore('menu_items').getAll().onsuccess = (evt: any) => {
+              const m = evt.target.result;
+              if (m && m.length > 0) localStorage.setItem('saborai_menu', JSON.stringify(m));
+            };
+            
+            tx.oncomplete = () => {
+              alert("¡Mesas y Menú recuperados con éxito! El sistema se recargará.");
+              window.location.reload();
+            };
+          };
+        }}
+        className="fixed bottom-4 left-4 z-[9999] bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-full shadow-2xl animate-bounce"
+      >
+        🆘 Recuperar Datos
+      </button>
+
       {/* Z-Report Official Thermal Closing Modal */}
       <ZReportModal
         isOpen={isZReportModalOpen}
