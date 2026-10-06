@@ -28,13 +28,65 @@ export function useRealtimeSync(
 
     channel
       .on('broadcast', { event: 'sync-tables' }, ({ payload }) => {
-        callbacksRef.current.onUpdateTables(payload.tables, true);
+        const currentState = callbacksRef.current.getCurrentState();
+        const localTables = currentState.tables || [];
+        
+        if (!payload.tables || payload.tables.length === 0) return;
+        
+        const merged = [...localTables];
+        payload.tables.forEach((incoming: any) => {
+          const idx = merged.findIndex((t: any) => t.id === incoming.id);
+          if (idx >= 0) {
+            merged[idx] = { ...merged[idx], ...incoming };
+          } else {
+            merged.push(incoming);
+          }
+        });
+        callbacksRef.current.onUpdateTables(merged, true);
       })
       .on('broadcast', { event: 'sync-kds' }, ({ payload }) => {
-        callbacksRef.current.onUpdateKdsOrders(payload.orders, true);
+        const currentState = callbacksRef.current.getCurrentState();
+        const localKds = currentState.kdsOrders || [];
+        
+        if (!payload.orders || payload.orders.length === 0) return;
+        
+        const merged = [...localKds];
+        payload.orders.forEach((incoming: any) => {
+          const idx = merged.findIndex((o: any) => o.id === incoming.id);
+          if (idx >= 0) {
+            // Keep the one with the latest status if possible, but since we don't track timestamps per item state easily, just override.
+            // However, don't overwrite a 'READY' or 'SERVED' with 'PENDING'
+            const localStatus = merged[idx].status;
+            if (incoming.status === 'PENDING' && (localStatus === 'READY' || localStatus === 'SERVED' || localStatus === 'IN_PREPARATION')) {
+              // Ignore older status from incoming
+            } else {
+              merged[idx] = { ...merged[idx], ...incoming };
+            }
+          } else {
+            merged.push(incoming);
+          }
+        });
+        callbacksRef.current.onUpdateKdsOrders(merged, true);
       })
       .on('broadcast', { event: 'sync-menu' }, ({ payload }) => {
-        callbacksRef.current.onUpdateMenuItems(payload.menuItems, true);
+        const currentState = callbacksRef.current.getCurrentState();
+        const localMenu = currentState.menuItems || [];
+        
+        if (!payload.menuItems || payload.menuItems.length === 0) return;
+        
+        const merged = [...localMenu];
+        payload.menuItems.forEach((incoming: any) => {
+          const idx = merged.findIndex((i: any) => i.id === incoming.id);
+          if (idx >= 0) {
+            merged[idx] = { ...merged[idx], ...incoming };
+            if (!incoming.modifiers && localMenu[idx].modifiers) {
+              merged[idx].modifiers = localMenu[idx].modifiers;
+            }
+          } else {
+            merged.push(incoming);
+          }
+        });
+        callbacksRef.current.onUpdateMenuItems(merged, true);
       })
       .on('broadcast', { event: 'sync-shifts' }, ({ payload }) => {
         callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
