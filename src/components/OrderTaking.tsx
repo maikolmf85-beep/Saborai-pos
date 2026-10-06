@@ -841,8 +841,6 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         onNotify={onNotify}
       />
 
-      />
-
       {/* Modifier Selection Modal */}
       {selectedProductForMods && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
