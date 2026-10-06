@@ -305,7 +305,7 @@ export const TableMap: React.FC<TableMapProps> = ({
             orderNumber: t.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
             server: staff.name,
             openedAt: t.activeOrder?.openedAt || new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
-            subAccounts: t.activeOrder?.subAccounts || [{ id: 1, name: 'Comensal 1' }],
+            subAccounts: t.activeOrder?.subAccounts || [{ id: 1, name: 'Cuenta 1' }],
             items: t.activeOrder?.items || []
           }
         };

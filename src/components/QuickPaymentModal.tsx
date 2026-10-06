@@ -353,7 +353,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
           <div>
             <h3 className="text-lg font-black text-stone-900 leading-tight">Cobrar Cuenta & Factura</h3>
             <p className="text-xs text-stone-500">
-              {table.name} • {subAccountId === 'ALL' ? 'Cuenta Completa' : `Cuenta de ${dinerName || `Comensal ${subAccountId}`}`}
+              {table.name} • {subAccountId === 'ALL' ? 'Cuenta Completa' : `Cuenta de ${dinerName || `Cuenta ${subAccountId}`}`}
             </p>
           </div>
         </div>

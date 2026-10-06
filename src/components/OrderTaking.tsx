@@ -52,8 +52,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const initialSubAccounts: SubAccount[] = table.activeOrder?.subAccounts?.length
     ? table.activeOrder.subAccounts
     : [
-        { id: 1, name: 'Comensal 1' },
-        { id: 2, name: 'Comensal 2' }
+        { id: 1, name: 'Cuenta 1' }
       ];
 
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>(initialSubAccounts);
@@ -97,7 +96,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     const nextId = Math.max(...subAccounts.map(s => s.id), 0) + 1;
     const newDiner: SubAccount = {
       id: nextId,
-      name: `Comensal ${nextId}`
+      name: `Cuenta ${nextId}`
     };
     const updated = [...subAccounts, newDiner];
     setSubAccounts(updated);
@@ -316,7 +315,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
   // Calculations
   const isSimplified = tenant.taxRegime === 'SIMPLIFIED';
-  const subtotal = currentOrderItems.reduce((acc, it) => acc + (it.price * it.quantity), 0);
+  const activeOrderItems = currentOrderItems.filter(i => i.subAccountId === selectedSubAccount);
+  const subtotal = activeOrderItems.reduce((acc, it) => acc + (it.price * it.quantity), 0);
   const iva13 = isSimplified ? 0 : subtotal * 0.13;
   const servicio10 = subtotal * 0.10; // Ley N° 4946 de Costa Rica: 10% obligatorio por servicio en salón/mesa
   const totalWithTaxes = subtotal + iva13 + servicio10;
@@ -376,7 +376,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
         {/* Diners Selector (Subcuentas) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-          <span className="text-[11px] font-bold text-stone-400 uppercase mr-1">Comensal:</span>
+          <span className="text-[11px] font-bold text-stone-400 uppercase mr-1">Cuentas:</span>
           {subAccounts.map((diner) => {
             const isSelected = selectedSubAccount === diner.id;
             const count = currentOrderItems.filter(i => i.subAccountId === diner.id).reduce((s, it) => s + it.quantity, 0);
@@ -437,10 +437,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           <button
             onClick={handleAddDiner}
             className="px-2.5 py-1.5 bg-white border border-dashed border-stone-300 hover:border-stone-400 text-stone-600 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
-            title="Añadir comensal para separar la cuenta"
+            title="Añadir cuenta para separar la mesa"
           >
             <UserPlus className="w-3 h-3 text-[#588157]" />
-            <span>+ Comensal</span>
+            <span>+ Cuenta</span>
           </button>
         </div>
       </div>
@@ -561,7 +561,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               <div>
                 <h3 className="text-base font-bold text-stone-900">Comanda en Vivo</h3>
                 <p className="text-xs text-stone-400">
-                  {currentOrderItems.length} ítems en orden
+                  {currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length} ítems en esta cuenta
                 </p>
               </div>
 
@@ -581,13 +581,13 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
             {/* Order Items List */}
             <div className="divide-y divide-stone-100 max-h-[380px] overflow-y-auto pr-1 mt-2">
-              {currentOrderItems.length === 0 ? (
+              {currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length === 0 ? (
                 <div className="py-16 text-center text-stone-400 space-y-2">
-                  <p className="text-sm font-semibold">No hay platillos en la comanda</p>
+                  <p className="text-sm font-semibold">No hay platillos en esta cuenta</p>
                   <p className="text-xs">Toca cualquier platillo del menú para agregarlo.</p>
                 </div>
               ) : (
-                currentOrderItems.map((item) => (
+                currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).map((item) => (
                   <div key={item.id} className="py-2.5 flex items-start justify-between gap-2 group">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -701,7 +701,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               </div>
 
               <div className="flex items-baseline justify-between pt-2 border-t border-stone-200">
-                <span className="text-sm font-black text-stone-900">Total a Cobrar</span>
+                <span className="text-sm font-black text-stone-900">Total de esta Cuenta</span>
                 <span className="text-xl font-black text-stone-900">
                   ₡{Math.round(totalWithTaxes).toLocaleString()}
                 </span>
@@ -719,24 +719,24 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 <span>Enviar a Cocina</span>
               </button>
 
-              <button
-                onClick={() => handleOpenPayment('ALL')}
-                disabled={currentOrderItems.length === 0}
-                className={`w-full py-3 text-white disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs ${
-                  userRole === 'SALONERO_CAJA'
-                    ? 'bg-purple-700 hover:bg-purple-800 ring-2 ring-purple-400/40'
-                    : 'bg-[#588157] hover:bg-[#476c46]'
-                }`}
-              >
-                <Wallet className="w-3.5 h-3.5" />
-                <span>
-                  {userRole === 'SALONERO_CAJA' 
-                    ? 'Cobro en Mesa (Caja)' 
-                    : userRole === 'SALONERO'
-                    ? 'Avisar Cobro a Caja'
-                    : 'Cobrar Mesa'}
-                </span>
-              </button>
+              <div className="flex gap-1 w-full">
+                <button
+                  onClick={() => handleOpenPayment(selectedSubAccount, currentDiner.name)}
+                  disabled={currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length === 0}
+                  className={`w-full py-3 text-white disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-xs bg-[#588157] hover:bg-[#476c46]`}
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Cobrar Cuenta</span>
+                </button>
+                <button
+                  onClick={() => handleOpenPayment('ALL')}
+                  disabled={currentOrderItems.length === 0}
+                  className={`w-full py-3 text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-xs`}
+                >
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Cobrar Mesa</span>
+                </button>
+              </div>
             </div>
 
             {/* Direct Link to Hacienda Invoice or Simplified Voucher */}
@@ -794,11 +794,11 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       {transferringItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-stone-200 space-y-4">
-            <h3 className="text-sm font-bold text-stone-900">Mover ítem a otro comensal</h3>
+            <h3 className="text-sm font-bold text-stone-900">Mover ítem a otra cuenta</h3>
             <p className="text-xs text-stone-500">{transferringItem.name}</p>
 
             <div>
-              <label className="block text-xs font-semibold text-stone-700 mb-1">Comensal destino</label>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">Cuenta destino</label>
               <select
                 value={targetDinerId}
                 onChange={(e) => setTargetDinerId(Number(e.target.value))}
