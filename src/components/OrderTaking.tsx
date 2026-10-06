@@ -876,10 +876,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                             onClick={() => {
                               let newSelections = [...currentModSelections];
                               if (isSelected) {
-                                // If multiple, allow deselecting. If radio, usually don't deselect, but we can allow it or not.
-                                if (mod.multiple) {
-                                  newSelections = newSelections.filter(s => !(s.modifierName === mod.name && s.choiceName === choice.name));
-                                }
+                                newSelections = newSelections.filter(s => !(s.modifierName === mod.name && s.choiceName === choice.name));
                               } else {
                                 if (!mod.multiple) {
                                   newSelections = newSelections.filter(s => s.modifierName !== mod.name);
