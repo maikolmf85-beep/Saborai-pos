@@ -186,7 +186,9 @@ export function App() {
             onboardingCompleted: data.tenant.onboardingCompleted,
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
-            haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig
+            haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
+            zones: savedTenant?.zones || ['Terraza', 'Principal'],
+            menuCategories: savedTenant?.menuCategories || ['Entradas', 'Platos Fuertes', 'Bebidas', 'Cafetería', 'Postres']
           };
           const sub: SaboraiSubscription = { 
             mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
