@@ -871,36 +871,39 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                       {mod.choices.map((choice, idx) => {
                         const isSelected = selectedChoices.some(s => s.choiceName === choice.name);
                         return (
-                          <label key={idx} className={`flex items-center justify-between p-2 rounded-lg border cursor-pointer transition-colors ${isSelected ? 'border-[#588157] bg-[#588157]/5' : 'border-stone-200 hover:bg-stone-50'}`}>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type={mod.multiple ? "checkbox" : "radio"}
-                                name={mod.id}
-                                checked={isSelected}
-                                onChange={() => {
-                                  let newSelections = [...currentModSelections];
-                                  if (isSelected) {
-                                    newSelections = newSelections.filter(s => !(s.modifierName === mod.name && s.choiceName === choice.name));
-                                  } else {
-                                    if (!mod.multiple) {
-                                      newSelections = newSelections.filter(s => s.modifierName !== mod.name);
-                                    }
-                                    newSelections.push({
-                                      modifierName: mod.name,
-                                      choiceName: choice.name,
-                                      extraPrice: choice.extraPrice || 0
-                                    });
-                                  }
-                                  setCurrentModSelections(newSelections);
-                                }}
-                                className="text-[#588157] focus:ring-[#588157]"
-                              />
-                              <span className="text-sm font-medium text-stone-700">{choice.name}</span>
+                          <div 
+                            key={idx} 
+                            onClick={() => {
+                              let newSelections = [...currentModSelections];
+                              if (isSelected) {
+                                // If multiple, allow deselecting. If radio, usually don't deselect, but we can allow it or not.
+                                if (mod.multiple) {
+                                  newSelections = newSelections.filter(s => !(s.modifierName === mod.name && s.choiceName === choice.name));
+                                }
+                              } else {
+                                if (!mod.multiple) {
+                                  newSelections = newSelections.filter(s => s.modifierName !== mod.name);
+                                }
+                                newSelections.push({
+                                  modifierName: mod.name,
+                                  choiceName: choice.name,
+                                  extraPrice: choice.extraPrice || 0
+                                });
+                              }
+                              setCurrentModSelections(newSelections);
+                            }}
+                            className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${isSelected ? 'border-[#588157] bg-[#588157]/10' : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`flex items-center justify-center transition-colors ${mod.multiple ? 'w-5 h-5 rounded' : 'w-5 h-5 rounded-full'} border ${isSelected ? 'border-[#588157] bg-[#588157]' : 'border-stone-300 bg-white'}`}>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                              </div>
+                              <span className={`text-sm font-bold ${isSelected ? 'text-[#588157]' : 'text-stone-700'}`}>{choice.name}</span>
                             </div>
                             {choice.extraPrice ? (
                               <span className="text-xs font-bold text-stone-500">+₡{choice.extraPrice.toLocaleString()}</span>
                             ) : null}
-                          </label>
+                          </div>
                         );
                       })}
                     </div>
