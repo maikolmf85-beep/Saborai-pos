@@ -14,7 +14,8 @@ import {
   User, 
   Wallet, 
   ArrowRightLeft, 
-  ReceiptText 
+  ReceiptText,
+  X
 } from 'lucide-react';
 import { QuickPaymentModal } from './QuickPaymentModal';
 import { soundService } from '../services/soundEffects';
