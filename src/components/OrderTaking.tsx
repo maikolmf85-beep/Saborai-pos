@@ -84,6 +84,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
   const [activeSubcategory, setActiveSubcategory] = useState<string>('Todas');
 
+  const currentDiner = subAccounts.find(s => s.id === selectedSubAccount) || subAccounts[0];
+
   const categories = ['Todas', ...Array.from(new Set(menuItems.map(i => i.category)))];
 
   const currentCategoryItems = menuItems.filter(i => activeCategory === 'Todas' || i.category === activeCategory);
