@@ -278,16 +278,26 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     // Play chime sound for kitchen & bar arrival
     const hasBar = currentOrderItems.some(i => i.category === 'Bar');
     const hasKitchen = currentOrderItems.some(i => i.category === 'Cocina' || !i.category);
-    const station = hasBar && !hasKitchen ? 'Bar' : 'Cocina';
-    soundService.playNewOrderSound(station);
+    
+    let stationName = '';
+    if (hasBar && hasKitchen) {
+      stationName = 'Bar y Cocina';
+    } else if (hasBar) {
+      stationName = 'Bar';
+    } else {
+      stationName = 'Cocina';
+    }
+
+    const primaryStation = hasBar && !hasKitchen ? 'Bar' : 'Cocina';
+    soundService.playNewOrderSound(primaryStation);
 
     if (onNotify) {
       onNotify({
         id: `notif_${Date.now()}_${Math.random()}`,
         type: 'NEW_ORDER',
-        title: `Nueva Comanda enviada a ${station}`,
+        title: `Comanda enviada a ${stationName}`,
         message: `${table.name}: ${currentOrderItems.length} producto(s) enviados.`,
-        station,
+        station: primaryStation,
         tableNumber: table.number,
         server: updatedTable.activeOrder?.server,
         timestamp: new Date()
@@ -753,7 +763,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 className="w-full py-3 bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
               >
                 <Send className="w-3.5 h-3.5 text-[#a9b994]" />
-                <span>Enviar a Cocina</span>
+                <span>Enviar Comanda</span>
               </button>
 
               <div className="flex gap-1 w-full">
