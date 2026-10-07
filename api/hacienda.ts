@@ -263,7 +263,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       clave: clave,
       fecha: fecha || new Date().toISOString(),
       emisor: {
-        tipoIdentificacion: emisor.tipoIdentificacion || '02',
+        tipoIdentificacion: String(emisor.tipoIdentificacion || '02').substring(0, 2),
         numeroIdentificacion: String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, '')
       },
       comprobanteXml: finalXmlBase64
@@ -271,7 +271,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (receptor && (receptor.identificacion || receptor.numeroIdentificacion)) {
       payload.receptor = {
-        tipoIdentificacion: receptor.tipoIdentificacion || '01',
+        tipoIdentificacion: String(receptor.tipoIdentificacion || '01').substring(0, 2),
         numeroIdentificacion: String(receptor.identificacion || receptor.numeroIdentificacion).replace(/[^0-9]/g, '')
       };
     }
