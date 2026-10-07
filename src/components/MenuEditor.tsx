@@ -390,6 +390,16 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                       <ChevronDown className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                   </div>
+                  <div className="col-span-2">
+                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Subcategoría (Opcional)</label>
+                    <input
+                      type="text"
+                      placeholder="Ej: Gaseosas, Naturales, Limonadas, etc."
+                      value={editingItem.subcategory || ''}
+                      onChange={e => setEditingItem({...editingItem, subcategory: e.target.value})}
+                      className="w-full px-3 py-2 text-sm border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
+                    />
+                  </div>
                 </div>
 
                 {/* Station, Taxes, and Prep Time */}

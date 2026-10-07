@@ -82,16 +82,26 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [selectedProductForMods, setSelectedProductForMods] = useState<import('../types').MenuItem | null>(null);
   const [currentModSelections, setCurrentModSelections] = useState<{ modifierName: string; choiceName: string; extraPrice: number }[]>([]);
 
-  const categories = ['Todas', 'Entradas', 'Platos Fuertes', 'Bebidas', 'Cafetería', 'Postres'];
+  const [activeSubcategory, setActiveSubcategory] = useState<string>('Todas');
 
-  const currentDiner = subAccounts.find(s => s.id === selectedSubAccount) || subAccounts[0];
+  const categories = ['Todas', ...Array.from(new Set(menuItems.map(i => i.category)))];
 
-  const filteredMenuItems = menuItems.filter(item => {
-    const matchesCategory = activeCategory === 'Todas' || item.category === activeCategory;
+  const currentCategoryItems = menuItems.filter(i => activeCategory === 'Todas' || i.category === activeCategory);
+  const availableSubcategories = activeCategory === 'Todas' 
+    ? [] 
+    : ['Todas', ...Array.from(new Set(currentCategoryItems.map(i => i.subcategory).filter(Boolean))) as string[]];
+
+  const filteredMenuItems = currentCategoryItems.filter(item => {
+    const matchesSubcategory = activeSubcategory === 'Todas' || item.subcategory === activeSubcategory;
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           item.description.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesCategory && matchesSearch;
+    return matchesSubcategory && matchesSearch;
   });
+
+  const handleCategoryClick = (cat: string) => {
+    setActiveCategory(cat);
+    setActiveSubcategory('Todas');
+  };
 
   const handleAddDiner = () => {
     const nextId = Math.max(...subAccounts.map(s => s.id), 0) + 1;
@@ -445,6 +455,16 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           </button>
         </div>
       </div>
+      
+      {/* Current Diner text right below accounts header */}
+      <div className="flex items-center justify-between mt-3 px-4 py-2 bg-stone-100 rounded-xl border border-stone-200/80 text-xs">
+        <span className="text-stone-600">
+          Agregando ítems a: <strong className="text-stone-900">{currentDiner?.name || 'Mesa'}</strong>
+        </span>
+        <span className="text-[11px] text-stone-400 font-medium">
+          Toca un producto para sumar
+        </span>
+      </div>
 
       {/* Confirmation notification banner */}
       {orderSentBanner && (
@@ -456,25 +476,37 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         </div>
       )}
 
-      {/* Main 2-Column POS Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* Main 3-Column POS Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 lg:h-[calc(100vh-140px)]">
         
-        {/* Left Column: Menu Catalog (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
-          
-          {/* Active Diner Notification Bar */}
-          <div className="flex items-center justify-between px-4 py-2.5 bg-stone-100 rounded-2xl border border-stone-200/80 text-xs">
-            <span className="text-stone-600">
-              Agregando ítems a: <strong className="text-stone-900">{currentDiner.name}</strong>
-            </span>
-            <span className="text-[11px] text-stone-400 font-medium">
-              Toca un producto para sumar
-            </span>
+        {/* Left Column: Categories Sidebar (2 cols) */}
+        <div className="lg:col-span-2 space-y-2 lg:overflow-y-auto scrollbar-none pb-4">
+          <div className="sticky top-0 bg-stone-50/95 backdrop-blur-sm pb-2 pt-1 z-10 hidden lg:block">
+            <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider pl-1">Menú</h3>
           </div>
+          <div className="flex flex-row lg:flex-col gap-1.5 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-none">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => handleCategoryClick(cat)}
+                className={`px-3 py-2.5 rounded-xl text-left text-xs font-bold whitespace-nowrap transition-all ${
+                  activeCategory === cat
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Search Bar & Category Navigation */}
-          <div className="flex flex-col sm:flex-row gap-2.5">
-            <div className="relative flex-1">
+        {/* Middle Column: Products Grid (6 cols) */}
+        <div className="lg:col-span-6 space-y-4 lg:overflow-y-auto pb-6 scrollbar-none">
+          
+          {/* Search Bar & Subcategory Navigation */}
+          <div className="flex flex-col gap-3 sticky top-0 bg-stone-50/95 backdrop-blur-sm z-10 pt-1 pb-3">
+            <div className="relative">
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 type="text"
@@ -485,21 +517,23 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setActiveCategory(cat)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                    activeCategory === cat
-                      ? 'bg-stone-900 text-white shadow-xs'
-                      : 'bg-white text-stone-600 border border-stone-200 hover:bg-stone-50'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+            {availableSubcategories.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {availableSubcategories.map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => setActiveSubcategory(sub)}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-bold whitespace-nowrap transition-all ${
+                      activeSubcategory === sub
+                        ? 'bg-stone-700 text-white shadow-xs'
+                        : 'bg-white text-stone-500 border border-stone-200 hover:bg-stone-100'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Copilot AI Pairing Pill */}
@@ -553,10 +587,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
         </div>
 
-        {/* Right Column: Live Order Ticket & Totals (5 cols) */}
-        <div className="lg:col-span-5 bg-white border border-stone-200 rounded-3xl p-5 shadow-sm flex flex-col justify-between min-h-[580px]">
+        {/* Right Column: Live Order Ticket & Totals (4 cols) */}
+        <div className="lg:col-span-4 bg-white border border-stone-200 rounded-3xl p-4 lg:p-5 shadow-sm flex flex-col justify-between h-[600px] lg:h-full lg:sticky lg:top-4 overflow-hidden">
           
-          <div>
+          <div className="flex-1 flex flex-col min-h-0">
             {/* Ticket Header */}
             <div className="flex items-center justify-between pb-3 border-b border-stone-200">
               <div>
@@ -663,8 +697,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
             </div>
           </div>
 
-          {/* Ticket Financial Totals & Primary Actions */}
-          <div className="pt-4 border-t border-stone-200 space-y-3">
+          {/* Ticket Financial Totals & Primary Actions (Pinned to Bottom) */}
+          <div className="pt-3 mt-3 border-t border-stone-200 shrink-0 space-y-3">
             <div className="space-y-1.5 text-xs text-stone-500">
               {/* Regime Indicator Badge */}
               <div className="flex items-center justify-between pb-1.5 mb-1 border-b border-stone-100">
@@ -833,7 +867,16 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       <QuickPaymentModal
         isOpen={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
-        table={table}
+        table={{
+          ...table,
+          activeOrder: {
+            orderNumber: table.activeOrder?.orderNumber || 'ORD-NEW',
+            server: table.activeOrder?.server || 'Mesero',
+            openedAt: table.activeOrder?.openedAt || 'Ahora',
+            subAccounts,
+            items: currentOrderItems
+          }
+        }}
         tenant={tenant}
         subAccountId={paymentTargetDiner.id}
         dinerName={paymentTargetDiner.name}

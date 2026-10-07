@@ -82,6 +82,7 @@ export interface TableItem {
   cabysCode: string;
   taxRate: number; // 0.13, 0.04, 0.02, 0.01, 0
   category: string; // Dynamic custom categories
+  subcategory?: string; // Subcategory for further filtering
   recipeIngredients?: { ingredient: string; qty: number; unit: string }[];
   selectedModifiers?: { modifierName: string; choiceName: string; extraPrice?: number }[];
   kdsStatus?: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
@@ -116,6 +117,7 @@ export interface MenuItem {
   description: string;
   price: number;
   category: string;
+  subcategory?: string;
   station: 'Cocina' | 'Bar' | 'Postres';
   cabysCode: string;
   taxRate: number;
