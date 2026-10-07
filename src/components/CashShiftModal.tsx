@@ -49,6 +49,7 @@ interface CashShiftModalProps {
   isOpen: boolean;
   onClose: () => void;
   tenant: TenantInfo;
+  tables: import('../types').Table[];
   currentUser: UserProfile | null;
   staffList: UserProfile[];
   onOpenZReport: (report: ZReportData) => void;
@@ -60,6 +61,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   isOpen,
   onClose,
   tenant,
+  tables,
   currentUser,
   staffList,
   onOpenZReport,
@@ -277,6 +279,14 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const handleFinalizeShiftClosing = () => {
     setCloseError(null);
 
+    // Validate that no tables are open globally
+    const hasOpenTables = tables.some(t => t.status !== 'AVAILABLE');
+    if (hasOpenTables) {
+      setCloseError("No se puede hacer el cierre de caja porque hay mesas o cuentas abiertas. Cierra todas las mesas primero.");
+      soundService.playErrorBuzz();
+      return;
+    }
+
     const closingUser: UserProfile = currentUser || {
       id: activeShift?.openedBy?.userId || 'usr_cajero',
       name: activeShift?.openedBy?.userName || 'Cajero en Turno',
@@ -285,6 +295,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       restaurantName: tenant.name,
       role: (activeShift?.openedBy?.userRole as any) || 'CAJERO'
     };
+
+    // Validate that the same user who opened the shift is closing it
+    if (activeShift && closingUser.id !== activeShift.openedBy.userId) {
+      setCloseError(`El cierre de caja solo puede ser realizado por la persona que lo abrió: ${activeShift.openedBy.userName}.`);
+      soundService.playErrorBuzz();
+      return;
+    }
 
     try {
       const { closedShift, zReport } = cashShiftService.closeShift(

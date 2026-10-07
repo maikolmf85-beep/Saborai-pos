@@ -1025,6 +1025,7 @@ export function App() {
           handleUpdateShifts(cashShiftService.getAllActiveShiftsMap(), false);
         }}
         tenant={tenant}
+        tables={tables}
         currentUser={currentUser}
         staffList={staffList}
         initialTab={cashShiftInitialTab}
