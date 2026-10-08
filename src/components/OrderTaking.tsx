@@ -760,7 +760,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               <button
                 onClick={handleSaveAndNotifyKitchen}
                 disabled={currentOrderItems.length === 0}
-                className="w-full py-3 bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                className="w-full py-2 bg-stone-900 text-white hover:bg-stone-800 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
               >
                 <Send className="w-3.5 h-3.5 text-[#a9b994]" />
                 <span>Enviar Comanda</span>
@@ -770,15 +770,15 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 <button
                   onClick={() => handleOpenPayment(selectedSubAccount, currentDiner.name)}
                   disabled={currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length === 0}
-                  className={`w-full py-3 text-white disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-xs bg-[#588157] hover:bg-[#476c46]`}
+                  className={`w-full py-2 text-white disabled:opacity-40 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs bg-[#588157] hover:bg-[#476c46]`}
                 >
                   <Wallet className="w-3.5 h-3.5" />
-                  <span>Cobrar Cuenta</span>
+                  <span>Cobrar Cta</span>
                 </button>
                 <button
                   onClick={() => handleOpenPayment('ALL')}
                   disabled={currentOrderItems.length === 0}
-                  className={`w-full py-3 text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center gap-0.5 shadow-xs`}
+                  className={`w-full py-2 text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 disabled:opacity-40 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs`}
                 >
                   <Wallet className="w-3.5 h-3.5" />
                   <span>Cobrar Mesa</span>
