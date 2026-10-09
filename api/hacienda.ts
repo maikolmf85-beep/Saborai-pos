@@ -202,10 +202,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       });
 
-      const statusData = (await statusRes.json().catch(() => null)) as any;
-      return res.status(statusRes.status).json({
+      const statusText = await statusRes.text().catch(() => '');
+      let statusData: any = null;
+      try { statusData = statusText ? JSON.parse(statusText) : null; } catch { statusData = { raw: statusText }; }
+
+      const indEstado: string = String(statusData?.['ind-estado'] || '').toLowerCase();
+      let detalle: string | undefined;
+      const respuestaXml = statusData?.['respuesta-xml'];
+      if (respuestaXml) {
+        try {
+          const decoded = Buffer.from(respuestaXml, 'base64').toString('utf-8');
+          const msg = decoded.match(/<Mensaje>([\s\S]*?)<\/Mensaje>/i)?.[1];
+          const det = decoded.match(/<DetalleMensaje>([\s\S]*?)<\/DetalleMensaje>/i)?.[1];
+          detalle = [msg, det].filter(Boolean).join(' - ').trim() || decoded.slice(0, 1500);
+        } catch { /* ignore */ }
+      }
+      const errorCause = statusRes.headers.get('x-error-cause') || undefined;
+      return res.status(200).json({
         success: statusRes.ok,
-        status: statusRes.status,
+        httpStatus: statusRes.status,
+        estado: indEstado || undefined, // procesando | aceptado | rechazado
+        detalle: detalle || errorCause,
         data: statusData
       });
     }
@@ -295,12 +312,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signedXmlBase64: finalXmlBase64
       });
     } else {
-      const recepcionData = (await recepcionRes.json().catch(() => null)) as any;
-      console.error('Rechazo Hacienda:', recepcionRes.status, recepcionData);
+      const errorCause = recepcionRes.headers.get('x-error-cause');
+      const rawBody = await recepcionRes.text().catch(() => '');
+      let recepcionData: any = null;
+      try { recepcionData = rawBody ? JSON.parse(rawBody) : null; } catch { recepcionData = { raw: rawBody }; }
+      console.error('Rechazo Hacienda:', recepcionRes.status, errorCause, recepcionData);
+      const reason = errorCause || recepcionData?.message || recepcionData?.error_description || recepcionData?.raw || `HTTP ${recepcionRes.status}`;
       return res.status(400).json({ 
-        error: 'Hacienda rechazó la recepción de la factura', 
+        error: `Hacienda rechazó la recepción (${recepcionRes.status}): ${reason}`, 
         status: recepcionRes.status,
-        details: recepcionData 
+        errorCause,
+        details: recepcionData,
+        signedXmlBase64: finalXmlBase64
       });
     }
 

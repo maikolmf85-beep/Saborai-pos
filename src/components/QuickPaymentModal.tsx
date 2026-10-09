@@ -13,7 +13,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, UserProfile } from '../types';
-import { generateHaciendaXmlV43, downloadXmlFile } from '../services/haciendaXml';
+import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, reserveConsecutivoNumber } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
 import { PosNotification } from './NotificationToast';
@@ -69,6 +69,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [showReceiptView, setShowReceiptView] = useState(false);
   const [clave50Digitos, setClave50Digitos] = useState('');
+  const [generatedXml, setGeneratedXml] = useState('');
   const [consecutivo, setConsecutivo] = useState('');
 
   const rawItems = table.activeOrder?.items || [];
@@ -173,9 +174,16 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
     setIsProcessing(true);
 
-    const randomSuffix = Math.floor(10000 + Math.random() * 90000);
-    const generatedClave = `50616092600${tenant.cedulaJuridica.replace(/[^0-9]/g, '').padEnd(12, '0')}${branchCode}${terminalCode}0100000${randomSuffix}100987654`;
-    const generatedConsecutivo = `${branchCode}${terminalCode}0100000${randomSuffix}`;
+    const emissionDate = new Date();
+    const docType = 'TE' as const; // Consumidor final sin identificar => Tiquete Electrónico
+    const { clave: generatedClave, consecutivo: generatedConsecutivo } = buildClaveYConsecutivo({
+      cedula: tenant.cedulaJuridica,
+      branchCode,
+      terminalCode,
+      tipo: docType,
+      numero: reserveConsecutivoNumber(branchCode, terminalCode, docType),
+      fecha: emissionDate
+    });
     setClave50Digitos(generatedClave);
     setConsecutivo(generatedConsecutivo);
 
@@ -226,11 +234,17 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
           ? `[CRÉDITO FUNCIONARIO] ${staffList.find(s => s.id === selectedEmployeeId)?.name || 'Desconocido'}`
           : "Cliente General Contado",
         tipoIdentificacion: '01-Fisica',
-        identificacion: '1-0000-0000',
-        correo: 'factura@cliente.cr'
+        identificacion: '',
+        correo: ''
       },
+      tipoDocumento: docType,
       condicionVenta: isCreditoFuncionario ? '04-Credito' : '01-Efectivo',
       medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod === 'Crédito Funcionario' ? 'Otros' : singleMethod) : 'Mixto',
+      pagos: isCreditoFuncionario ? [] : [
+        { tipo: 'efectivo', monto: cashAmt },
+        { tipo: 'tarjeta', monto: cardAmt },
+        { tipo: 'sinpe', monto: sinpeAmt }
+      ],
       moneda: 'CRC',
       tipoCambio: 1.0,
       items,
@@ -242,19 +256,20 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       servicio10,
       totalComprobante: total,
       estadoHacienda: 'PROCESANDO',
-      fechaEmision: new Date()
+      fechaEmision: emissionDate.toISOString()
     };
     
-    const xml = generateHaciendaXmlV43(invoiceObj, tenant);
+    const xml = generateHaciendaXmlV44(invoiceObj, tenant);
     invoiceObj.xmlContent = xml;
+    setGeneratedXml(xml);
 
-    haciendaService.emitInvoice(invoiceObj, (status) => {
+    haciendaService.emitInvoice(invoiceObj, (status, detail) => {
       if (onNotify) {
         onNotify({
           id: `hacienda_${Date.now()}`,
           type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
           title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
-          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${generatedClave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${generatedClave.slice(-6)}` : `Enviando XML a Hacienda...`,
+          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${generatedClave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${generatedClave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
           station: 'Bar',
           tableNumber: table.number,
           server: 'Sistema',
@@ -295,40 +310,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   };
 
   const handleDownloadXmlInvoice = () => {
-    const invoiceObj: any = {
-      clave50Digitos,
-      consecutivo,
-      emisor: {
-        nombre: tenant.name,
-        cedulaJuridica: tenant.cedulaJuridica,
-        nombreComercial: "Saborai POS",
-        correo: tenant.email,
-        sucursal: branchCode,
-        terminal: terminalCode
-      },
-      receptor: {
-        nombre: "Cliente General Contado",
-        tipoIdentificacion: '01-Fisica',
-        identificacion: '1-0000-0000',
-        correo: 'factura@cliente.cr'
-      },
-      fechaEmision: new Date().toISOString(),
-      condicionVenta: (paymentMode === 'single' && singleMethod === 'Crédito Funcionario') ? '04-Credito' : '01-Efectivo',
-      medioPago: paymentMode === 'single' ? (singleMethod === 'Efectivo USD' ? 'Efectivo' : singleMethod === 'Crédito Funcionario' ? 'Otros' : singleMethod) : 'Mixto',
-      moneda: 'CRC',
-      tipoCambio: 1.0,
-      items,
-      subtotal,
-      iva13,
-      iva4: 0,
-      iva2: 0,
-      iva1: 0,
-      servicio10,
-      totalComprobante: total,
-      estadoHacienda: 'ACEPTADO'
-    };
-    const xml = generateHaciendaXmlV43(invoiceObj, tenant);
-    downloadXmlFile(xml, `Factura_${consecutivo}.xml`);
+    if (!generatedXml) return;
+    downloadXmlFile(generatedXml, `Factura_${consecutivo}.xml`);
   };
 
   if (!isOpen) return null;

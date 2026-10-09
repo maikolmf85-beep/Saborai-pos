@@ -11,6 +11,7 @@ export interface HaciendaConfig {
   p12Base64?: string;
   tipoIdentificacion?: '01' | '02' | '03' | '04';
   codigoActividad?: string;
+  proveedorSistemas?: string; // Cédula del proveedor de sistemas (v4.4). Si vacío se usa la del emisor.
   sucursal?: string;
   terminal?: string;
   certExpiresOn?: string;
@@ -179,7 +180,11 @@ export interface ElectronicInvoiceCR {
     correo: string;
   };
   fechaEmision: string;
-  condicionVenta: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+  condicionVenta: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
+  tipoDocumento?: 'FE' | 'TE'; // FE = Factura Electrónica (01), TE = Tiquete Electrónico (04)
+  codigoActividadReceptor?: string;
+  pagos?: { tipo: 'efectivo' | 'tarjeta' | 'sinpe' | 'otros'; monto: number }[];
+  errorMensaje?: string; // Motivo de rechazo devuelto por Hacienda
   medioPago: string;
   moneda: 'CRC' | 'USD';
   tipoCambio: number;
@@ -193,4 +198,5 @@ export interface ElectronicInvoiceCR {
   totalComprobante: number;
   estadoHacienda: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO' | 'ANULADO';
   xmlContent?: string;
+  signedXmlContent?: string;
 }

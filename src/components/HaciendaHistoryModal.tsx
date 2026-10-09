@@ -157,6 +157,11 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                       <span>•</span>
                       <span>{inv.fechaEmision.toLocaleString()}</span>
                     </div>
+                    {inv.estadoHacienda === 'RECHAZADO' && inv.errorMensaje && (
+                      <div className="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-2 py-1 break-words whitespace-normal">
+                        Motivo DGT: {inv.errorMensaje}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">

@@ -402,6 +402,21 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   </div>
                 </div>
 
+                {/* CABYS (obligatorio para Hacienda v4.4) */}
+                <div className="pt-4 border-t border-stone-100">
+                  <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Código CABYS (13 dígitos)</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={13}
+                    placeholder="Ej: 6331100000000"
+                    value={editingItem.cabysCode && !/^0+$/.test(editingItem.cabysCode) ? editingItem.cabysCode : ''}
+                    onChange={e => setEditingItem({...editingItem, cabysCode: e.target.value.replace(/\D/g, '')})}
+                    className="w-full px-3 py-2 text-sm font-mono border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
+                  />
+                  <p className="text-[10px] text-stone-400 mt-1">Hacienda rechaza facturas con CABYS vacío o inválido. Búsquelo en el catálogo oficial de Hacienda.</p>
+                </div>
+
                 {/* Station, Taxes, and Prep Time */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-stone-100">
                   <div>

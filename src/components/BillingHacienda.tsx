@@ -19,7 +19,7 @@ import {
   Save
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
-import { generateHaciendaXmlV43, downloadXmlFile } from '../services/haciendaXml';
+import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
 import { PosNotification } from './NotificationToast';
@@ -139,8 +139,27 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const terminalCode = currentRegister.terminalCode || '00001';
   const branchCode = currentRegister.branchCode || '001';
 
-  const clave50Digitos = `50616092600${tenant.cedulaJuridica.replace(/[^0-9]/g, '').padEnd(12, '0')}${branchCode}${terminalCode}010000008921100987654`;
-  const consecutivo = `${branchCode}${terminalCode}010000008921`;
+  // Clave y consecutivo válidos (50 / 20 dígitos). La vista previa no consume consecutivo; se reserva al emitir.
+  const docType: 'FE' | 'TE' = isFacturaElectronica ? 'FE' : 'TE';
+  const [previewDate] = useState(() => new Date());
+  const [previewSecurity] = useState(() => randomSecurityCode());
+  const [emittedInfo, setEmittedInfo] = useState<{ clave: string; consecutivo: string; fecha: Date; tipo: 'FE' | 'TE' } | null>(null);
+  const activeDocType = emittedInfo?.tipo ?? docType;
+  const claveInfo = emittedInfo ?? {
+    ...buildClaveYConsecutivo({
+      cedula: tenant.cedulaJuridica,
+      branchCode,
+      terminalCode,
+      tipo: docType,
+      numero: peekConsecutivoNumber(branchCode, terminalCode, docType),
+      fecha: previewDate,
+      securityCode: previewSecurity
+    }),
+    fecha: previewDate,
+    tipo: docType
+  };
+  const clave50Digitos = claveInfo.clave;
+  const consecutivo = claveInfo.consecutivo;
 
   const handleSearchHacienda = async () => {
     if (!customerCedula || customerCedula.length < 9) {
@@ -274,14 +293,20 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       terminal: terminalCode
     },
     receptor: {
-      nombre: customerName,
+      nombre: activeDocType === 'FE' ? customerName : 'Cliente General Contado',
       tipoIdentificacion: '01-Fisica',
-      identificacion: customerCedula,
-      correo: customerEmail
+      identificacion: activeDocType === 'FE' ? customerCedula : '',
+      correo: activeDocType === 'FE' ? customerEmail : ''
     },
-    fechaEmision: new Date().toISOString(),
+    tipoDocumento: activeDocType,
+    codigoActividadReceptor: activeDocType === 'FE' ? customerActivityCode : undefined,
+    fechaEmision: claveInfo.fecha.toISOString(),
     condicionVenta: '01-Efectivo',
     medioPago: paymentMethod,
+    pagos: [{
+      tipo: paymentMethod === '01-Efectivo' ? 'efectivo' : paymentMethod === '02-Tarjeta' ? 'tarjeta' : 'sinpe',
+      monto: total
+    }],
     moneda: 'CRC',
     tipoCambio: 1.0,
     items: activeItems,
@@ -295,7 +320,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     estadoHacienda: 'ACEPTADO'
   };
 
-  const xmlContent = generateHaciendaXmlV43(invoiceObject, tenant);
+  const xmlContent = generateHaciendaXmlV44(invoiceObject, tenant);
 
   const handleCopyClave = () => {
     navigator.clipboard.writeText(clave50Digitos);
@@ -381,20 +406,42 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       registerId: currentRegister.id
     });
 
-    // Send to Hacienda Simulation
+    // Reservar consecutivo real y construir el comprobante definitivo
+    const emissionDate = new Date();
+    const built = buildClaveYConsecutivo({
+      cedula: tenant.cedulaJuridica,
+      branchCode,
+      terminalCode,
+      tipo: docType,
+      numero: reserveConsecutivoNumber(branchCode, terminalCode, docType),
+      fecha: emissionDate
+    });
+    setEmittedInfo({ clave: built.clave, consecutivo: built.consecutivo, fecha: emissionDate, tipo: docType });
+
     const finalInvoice: ElectronicInvoiceCR = {
       ...invoiceObject,
-      fechaEmision: new Date().toISOString(),
-      xmlContent
+      clave50Digitos: built.clave,
+      consecutivo: built.consecutivo,
+      tipoDocumento: docType,
+      receptor: {
+        nombre: docType === 'FE' ? customerName : 'Cliente General Contado',
+        tipoIdentificacion: '01-Fisica',
+        identificacion: docType === 'FE' ? customerCedula : '',
+        correo: docType === 'FE' ? customerEmail : ''
+      },
+      codigoActividadReceptor: docType === 'FE' ? customerActivityCode : undefined,
+      fechaEmision: emissionDate.toISOString(),
+      estadoHacienda: 'PROCESANDO'
     };
+    finalInvoice.xmlContent = generateHaciendaXmlV44(finalInvoice, tenant);
 
-    haciendaService.emitInvoice(finalInvoice, (status) => {
+    haciendaService.emitInvoice(finalInvoice, (status, detail) => {
       if (onNotify) {
         onNotify({
           id: `hacienda_${Date.now()}`,
           type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
           title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
-          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${clave50Digitos.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${clave50Digitos.slice(-6)}` : `Enviando XML a Hacienda...`,
+          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${built.clave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${built.clave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
           station: 'Bar',
           tableNumber: 0,
           server: 'Sistema',
