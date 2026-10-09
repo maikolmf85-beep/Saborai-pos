@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { TenantInfo, MenuItem, TaxRegime, SubscriptionPlan } from '../types';
-import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock } from 'lucide-react';
+import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
+import { CabysResult, searchCabys, suggestCabys, isValidCabys } from '../services/cabysService';
 
 interface MenuEditorProps {
   menuItems: MenuItem[];
@@ -25,6 +26,86 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
   
+  // CABYS auto-assignment state
+  const [cabysResults, setCabysResults] = useState<CabysResult[]>([]);
+  const [cabysLoading, setCabysLoading] = useState(false);
+  const [cabysQuery, setCabysQuery] = useState('');
+  const [cabysAutoNote, setCabysAutoNote] = useState<string | null>(null);
+  const [isAutoFillingAll, setIsAutoFillingAll] = useState(false);
+  const [autoFillSummary, setAutoFillSummary] = useState<string | null>(null);
+
+  const ALLOWED_RATES = [0.13, 0.08, 0.04, 0.01, 0];
+
+  const runCabysSearch = async (text: string, category?: string) => {
+    if (!text.trim()) { setCabysResults([]); return []; }
+    setCabysLoading(true);
+    const results = await searchCabys(text, category);
+    setCabysResults(results);
+    setCabysLoading(false);
+    return results;
+  };
+
+  const pickCabys = (r: CabysResult, auto = false) => {
+    setEditingItem(prev => {
+      if (!prev) return prev;
+      const rate = r.impuesto / 100;
+      return {
+        ...prev,
+        cabysCode: r.codigo,
+        taxRate: taxRegime === 'SIMPLIFIED' ? 0 : (ALLOWED_RATES.includes(rate) ? rate : prev.taxRate)
+      };
+    });
+    setCabysAutoNote(auto ? `Asignado automáticamente: ${r.descripcion}. Verifica que sea correcto.` : `Seleccionado: ${r.descripcion}`);
+  };
+
+  const handleNameBlur = async () => {
+    if (!editingItem?.name?.trim() || isValidCabys(editingItem.cabysCode)) return;
+    setCabysQuery(editingItem.name);
+    const results = await runCabysSearch(editingItem.name, editingItem.category);
+    const best = results[0];
+    const qLen = editingItem.name.trim().split(/\s+/).length;
+    if (best && (best.score || 0) >= Math.min(3, qLen * 3)) pickCabys(best, true);
+  };
+
+  const missingCabysCount = menuItems.filter(m => !isValidCabys(m.cabysCode)).length;
+
+  /** Asigna CABYS a todos los productos que no lo tienen, usando el catálogo oficial de Hacienda. */
+  const autoAssignMissing = async (items: MenuItem[]): Promise<{ items: MenuItem[]; assigned: number; failed: string[] }> => {
+    const updated: MenuItem[] = [];
+    const failed: string[] = [];
+    let assigned = 0;
+    for (const item of items) {
+      if (isValidCabys(item.cabysCode)) { updated.push(item); continue; }
+      const s = await suggestCabys(item.name, item.category);
+      if (s) {
+        const rate = s.impuesto / 100;
+        updated.push({
+          ...item,
+          cabysCode: s.codigo,
+          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : (ALLOWED_RATES.includes(rate) ? rate : item.taxRate)
+        });
+        assigned++;
+      } else {
+        updated.push(item);
+        failed.push(item.name);
+      }
+    }
+    return { items: updated, assigned, failed };
+  };
+
+  const handleAutoFillAll = async () => {
+    setIsAutoFillingAll(true);
+    setAutoFillSummary(null);
+    const { items, assigned, failed } = await autoAssignMissing(menuItems);
+    onUpdateMenu(items);
+    setIsAutoFillingAll(false);
+    setAutoFillSummary(
+      `${assigned} producto(s) con CABYS asignado automáticamente.` +
+      (failed.length ? ` Sin coincidencia (asígnalos manualmente): ${failed.join(', ')}.` : '')
+    );
+    if (assigned > 0) soundService.playSuccessChime();
+  };
+
   // Bulk Add State
   const [isBulkAddOpen, setIsBulkAddOpen] = useState(false);
   const [bulkItems, setBulkItems] = useState<Array<{ name: string; price: number; category: string; station: 'Cocina' | 'Bar' | 'Postres' }>>([
@@ -65,6 +146,11 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
     }));
 
     onUpdateMenu([...newItems, ...menuItems]);
+    // Asignar CABYS en segundo plano desde el catálogo oficial de Hacienda
+    autoAssignMissing(newItems).then(({ items: withCabys }) => {
+      const byId = new Map(withCabys.map(i => [i.id, i]));
+      onUpdateMenu([...newItems, ...menuItems].map(m => byId.get(m.id) || m));
+    });
     setIsBulkAddOpen(false);
     setBulkItems([{ name: '', price: 0, category: tenant.menuCategories?.[0] || 'Platos Fuertes', station: 'Cocina' }]);
     soundService.playSuccessChime();
@@ -102,22 +188,39 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         ingredients: []
       });
     }
+    setCabysResults([]);
+    setCabysQuery(item?.name || '');
+    setCabysAutoNote(null);
     setIsEditing(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     soundService.playSuccessChime();
     
     if (!editingItem || !editingItem.name || !editingItem.id) return;
     
+    // Si aún no tiene CABYS válido, intentar asignarlo automáticamente antes de guardar
+    let itemToSave = editingItem as MenuItem;
+    if (!isValidCabys(itemToSave.cabysCode)) {
+      const s = await suggestCabys(itemToSave.name, itemToSave.category);
+      if (s) {
+        const rate = s.impuesto / 100;
+        itemToSave = {
+          ...itemToSave,
+          cabysCode: s.codigo,
+          taxRate: taxRegime === 'SIMPLIFIED' ? 0 : (ALLOWED_RATES.includes(rate) ? rate : itemToSave.taxRate)
+        };
+      }
+    }
+    
     let updatedMenu;
-    const exists = menuItems.some(m => m.id === editingItem.id);
+    const exists = menuItems.some(m => m.id === itemToSave.id);
     
     if (exists) {
-      updatedMenu = menuItems.map(m => m.id === editingItem.id ? editingItem as MenuItem : m);
+      updatedMenu = menuItems.map(m => m.id === itemToSave.id ? itemToSave : m);
     } else {
-      updatedMenu = [editingItem as MenuItem, ...menuItems];
+      updatedMenu = [itemToSave, ...menuItems];
     }
     
     onUpdateMenu(updatedMenu);
@@ -227,6 +330,30 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-[#fafaf9]">
           
+          {(missingCabysCount > 0 || autoFillSummary) && (
+            <div className="mb-4 p-3 rounded-2xl border border-amber-200 bg-amber-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2 text-xs text-amber-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-amber-600" />
+                <div>
+                  {missingCabysCount > 0 && (
+                    <p className="font-bold">{missingCabysCount} producto(s) sin código CABYS. Hacienda no aceptará facturas con ellos.</p>
+                  )}
+                  {autoFillSummary && <p className="mt-0.5">{autoFillSummary}</p>}
+                </div>
+              </div>
+              {missingCabysCount > 0 && (
+                <button
+                  onClick={handleAutoFillAll}
+                  disabled={isAutoFillingAll}
+                  className="shrink-0 px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all flex items-center gap-2 disabled:opacity-60"
+                >
+                  {isAutoFillingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-[#a9b994]" />}
+                  <span>{isAutoFillingAll ? 'Buscando en Hacienda...' : 'Autocompletar CABYS'}</span>
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="md:hidden flex overflow-x-auto gap-2 pb-4 mb-4 border-b border-stone-200 no-scrollbar">
             {categories.map(cat => (
               <button
@@ -332,6 +459,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                       placeholder="Ej: Hamburguesa Clásica"
                       value={editingItem.name || ''}
                       onChange={e => setEditingItem({...editingItem, name: e.target.value})}
+                      onBlur={handleNameBlur}
                       className="w-full px-3 py-2.5 text-sm font-bold border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                     />
                   </div>
@@ -402,20 +530,66 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   </div>
                 </div>
 
-                {/* CABYS (obligatorio para Hacienda v4.4) */}
-                <div className="pt-4 border-t border-stone-100">
-                  <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Código CABYS (13 dígitos)</label>
+                {/* CABYS (obligatorio para Hacienda v4.4) - catálogo oficial */}
+                <div className="pt-4 border-t border-stone-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-stone-500 uppercase">Código CABYS (Hacienda)</label>
+                    {isValidCabys(editingItem.cabysCode) ? (
+                      <span className="text-[10px] font-bold text-emerald-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Asignado</span>
+                    ) : (
+                      <span className="text-[10px] font-bold text-amber-600 flex items-center gap-1"><AlertTriangle className="w-3 h-3" /> Pendiente</span>
+                    )}
+                  </div>
                   <input
                     type="text"
                     inputMode="numeric"
                     maxLength={13}
-                    placeholder="Ej: 6331100000000"
-                    value={editingItem.cabysCode && !/^0+$/.test(editingItem.cabysCode) ? editingItem.cabysCode : ''}
+                    placeholder="Se asigna automáticamente al escribir el nombre"
+                    value={isValidCabys(editingItem.cabysCode) ? editingItem.cabysCode : (editingItem.cabysCode && !/^0+$/.test(editingItem.cabysCode) ? editingItem.cabysCode : '')}
                     onChange={e => setEditingItem({...editingItem, cabysCode: e.target.value.replace(/\D/g, '')})}
                     className="w-full px-3 py-2 text-sm font-mono border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                   />
-                  <p className="text-[10px] text-stone-400 mt-1">Hacienda rechaza facturas con CABYS vacío o inválido. Búsquelo en el catálogo oficial de Hacienda.</p>
+                  {cabysAutoNote && <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1">{cabysAutoNote}</p>}
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Buscar en catálogo CABYS (ej: jugo de guayaba)"
+                      value={cabysQuery}
+                      onChange={e => setCabysQuery(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); runCabysSearch(cabysQuery, editingItem.category); } }}
+                      className="flex-1 px-3 py-2 text-xs border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => runCabysSearch(cabysQuery, editingItem.category)}
+                      className="px-3 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-1.5"
+                    >
+                      {cabysLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                      Buscar
+                    </button>
+                  </div>
+
+                  {cabysResults.length > 0 && (
+                    <div className="max-h-44 overflow-y-auto border border-stone-200 rounded-xl divide-y divide-stone-100">
+                      {cabysResults.map(r => (
+                        <button
+                          type="button"
+                          key={r.codigo}
+                          onClick={() => pickCabys(r)}
+                          className={`w-full text-left px-3 py-2 hover:bg-stone-50 transition-colors ${editingItem.cabysCode === r.codigo ? 'bg-emerald-50' : ''}`}
+                        >
+                          <div className="text-xs font-bold text-stone-800">{r.descripcion}</div>
+                          <div className="text-[10px] text-stone-500 font-mono">{r.codigo} · IVA {r.impuesto}%</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!cabysLoading && cabysResults.length === 0 && cabysQuery && (
+                    <p className="text-[10px] text-stone-400">Sin resultados. Prueba con otra palabra (ej: "jugo", "hamburguesa", "cerveza").</p>
+                  )}
                 </div>
+
 
                 {/* Station, Taxes, and Prep Time */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-stone-100">
