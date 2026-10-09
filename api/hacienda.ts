@@ -2,6 +2,16 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import forge from 'node-forge';
 // @ts-ignore
 import signer from 'haciendacostarica-signer';
+import { DOMParser, XMLSerializer, DOMImplementation } from '@xmldom/xmldom';
+import xpath from 'xpath';
+import * as xmlCore from 'xml-core';
+
+xmlCore.setNodeDependencies({
+  DOMParser,
+  XMLSerializer,
+  DOMImplementation,
+  xpath
+});
 
 // Configuración de Entornos Oficiales de Hacienda Costa Rica
 const HACIENDA_ENV = {
@@ -255,7 +265,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (signError: any) {
         console.error('Error firmando XML XAdES-EPES:', signError);
         return res.status(400).json({
-          error: 'Error al firmar digitalmente el XML con la llave .p12',
+          error: `Error al firmar digitalmente el XML con la llave .p12: ${signError.message || 'Error desconocido'}`,
           message: signError.message
         });
       }

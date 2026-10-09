@@ -304,9 +304,20 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               <h4 className="font-bold text-stone-900 text-sm">Credenciales ATV (IDP Hacienda)</h4>
             </div>
 
-            <p className="text-xs text-stone-500">
+            <p className="text-xs text-stone-500 mb-2">
               Generadas en el portal ATV dentro de <em>Comprobantes Electrónicos &gt; Llave Criptográfica y Generar Contraseña</em>.
             </p>
+
+            {environment === 'sandbox' && (
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl mb-4 text-[11px] text-amber-900 leading-relaxed shadow-sm">
+                <p className="font-bold mb-1 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4 text-amber-600"/> ¡Atención con el Entorno de Pruebas!</p>
+                <ul className="list-disc pl-4 space-y-1 text-amber-800">
+                  <li>Las credenciales de Producción <strong>no funcionan</strong> en Pruebas. Debes generar unas exclusivas en ATV bajo el menú de "Comprobantes Electrónicos" &gt; "Entorno de Pruebas".</li>
+                  <li>El usuario de Pruebas debe terminar obligatoriamente en <strong className="break-all font-mono">@stag.comprobanteselectronicos.go.cr</strong>.</li>
+                  <li>La contraseña es la que genera ATV, no tu contraseña de ingreso web.</li>
+                </ul>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-stone-700">Usuario de Comprobantes Electrónicos (ATV)</label>
