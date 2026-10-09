@@ -755,8 +755,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               </div>
             </div>
 
-            {/* Action Buttons */}
+            {/* Action Buttons (2x2 Grid) */}
             <div className="grid grid-cols-2 gap-2 pt-1">
+              {/* Row 1 */}
               <button
                 onClick={handleSaveAndNotifyKitchen}
                 disabled={currentOrderItems.length === 0}
@@ -766,40 +767,38 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 <span>Enviar Comanda</span>
               </button>
 
-              <div className="flex gap-1 w-full">
-                <button
-                  onClick={() => handleOpenPayment(selectedSubAccount, currentDiner.name)}
-                  disabled={currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length === 0}
-                  className={`w-full py-2 text-white disabled:opacity-40 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs bg-[#588157] hover:bg-[#476c46]`}
-                >
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>Cobrar Cta</span>
-                </button>
-                <button
-                  onClick={() => handleOpenPayment('ALL')}
-                  disabled={currentOrderItems.length === 0}
-                  className={`w-full py-2 text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 disabled:opacity-40 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-xs`}
-                >
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>Cobrar Mesa</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Direct Link to Hacienda Invoice or Simplified Voucher */}
-            {onDirectInvoice && currentOrderItems.length > 0 && (
               <button
-                onClick={() => onDirectInvoice(table)}
-                className="w-full py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 border border-stone-200"
+                onClick={() => handleOpenPayment('ALL')}
+                disabled={currentOrderItems.length === 0}
+                className="w-full py-2 bg-slate-700 text-white hover:bg-slate-600 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
               >
-                <ReceiptText className="w-3.5 h-3.5 text-[#588157]" />
-                <span>
-                  {isSimplified
-                    ? 'Comprobante Régimen Simplificado (Caja & Desglose 10%)'
-                    : 'Factura Electrónica Hacienda v4.3 (XML / QR)'}
-                </span>
+                <Wallet className="w-3.5 h-3.5 text-slate-300" />
+                <span>Cobrar Mesa</span>
               </button>
-            )}
+
+              {/* Row 2 */}
+              <button
+                onClick={() => handleOpenPayment(selectedSubAccount, currentDiner.name)}
+                disabled={currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).length === 0}
+                className="w-full py-2 bg-[#588157] text-white hover:bg-[#476c46] disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <Wallet className="w-3.5 h-3.5 text-[#a9b994]" />
+                <span>Cobrar Cuenta</span>
+              </button>
+
+              {onDirectInvoice ? (
+                <button
+                  onClick={() => onDirectInvoice(table)}
+                  disabled={currentOrderItems.length === 0}
+                  className="w-full py-2 bg-stone-100 text-stone-700 hover:bg-stone-200 border border-stone-200 disabled:opacity-40 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <ReceiptText className="w-3.5 h-3.5 text-stone-500" />
+                  <span className="truncate px-1">{isSimplified ? 'Tiquete Simple' : 'Factura Electrónica'}</span>
+                </button>
+              ) : (
+                <div />
+              )}
+            </div>
           </div>
 
         </div>
