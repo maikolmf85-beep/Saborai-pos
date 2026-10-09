@@ -1,17 +1,19 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import forge from 'node-forge';
-// @ts-ignore
-import signer from 'haciendacostarica-signer';
-import { DOMParser, XMLSerializer, DOMImplementation } from '@xmldom/xmldom';
-import xpath from 'xpath';
-import * as xmlCore from 'xml-core';
+
+// Inyectar polyfills para el entorno Node.js ANTES de cargar el signer
+const xmldom = require('@xmldom/xmldom');
+const xpath = require('xpath');
+const xmlCore = require('xml-core');
 
 xmlCore.setNodeDependencies({
-  DOMParser,
-  XMLSerializer,
-  DOMImplementation,
-  xpath
+  DOMParser: xmldom.DOMParser,
+  XMLSerializer: xmldom.XMLSerializer,
+  DOMImplementation: xmldom.DOMImplementation,
+  xpath: xpath
 });
+
+const signer = require('haciendacostarica-signer');
 
 // Configuración de Entornos Oficiales de Hacienda Costa Rica
 const HACIENDA_ENV = {
