@@ -165,17 +165,12 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       ? `
       <Impuesto>
         <Codigo>01</Codigo>
-        <CodigoTarifaIVA>${tarifaCode(rate)}</CodigoTarifaIVA>
+        <CodigoTarifa>${tarifaCode(rate)}</CodigoTarifa>
         <Tarifa>${(rate * 100).toFixed(2)}</Tarifa>
         <Monto>${f5(impuesto)}</Monto>
-      </Impuesto>`
-      : `
-      <Impuesto>
-        <Codigo>01</Codigo>
-        <CodigoTarifaIVA>10</CodigoTarifaIVA>
-        <Tarifa>0.00</Tarifa>
-        <Monto>0.00000</Monto>
-      </Impuesto>`;
+      </Impuesto>
+      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>`
+      : '';
 
     return `
     <LineaDetalle>
@@ -192,7 +187,6 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <MontoTotal>${f5(monto)}</MontoTotal>
       <SubTotal>${f5(monto)}</SubTotal>${rate > 0 ? `
       <BaseImponible>${f5(monto)}</BaseImponible>` : ''}${impuestoXml}
-      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>
       <MontoTotalLinea>${f5(monto + impuesto)}</MontoTotalLinea>
     </LineaDetalle>`;
   }).join('');
