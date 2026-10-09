@@ -1065,11 +1065,13 @@ export function App() {
         {!isCopilotOpen && (
           <button
             onClick={() => setIsCopilotOpen(true)}
-            className="group flex items-center gap-2 px-4 py-3 bg-stone-900 text-white rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-200 border border-stone-800"
+            className="group flex items-center justify-center p-3 bg-stone-900 text-white rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-300 border border-stone-800"
             title="Abrir Asistente Copilot IA"
           >
-            <Sparkles className="w-4 h-4 text-[#a9b994]" />
-            <span className="text-xs font-bold">Copilot IA</span>
+            <Sparkles className="w-5 h-5 text-[#a9b994] shrink-0" />
+            <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 ease-in-out">
+              Copilot IA
+            </span>
           </button>
         )}
       </div>
