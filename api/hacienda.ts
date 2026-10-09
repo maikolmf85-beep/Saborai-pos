@@ -1,7 +1,10 @@
-import { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import forge from 'node-forge';
+import { createRequire } from 'module';
 
-// Inyectar polyfills para el entorno Node.js ANTES de cargar el signer
+const require = createRequire(import.meta.url);
+
+// Inyectar polyfills para el entorno Node.js asegurando que afecte a la instancia CJS
 const xmldom = require('@xmldom/xmldom');
 const xpath = require('xpath');
 const xmlCore = require('xml-core');
