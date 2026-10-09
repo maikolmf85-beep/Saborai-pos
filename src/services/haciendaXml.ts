@@ -165,11 +165,10 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       ? `
       <Impuesto>
         <Codigo>01</Codigo>
-        <CodigoTarifa>${tarifaCode(rate)}</CodigoTarifa>
+        <CodigoTarifaIVA>${tarifaCode(rate)}</CodigoTarifaIVA>
         <Tarifa>${(rate * 100).toFixed(2)}</Tarifa>
         <Monto>${f5(impuesto)}</Monto>
-      </Impuesto>
-      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>`
+      </Impuesto>`
       : '';
 
     return `
