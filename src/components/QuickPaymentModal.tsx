@@ -367,7 +367,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <span>
-                  <strong>¡Pago registrado con éxito!</strong> Factura transmitida a Hacienda Costa Rica v4.3.
+                  <strong>¡Pago registrado con éxito!</strong> Factura transmitida a Hacienda Costa Rica v4.4.
                 </span>
               </div>
             </div>
@@ -384,7 +384,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
               <div className="py-2 border-b border-dashed border-stone-400 space-y-0.5 text-[10px]">
                 <div className="font-bold text-center uppercase">
-                  {isSimplified ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : 'TIQUETE ELECTRÓNICO v4.3'}
+                  {isSimplified ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : 'TIQUETE ELECTRÓNICO v4.4'}
                 </div>
                 <div>Consecutivo: {consecutivo}</div>
                 <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>

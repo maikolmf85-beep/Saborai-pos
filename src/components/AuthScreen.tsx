@@ -527,7 +527,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
         </div>
         <div className="flex items-center justify-center gap-1.5 p-2 bg-white/60 rounded-xl border border-stone-200/60">
           <CheckCircle2 className="w-3.5 h-3.5 text-[#588157]" />
-          <span>Hacienda CR v4.3</span>
+          <span>Hacienda CR v4.4</span>
         </div>
         <div className="flex items-center justify-center gap-1.5 p-2 bg-white/60 rounded-xl border border-stone-200/60">
           <ShieldCheck className="w-3.5 h-3.5 text-[#588157]" />

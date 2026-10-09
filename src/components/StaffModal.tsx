@@ -76,7 +76,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
     {
       id: 'CAJERO',
       label: 'Cajero',
-      description: 'Facturación Hacienda v4.3, pagos mixtos, división de cuentas y arqueos.',
+      description: 'Facturación Hacienda v4.4, pagos mixtos, división de cuentas y arqueos.',
       badgeColor: 'bg-amber-100 text-amber-800 border-amber-200',
       icon: Receipt
     },

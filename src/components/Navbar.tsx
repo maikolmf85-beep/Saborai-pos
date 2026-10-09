@@ -207,7 +207,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveTab('billing')}
             icon={<CreditCard className="w-5 h-5" />}
             label="Caja y Facturación"
-            sublabel="Cobro rápido y Hacienda DGT v4.3"
+            sublabel="Cobro rápido y Hacienda DGT v4.4"
             isActive={activeTab === 'billing'}
           />
 

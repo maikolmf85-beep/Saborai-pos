@@ -37,7 +37,7 @@ export function generateHaciendaXmlV43(
   const codigoActividad = tenant.haciendaConfig?.codigoActividad || '561001';
 
   return `<?xml version="1.0" encoding="utf-8"?>
-<FacturaElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.3/facturaElectronica" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<FacturaElectronica xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/facturaElectronica" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
   <CodigoActividad>${codigoActividad}</CodigoActividad>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>

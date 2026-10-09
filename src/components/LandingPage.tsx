@@ -133,7 +133,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       features: [
         'Hasta 2 dispositivos simultáneos',
         'Toma de pedidos y mapa de mesas',
-        'Facturación Electrónica Hacienda v4.3',
+        'Facturación Electrónica Hacienda v4.4',
         'Impresión térmica USB y Bluetooth',
         'Soporte estándar vía WhatsApp',
       ],
@@ -200,10 +200,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     },
     {
       emoji: '🏛️',
-      label: 'Hacienda v4.3',
+      label: 'Hacienda v4.4',
       title: 'Facturación Electrónica',
       badge: 'Certificado Hacienda',
-      desc: 'Emisión de XML firmado según Hacienda v4.3. Clave 50 dígitos, IVA diferenciado (13%, 4%, 2%, 1%, Exento).',
+      desc: 'Emisión de XML firmado según Hacienda v4.4. Clave 50 dígitos, IVA diferenciado (13%, 4%, 2%, 1%, Exento).',
       color: '#3b3733',
       chat: [
         { role: 'ai', msg: 'Factura FE-001 enviada a Hacienda.' },
@@ -543,7 +543,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             </h1>
 
             <p className="lp-slide-up text-lg text-[#6b686d] mb-10 max-w-2xl mx-auto leading-relaxed" style={{ animationDelay: '.2s' }}>
-              Automatiza tu restaurante con la única plataforma en Costa Rica que combina Facturación Hacienda v4.3, KDS, y pagos Tilopay impulsados por IA nativa.
+              Automatiza tu restaurante con la única plataforma en Costa Rica que combina Facturación Hacienda v4.4, KDS, y pagos Tilopay impulsados por IA nativa.
             </p>
 
             <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4" style={{ animationDelay: '.3s' }}>
@@ -563,7 +563,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             </div>
             
             <div className="lp-slide-up mt-12 flex flex-wrap items-center justify-center gap-6 text-[11px] font-bold text-[#a9b994] uppercase tracking-wider" style={{ animationDelay: '.4s' }}>
-              {['IA Nativa', 'Hacienda v4.3', 'Tilopay', 'Modo Offline'].map((t) => (
+              {['IA Nativa', 'Hacienda v4.4', 'Tilopay', 'Modo Offline'].map((t) => (
                 <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> {t}</span>
               ))}
             </div>

@@ -102,7 +102,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
             </div>
             <div>
               <h2 className="text-xl font-bold text-stone-900 tracking-tight">Historial DGT Hacienda</h2>
-              <p className="text-xs text-stone-500">Documentos electrónicos emitidos a Hacienda CR v4.3</p>
+              <p className="text-xs text-stone-500">Documentos electrónicos emitidos a Hacienda CR v4.4</p>
             </div>
           </div>
           <button

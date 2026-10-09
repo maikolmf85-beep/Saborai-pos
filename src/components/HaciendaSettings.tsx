@@ -231,7 +231,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               </div>
               <div>
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  Facturación Electrónica Hacienda CR (v4.3)
+                  Facturación Electrónica Hacienda CR (v4.4)
                   <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
                     environment === 'production' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                   }`}>

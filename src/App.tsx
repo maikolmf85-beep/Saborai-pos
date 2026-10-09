@@ -940,7 +940,7 @@ export function App() {
           />
         )}
 
-        {/* Caja & Facturación Electrónica CR v4.3 */}
+        {/* Caja & Facturación Electrónica CR v4.4 */}
         {activeTab === 'billing' && (
           <BillingHacienda
             tenant={tenant}

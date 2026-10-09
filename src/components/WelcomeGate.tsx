@@ -454,7 +454,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         </div>
 
         <p className="mt-10 text-stone-600 text-xs text-center">
-          Pagos seguros con Tilopay · Facturación Hacienda CR v4.3 · Soporte en Costa Rica
+          Pagos seguros con Tilopay · Facturación Hacienda CR v4.4 · Soporte en Costa Rica
         </p>
       </div>
     );

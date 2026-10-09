@@ -417,7 +417,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                 : 'bg-stone-100 text-stone-600 border border-stone-200'
             }`}>
-              {isSimplified ? 'Régimen Simplificado CR (0% IVA • 10% Serv)' : 'Hacienda CR v4.3 (IVA 13%)'}
+              {isSimplified ? 'Régimen Simplificado CR (0% IVA • 10% Serv)' : 'Hacienda CR v4.4 (IVA 13%)'}
             </span>
 
             {/* Active Register Chip */}
@@ -429,7 +429,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
           <p className="text-xs text-stone-500 mt-0.5">
             {isSimplified
               ? 'Comprobante de Régimen Simplificado con desglose del 10% de servicio de mesa (Ley N° 4946).'
-              : 'División de cuentas entre comensales, traslado de ítems y emisión de tiquete fiscal v4.3.'}
+              : 'División de cuentas entre comensales, traslado de ítems y emisión de tiquete fiscal v4.4.'}
           </p>
 
           {/* Warning if no shift open on this terminal */}
@@ -814,7 +814,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                 className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
               >
                 <Code className="w-3.5 h-3.5 text-[#588157]" />
-                <span>{isSimplified ? 'Ver Documento Fiscal' : 'Ver XML v4.3'}</span>
+                <span>{isSimplified ? 'Ver Documento Fiscal' : 'Ver XML v4.4'}</span>
               </button>
 
               <button
@@ -886,8 +886,8 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                 {isSimplified
                   ? (selectedSubAccount === 'ALL' ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : `COMPROBANTE RÉGIMEN SIMPLIFICADO - CUENTA ${selectedSubAccount}`)
                   : isFacturaElectronica
-                    ? (selectedSubAccount === 'ALL' ? 'FACTURA ELECTRÓNICA v4.3' : `FACTURA ELECTRÓNICA - CUENTA ${selectedSubAccount}`)
-                    : (selectedSubAccount === 'ALL' ? 'TIQUETE ELECTRÓNICO v4.3' : `TIQUETE ELECTRÓNICO - CUENTA ${selectedSubAccount}`)}
+                    ? (selectedSubAccount === 'ALL' ? 'FACTURA ELECTRÓNICA v4.4' : `FACTURA ELECTRÓNICA - CUENTA ${selectedSubAccount}`)
+                    : (selectedSubAccount === 'ALL' ? 'TIQUETE ELECTRÓNICO v4.4' : `TIQUETE ELECTRÓNICO - CUENTA ${selectedSubAccount}`)}
               </div>
               <div>Consecutivo: {consecutivo}</div>
               <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -974,7 +974,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
                 <div className="w-20 h-20 mx-auto border border-black p-1 bg-white flex flex-col items-center justify-center">
                   <div className="w-full h-full bg-stone-900 flex items-center justify-center text-[7px] text-white font-bold p-1 text-center">
-                    QR HACIENDA CR v4.3
+                    QR HACIENDA CR v4.4
                   </div>
                 </div>
 
@@ -1075,7 +1075,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-white w-full max-w-3xl rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <h3 className="text-base font-bold text-stone-900">XML Factura Electrónica v4.3 (Hacienda CR)</h3>
+              <h3 className="text-base font-bold text-stone-900">XML Factura Electrónica v4.4 (Hacienda CR)</h3>
               <button
                 onClick={() => setShowXmlModal(false)}
                 className="px-3 py-1 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold"

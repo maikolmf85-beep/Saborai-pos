@@ -386,7 +386,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                             <h4 className="font-bold text-sm text-stone-900">Régimen Tradicional (Normal)</h4>
                           </div>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
-                            Factura v4.3
+                            Factura v4.4
                           </span>
                         </div>
 
@@ -405,7 +405,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           </div>
                           <div className="flex items-center gap-1.5">
                             <Check className="w-3.5 h-3.5 text-[#588157] shrink-0" />
-                            <span><strong>Documento:</strong> Tiquete o Factura Electrónica v4.3 con clave 50 dígitos y QR.</span>
+                            <span><strong>Documento:</strong> Tiquete o Factura Electrónica v4.4 con clave 50 dígitos y QR.</span>
                           </div>
                         </div>
                       </div>
@@ -646,7 +646,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>Configuración de Cajas & Terminales Multi-PC</span>
                 </h3>
                 <p className="text-xs text-stone-500 mt-1">
-                  Asigna qué caja física opera esta computadora y administra los puntos de cobro y comandas del restaurante con códigos de terminal independientes para Hacienda CR v4.3.
+                  Asigna qué caja física opera esta computadora y administra los puntos de cobro y comandas del restaurante con códigos de terminal independientes para Hacienda CR v4.4.
                 </p>
               </div>
 
