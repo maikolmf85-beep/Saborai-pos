@@ -46,8 +46,9 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   if (certBags && certBags.length > 0 && certBags[0].cert) {
     cert = certBags[0].cert;
   } else {
-    for (const bagType in p12.bags) {
-      const bags = p12.bags[bagType];
+    const p12Any = p12 as any;
+    for (const bagType in p12Any.bags) {
+      const bags = p12Any.bags[bagType];
       if (bags) {
         for (const b of bags) {
           if (b.cert) {
