@@ -19,7 +19,7 @@ export function getSafeSupabase(tenantId: string) {
     from: (table: string) => {
       const query = supabaseAdmin.from(table);
       // Forza el filtro por tenant_id en CADA consulta
-      return query.eq('tenant_id', tenantId);
+      return (query as any).eq('tenant_id', tenantId);
     },
     // Exponer otros métodos de supabaseAdmin si son necesarios, pero filtrados
     rpc: supabaseAdmin.rpc.bind(supabaseAdmin),
