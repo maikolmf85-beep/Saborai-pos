@@ -182,8 +182,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <Detalle>${escapeXml(String(item.name).slice(0, 200))}</Detalle>
       <PrecioUnitario>${f5(item.price)}</PrecioUnitario>
       <MontoTotal>${f5(monto)}</MontoTotal>
-      <SubTotal>${f5(monto)}</SubTotal>${rate > 0 ? `
-      <BaseImponible>${f5(monto)}</BaseImponible>` : ''}${impuestoXml}
+      <SubTotal>${f5(monto)}</SubTotal>
+      <BaseImponible>${f5(monto)}</BaseImponible>${impuestoXml}
       <MontoTotalLinea>${f5(monto + impuesto)}</MontoTotalLinea>
     </LineaDetalle>`;
   }).join('');
