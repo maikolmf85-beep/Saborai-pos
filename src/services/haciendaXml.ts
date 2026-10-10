@@ -56,6 +56,16 @@ export function randomSecurityCode(): string {
 }
 
 /**
+ * Normaliza la cédula del emisor a solo dígitos como la espera Hacienda.
+ * Persona física: 9 dígitos (04-0188-0588 → 401880588). Jurídica: 10 dígitos (3-101-xxxxxx).
+ * Un valor de 10 dígitos que empieza en 0 solo puede ser una física escrita con cero de provincia.
+ */
+export function normalizeCedula(raw: string): string {
+  const d = (raw || '').replace(/[^0-9]/g, '');
+  return d.length === 10 && d.startsWith('0') ? d.slice(1) : d;
+}
+
+/**
  * Construye Clave (50 dígitos) y Número Consecutivo (20 dígitos) válidos.
  * Clave = 506 + DDMMYY + cédula(12) + consecutivo(20) + situación(1) + código seguridad(8)
  * Consecutivo = sucursal(3) + terminal(5) + tipoDoc(2) + número(10)
@@ -79,7 +89,7 @@ export function buildClaveYConsecutivo(opts: {
   const clave =
     '506' +
     p.d + p.m + p.y.slice(-2) +
-    onlyDigits(opts.cedula).padStart(12, '0').slice(-12) +
+    normalizeCedula(opts.cedula).padStart(12, '0').slice(-12) +
     consecutivo +
     '1' +
     (opts.securityCode || randomSecurityCode());
@@ -198,7 +208,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const otrosCargos = invoice.servicio10 > 0 ? r5(totVenta * 0.10) : 0;
   const totComprobante = r5(totVenta + totImp + otrosCargos);
 
-  const emisorCedula = tenant.cedulaJuridica.replace(/[^0-9]/g, '');
+  const emisorCedula = normalizeCedula(tenant.cedulaJuridica);
   const emisorTipoId = tenant.haciendaConfig?.tipoIdentificacion || '02';
   const codigoActividad = (tenant.haciendaConfig?.codigoActividad || '561001').replace(/\D/g, '').padStart(6, '0');
   const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0');

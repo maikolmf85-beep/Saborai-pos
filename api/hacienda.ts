@@ -317,7 +317,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fecha: fecha || new Date().toISOString(),
       emisor: {
         tipoIdentificacion: String(emisor.tipoIdentificacion || '02').substring(0, 2),
-        numeroIdentificacion: String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, '')
+        numeroIdentificacion: (() => { const d = String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, ''); return d.length === 10 && d.startsWith('0') ? d.slice(1) : d; })()
       },
       comprobanteXml: finalXmlBase64
     };

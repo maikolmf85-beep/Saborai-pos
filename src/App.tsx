@@ -175,7 +175,7 @@ export function App() {
           const tenantObj: TenantInfo = {
             id: data.tenant.id,
             name: data.tenant.name,
-            cedulaJuridica: data.tenant.cedula_juridica || '3-101-998877',
+            cedulaJuridica: data.tenant.cedula_juridica || '',
             email: data.tenant.email,
             phone: data.tenant.phone,
             location: data.tenant.location || 'Costa Rica',
