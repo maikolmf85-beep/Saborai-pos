@@ -161,15 +161,13 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       if (isService) totServExe += monto; else totMercExe += monto;
     }
 
-    const impuestoXml = rate > 0
-      ? `
+    const impuestoXml = `
       <Impuesto>
         <Codigo>01</Codigo>
         <CodigoTarifaIVA>${tarifaCode(rate)}</CodigoTarifaIVA>
         <Tarifa>${(rate * 100).toFixed(2)}</Tarifa>
         <Monto>${f5(impuesto)}</Monto>
-      </Impuesto>`
-      : '';
+      </Impuesto>`;
 
     return `
     <LineaDetalle>
@@ -258,7 +256,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 
   const telefono = (tenant.phone || '').replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
 
-  return `<?xml version="1.0" encoding="utf-8"?>
+  const finalXml = `<?xml version="1.0" encoding="utf-8"?>
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
   <ProveedorSistemas>${proveedor}</ProveedorSistemas>
@@ -307,6 +305,12 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <TotalComprobante>${f5(totComprobante)}</TotalComprobante>
   </ResumenFactura>
 </${rootName}>`;
+
+  // Log para visualizar visualmente que MontoTotalLinea quedó al final
+  console.log('--- XML Generado (v4.4) ---');
+  console.log(finalXml);
+  
+  return finalXml;
 }
 
 /** @deprecated Mantenido por compatibilidad; ahora genera esquema v4.4. */
