@@ -72,10 +72,16 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
     throw new Error(`El certificado criptográfico expiró el ${notAfter.toLocaleDateString()}. Debe renovarlo en ATV Hacienda.`);
   }
 
+  const subjectAttrs: string[] = (cert.subject?.attributes || []).map((a: any) => String(a.value || ''));
+  const subjectDigits = subjectAttrs.map(v => v.replace(/\D/g, '').replace(/^0+/, '')).filter(Boolean);
+  const subjectText = (cert.subject?.attributes || []).map((a: any) => `${a.shortName || a.name}=${a.value}`).join(', ');
+
   return {
     isValid: true,
     expiresOn,
-    cleanBase64
+    cleanBase64,
+    subjectDigits,
+    subjectText
   };
 }
 
@@ -266,6 +272,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (rawP12 && p12Pin && rawXml) {
       try {
         const cleanP12 = rawP12.includes(',') ? rawP12.split(',')[1].replace(/\s+/g, '') : rawP12.replace(/\s+/g, '');
+        // Verificar que el certificado pertenezca al emisor (evita error -60 de Hacienda)
+        try {
+          const info = parseAndVerifyP12(rawP12, p12Pin);
+          const emisorId = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/\D/g, '').replace(/^0+/, '');
+          console.log('Certificado .p12 sujeto:', info.subjectText, '| Emisor:', emisorId);
+          const matches = !emisorId || info.subjectDigits.some((d: string) => d.length >= 6 && (d === emisorId || d.endsWith(emisorId) || emisorId.endsWith(d)));
+          if (!matches) {
+            return res.status(400).json({
+              error: `El certificado .p12 no pertenece al emisor (cédula ${emisorId}). Sujeto del certificado: ${info.subjectText}. Suba el .p12 correcto de esa cédula en Configuración.`
+            });
+          }
+        } catch (pe: any) {
+          console.warn('No se pudo inspeccionar el certificado:', pe.message);
+        }
         // signer.sign devuelve el XML firmado convertido directamente a Base64
         finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin.trim());
       } catch (signError: any) {
