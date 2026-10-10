@@ -262,6 +262,13 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <TotalMontoImpuesto>${f5(monto)}</TotalMontoImpuesto>
     </TotalDesgloseImpuesto>`).join('');
 
+  // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
+  const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
+  const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
+  const actReceptorXml = tipoDoc === 'FE' && hasReceptorId && actRecValida
+    ? `\n    <CodigoActividad>${actRecCode}</CodigoActividad>`
+    : '';
+
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
   const receptorXml = tipoDoc === 'FE' && hasReceptorId ? `
   <Receptor>
@@ -273,12 +280,6 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <CorreoElectronico>${escapeXml(invoice.receptor.correo)}</CorreoElectronico>` : ''}
   </Receptor>` : '';
 
-  // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
-  const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
-  const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
-  const actReceptorXml = tipoDoc === 'FE' && hasReceptorId && actRecValida
-    ? `\n    <CodigoActividad>${actRecCode}</CodigoActividad>`
-    : '';
   console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptorXml ? actRecCode : '(no enviado)');
 
   const otrosCargosXml = otrosCargos > 0 ? `
