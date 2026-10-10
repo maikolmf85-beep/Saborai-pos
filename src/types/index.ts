@@ -11,6 +11,11 @@ export interface HaciendaConfig {
   p12Base64?: string;
   tipoIdentificacion?: '01' | '02' | '03' | '04';
   codigoActividad?: string;
+  // Ubicación del emisor: debe coincidir exactamente con la registrada en ATV
+  provincia?: string; // 1 dígito
+  canton?: string; // 2 dígitos
+  distrito?: string; // 2 dígitos
+  otrasSenas?: string;
   proveedorSistemas?: string; // Cédula del proveedor de sistemas (v4.4). Si vacío se usa la del emisor.
   sucursal?: string;
   terminal?: string;

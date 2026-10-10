@@ -51,6 +51,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const [tipoIdentificacion, setTipoIdentificacion] = useState<'01' | '02' | '03' | '04'>(initialConfig?.tipoIdentificacion || '02');
   const [cedulaEmisor, setCedulaEmisor] = useState(tenant.cedulaJuridica || '');
   const [codigoActividad, setCodigoActividad] = useState(initialConfig?.codigoActividad || '561001');
+  const [provincia, setProvincia] = useState(initialConfig?.provincia || '1');
+  const [canton, setCanton] = useState(initialConfig?.canton || '01');
+  const [distrito, setDistrito] = useState(initialConfig?.distrito || '01');
+  const [otrasSenas, setOtrasSenas] = useState(initialConfig?.otrasSenas || tenant.location || '');
   const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
   const [terminal, setTerminal] = useState(initialConfig?.terminal || '00001');
   const [isValidated, setIsValidated] = useState<boolean>(initialConfig?.isValidated || false);
@@ -78,6 +82,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       p12Base64,
       tipoIdentificacion,
       codigoActividad,
+      provincia,
+      canton,
+      distrito,
+      otrasSenas,
       sucursal,
       terminal,
       isValidated,
@@ -111,6 +119,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       setP12Base64(cfg.p12Base64 || '');
       setTipoIdentificacion(cfg.tipoIdentificacion || '02');
       setCodigoActividad(cfg.codigoActividad || '561001');
+      setProvincia(cfg.provincia || '1');
+      setCanton(cfg.canton || '01');
+      setDistrito(cfg.distrito || '01');
+      setOtrasSenas(cfg.otrasSenas || tenant.location || '');
       setSucursal(cfg.sucursal || '001');
       setTerminal(cfg.terminal || '00001');
       setIsValidated(cfg.isValidated || false);
@@ -407,7 +419,59 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 />
                 <span className="text-[11px] text-stone-400">Física: 9 dígitos (ej. 4-0188-0588). Jurídica: 10 dígitos (ej. 3-101-123456). Debe ser la misma del .p12 y del usuario ATV.</span>
               </div>
+
+              <div className="col-span-2 grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-stone-700">Provincia (1 dígito)</label>
+                  <input
+                    type="text"
+                    maxLength={1}
+                    value={provincia}
+                    onChange={(e) => setProvincia(e.target.value.replace(/\D/g, ''))}
+                    onBlur={() => persistConfig()}
+                    placeholder="1"
+                    className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-700">Cantón (2 dígitos)</label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={canton}
+                    onChange={(e) => setCanton(e.target.value.replace(/\D/g, ''))}
+                    onBlur={() => { const v = canton.padStart(2, '0'); setCanton(v); persistConfig({ canton: v }); }}
+                    placeholder="01"
+                    className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-stone-700">Distrito (2 dígitos)</label>
+                  <input
+                    type="text"
+                    maxLength={2}
+                    value={distrito}
+                    onChange={(e) => setDistrito(e.target.value.replace(/\D/g, ''))}
+                    onBlur={() => { const v = distrito.padStart(2, '0'); setDistrito(v); persistConfig({ distrito: v }); }}
+                    placeholder="01"
+                    className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
+                  />
+                </div>
+                <div className="col-span-3">
+                  <label className="text-xs font-semibold text-stone-700">Otras Señas</label>
+                  <input
+                    type="text"
+                    value={otrasSenas}
+                    onChange={(e) => setOtrasSenas(e.target.value)}
+                    onBlur={() => persistConfig()}
+                    placeholder="Dirección exacta registrada en ATV"
+                    className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900"
+                  />
+                  <span className="text-[11px] text-stone-400">Provincia, cantón y distrito deben ser exactamente los registrados en ATV (Ficha Tributaria). El Cód. Actividad debe ser uno de los dados de alta en ATV (CIIU v4, 6 dígitos; restaurantes: 561001).</span>
+                </div>
+              </div>
             </div>
+
 
             <div className="grid grid-cols-2 gap-3">
               <div>

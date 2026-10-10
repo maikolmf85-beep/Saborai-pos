@@ -213,6 +213,15 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const codigoActividad = (tenant.haciendaConfig?.codigoActividad || '561001').replace(/\D/g, '').padStart(6, '0');
   const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0');
 
+  // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
+  const hc = tenant.haciendaConfig;
+  const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
+  const canton = (hc?.canton || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
+  const distrito = (hc?.distrito || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
+  const otrasSenas = (hc?.otrasSenas || tenant.location || 'San José, Costa Rica').trim();
+  console.log('[Hacienda] Emisor.Ubicacion:', { provincia, canton, distrito, otrasSenas },
+    '| CodigoActividadEmisor:', codigoActividad, '| Emisor:', emisorTipoId, emisorCedula);
+
   const esCredito = (invoice.condicionVenta as string).includes('Credito');
   const condicionVenta = esCredito ? '02' : '01';
 
@@ -253,10 +262,14 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <CorreoElectronico>${escapeXml(invoice.receptor.correo)}</CorreoElectronico>` : ''}
   </Receptor>` : '';
 
-  const actReceptor = tipoDoc === 'FE' && invoice.codigoActividadReceptor
+  // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
+  const actRecDigits = (invoice.codigoActividadReceptor || '').replace(/\D/g, '');
+  const actRecValida = actRecDigits.length >= 4 && actRecDigits.length <= 6 && !/^0+$/.test(actRecDigits);
+  const actReceptor = tipoDoc === 'FE' && hasReceptorId && actRecValida
     ? `
-  <CodigoActividadReceptor>${invoice.codigoActividadReceptor.replace(/\D/g, '').padStart(6, '0')}</CodigoActividadReceptor>`
+  <CodigoActividadReceptor>${actRecDigits.padStart(6, '0')}</CodigoActividadReceptor>`
     : '';
+  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptor ? actRecDigits.padStart(6, '0') : '(no enviado)');
 
   const otrosCargosXml = otrosCargos > 0 ? `
   <OtrosCargos>
@@ -283,10 +296,10 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     </Identificacion>
     <NombreComercial>${escapeXml(tenant.name)}</NombreComercial>
     <Ubicacion>
-      <Provincia>1</Provincia>
-      <Canton>01</Canton>
-      <Distrito>01</Distrito>
-      <OtrasSenas>${escapeXml(tenant.location || 'San José, Costa Rica')}</OtrasSenas>
+      <Provincia>${provincia}</Provincia>
+      <Canton>${canton}</Canton>
+      <Distrito>${distrito}</Distrito>
+      <OtrasSenas>${escapeXml(otrasSenas)}</OtrasSenas>
     </Ubicacion>
     <Telefono>
       <CodigoPais>506</CodigoPais>
