@@ -269,18 +269,17 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <Identificacion>
       <Tipo>${receptorTipo}</Tipo>
       <Numero>${invoice.receptor.identificacion.replace(/[^0-9]/g, '')}</Numero>
-    </Identificacion>${invoice.receptor.correo ? `
+    </Identificacion>${actReceptorXml}${invoice.receptor.correo ? `
     <CorreoElectronico>${escapeXml(invoice.receptor.correo)}</CorreoElectronico>` : ''}
   </Receptor>` : '';
 
   // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
   const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
   const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
-  const actReceptor = tipoDoc === 'FE' && hasReceptorId && actRecValida
-    ? `
-  <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
+  const actReceptorXml = tipoDoc === 'FE' && hasReceptorId && actRecValida
+    ? `\n    <CodigoActividad>${actRecCode}</CodigoActividad>`
     : '';
-  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptor ? actRecCode : '(no enviado)');
+  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptorXml ? actRecCode : '(no enviado)');
 
   const otrosCargosXml = otrosCargos > 0 ? `
   <OtrosCargos>
@@ -295,8 +294,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const finalXml = `<?xml version="1.0" encoding="utf-8"?>
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
-  <ProveedorSistemas>${proveedor}</ProveedorSistemas>
-  <CodigoActividadEmisor>${codigoActividad}</CodigoActividadEmisor>${actReceptor}
+  <CodigoActividad>${codigoActividad}</CodigoActividad>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${fechaEmision}</FechaEmision>
   <Emisor>
