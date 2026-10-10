@@ -295,9 +295,9 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const finalXml = `<?xml version="1.0" encoding="utf-8"?>
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
+  <ProveedorSistemas>${proveedor}</ProveedorSistemas>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${fechaEmision}</FechaEmision>
-  <ProveedorSistemas>${proveedor}</ProveedorSistemas>
   <CodigoActividad>${codigoActividad}</CodigoActividad>
   <Emisor>
     <Nombre>${escapeXml(tenant.name)}</Nombre>
