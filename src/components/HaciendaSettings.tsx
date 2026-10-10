@@ -49,6 +49,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const [p12Base64, setP12Base64] = useState(initialConfig?.p12Base64 || '');
   
   const [tipoIdentificacion, setTipoIdentificacion] = useState<'01' | '02' | '03' | '04'>(initialConfig?.tipoIdentificacion || '02');
+  const [cedulaEmisor, setCedulaEmisor] = useState(tenant.cedulaJuridica || '');
   const [codigoActividad, setCodigoActividad] = useState(initialConfig?.codigoActividad || '561001');
   const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
   const [terminal, setTerminal] = useState(initialConfig?.terminal || '00001');
@@ -90,6 +91,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
     if (onUpdateTenant) {
       onUpdateTenant({
         ...tenant,
+        cedulaJuridica: cedulaEmisor.trim(),
         haciendaConfig: configToSave
       });
     }
@@ -391,6 +393,19 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   placeholder="561001"
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-stone-700">Cédula del Emisor (la de tu certificado .p12)</label>
+                <input
+                  type="text"
+                  value={cedulaEmisor}
+                  onChange={(e) => setCedulaEmisor(e.target.value)}
+                  onBlur={() => persistConfig()}
+                  placeholder={tipoIdentificacion === '01' ? '4-0188-0588' : '3-101-123456'}
+                  className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
+                />
+                <span className="text-[11px] text-stone-400">Física: 9 dígitos (ej. 4-0188-0588). Jurídica: 10 dígitos (ej. 3-101-123456). Debe ser la misma del .p12 y del usuario ATV.</span>
               </div>
             </div>
 

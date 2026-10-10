@@ -312,6 +312,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const accessToken = await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
 
     // 3. Preparar Payload oficial para Recepción
+    const emisorIdRaw = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/[^0-9]/g, '');
+    if (!emisorIdRaw) {
+      return res.status(400).json({
+        error: 'Falta la cédula del emisor. Configúrela en Configuración → Hacienda → "Cédula del Emisor".'
+      });
+    }
     const payload: any = {
       clave: clave,
       fecha: fecha || new Date().toISOString(),
