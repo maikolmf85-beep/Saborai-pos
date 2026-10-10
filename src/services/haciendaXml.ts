@@ -193,11 +193,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     return `
     <LineaDetalle>
       <NumeroLinea>${index + 1}</NumeroLinea>
-      <CodigoCABYS>${cabys}</CodigoCABYS>
-      <CodigoComercial>
-        <Tipo>04</Tipo>
-        <Codigo>${escapeXml(String(item.id).slice(0, 20))}</Codigo>
-      </CodigoComercial>
+      <Codigo>${cabys}</Codigo>
       <Cantidad>${Number(item.quantity).toFixed(3)}</Cantidad>
       <UnidadMedida>${unidad}</UnidadMedida>
       <Detalle>${escapeXml(String(item.name).slice(0, 200))}</Detalle>
@@ -205,8 +201,6 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <MontoTotal>${f5(monto)}</MontoTotal>
       <SubTotal>${f5(monto)}</SubTotal>
       <BaseImponible>${f5(monto)}</BaseImponible>${impuestoXml}
-      <ImpuestoAsumidoEmisorFabrica>${f5(0)}</ImpuestoAsumidoEmisorFabrica>
-      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>
       <MontoTotalLinea>${f5(monto + impuesto)}</MontoTotalLinea>
     </LineaDetalle>`;
   }).join('');
@@ -295,9 +289,14 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const finalXml = `<?xml version="1.0" encoding="utf-8"?>
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
-  <CodigoActividadEmisor>${codigoActividad}</CodigoActividadEmisor>
+  <CodigoMoneda>${invoice.moneda}</CodigoMoneda>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${fechaEmision}</FechaEmision>
+  <ProveedorSistemas>
+    <NombreProveedor>${escapeXml(tenant.name)}</NombreProveedor>
+    <VersionSoftware>Saborai 1.0</VersionSoftware>
+  </ProveedorSistemas>
+  <CodigoActividad>${codigoActividad}</CodigoActividad>
   <Emisor>
     <Nombre>${escapeXml(tenant.name)}</Nombre>
     <Identificacion>
@@ -342,7 +341,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 </${rootName}>`;
 
   // Log para visualizar visualmente que MontoTotalLinea quedó al final
-  console.log('--- XML Generado (v4.4) ---');
+  console.log('=== XML GENERADO V4.4 ===');
   console.log(finalXml);
   
   return finalXml;
