@@ -184,6 +184,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <MontoTotal>${f5(monto)}</MontoTotal>
       <SubTotal>${f5(monto)}</SubTotal>
       <BaseImponible>${f5(monto)}</BaseImponible>${impuestoXml}
+      <ImpuestoAsumidoEmisorFabrica>${f5(0)}</ImpuestoAsumidoEmisorFabrica>
+      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>
       <MontoTotalLinea>${f5(monto + impuesto)}</MontoTotalLinea>
     </LineaDetalle>`;
   }).join('');
