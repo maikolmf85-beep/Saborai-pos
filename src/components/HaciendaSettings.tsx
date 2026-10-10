@@ -55,6 +55,25 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const [canton, setCanton] = useState(initialConfig?.canton || '01');
   const [distrito, setDistrito] = useState(initialConfig?.distrito || '01');
   const [otrasSenas, setOtrasSenas] = useState(initialConfig?.otrasSenas || tenant.location || '');
+  const [actividadesAtv, setActividadesAtv] = useState<{ codigo: string; descripcion: string; estado: string }[]>([]);
+  const [lookupMsg, setLookupMsg] = useState('');
+
+  const handleLookupActividades = async () => {
+    const id = cedulaEmisor.replace(/\D/g, '').replace(/^0+/, '');
+    if (!id) { setLookupMsg('Escribe primero la cédula del emisor.'); return; }
+    setLookupMsg('Consultando Hacienda...');
+    try {
+      const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${id}`);
+      if (!res.ok) throw new Error('No encontrado');
+      const data = await res.json();
+      const acts = (data.actividades || []) as { codigo: string; descripcion: string; estado: string }[];
+      setActividadesAtv(acts);
+      setLookupMsg(acts.length ? `${data.nombre || ''} — ${acts.length} actividad(es) registrada(s). Elige una:` : 'El contribuyente no tiene actividades registradas en Hacienda.');
+    } catch {
+      setActividadesAtv([]);
+      setLookupMsg('No se pudo consultar Hacienda para esa cédula.');
+    }
+  };
   const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
   const [terminal, setTerminal] = useState(initialConfig?.terminal || '00001');
   const [isValidated, setIsValidated] = useState<boolean>(initialConfig?.isValidated || false);
@@ -418,6 +437,28 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
                 <span className="text-[11px] text-stone-400">Física: 9 dígitos (ej. 4-0188-0588). Jurídica: 10 dígitos (ej. 3-101-123456). Debe ser la misma del .p12 y del usuario ATV.</span>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={handleLookupActividades}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-stone-900 text-white hover:bg-stone-700"
+                  >
+                    Consultar mis actividades en Hacienda
+                  </button>
+                  {lookupMsg && <p className="text-[11px] text-stone-600 mt-1">{lookupMsg}</p>}
+                  <div className="flex flex-col gap-1 mt-1">
+                    {actividadesAtv.map((a) => (
+                      <button
+                        key={a.codigo}
+                        type="button"
+                        onClick={() => { setCodigoActividad(a.codigo); persistConfig({ codigoActividad: a.codigo }); setLookupMsg(`Actividad ${a.codigo} seleccionada.`); }}
+                        className={`text-left px-3 py-1.5 text-xs rounded-lg border ${codigoActividad === a.codigo ? 'border-emerald-500 bg-emerald-50' : 'border-stone-300 bg-white hover:bg-stone-50'}`}
+                      >
+                        <span className="font-mono font-semibold">{a.codigo}</span> — {a.descripcion} {a.estado !== 'A' ? '(inactiva)' : ''}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               <div className="col-span-2 grid grid-cols-3 gap-3">

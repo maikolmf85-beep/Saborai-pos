@@ -66,6 +66,17 @@ export function normalizeCedula(raw: string): string {
 }
 
 /**
+ * Convierte un código de actividad económica (CIIU v4) al formato de 6 dígitos del RUT.
+ * El padrón de Hacienda los publica como "6201.0" → "620100"; "561001" se conserva.
+ * Se rellena con ceros a la DERECHA (nunca a la izquierda).
+ */
+export function normalizeActividad(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.length >= 6 ? digits.slice(0, 6) : digits.padEnd(6, '0');
+}
+
+/**
  * Construye Clave (50 dígitos) y Número Consecutivo (20 dígitos) válidos.
  * Clave = 506 + DDMMYY + cédula(12) + consecutivo(20) + situación(1) + código seguridad(8)
  * Consecutivo = sucursal(3) + terminal(5) + tipoDoc(2) + número(10)
@@ -210,7 +221,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 
   const emisorCedula = normalizeCedula(tenant.cedulaJuridica);
   const emisorTipoId = tenant.haciendaConfig?.tipoIdentificacion || '02';
-  const codigoActividad = (tenant.haciendaConfig?.codigoActividad || '561001').replace(/\D/g, '').padStart(6, '0');
+  const codigoActividad = normalizeActividad(tenant.haciendaConfig?.codigoActividad || '561001');
   const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0');
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
@@ -263,13 +274,13 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   </Receptor>` : '';
 
   // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
-  const actRecDigits = (invoice.codigoActividadReceptor || '').replace(/\D/g, '');
-  const actRecValida = actRecDigits.length >= 4 && actRecDigits.length <= 6 && !/^0+$/.test(actRecDigits);
+  const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
+  const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
   const actReceptor = tipoDoc === 'FE' && hasReceptorId && actRecValida
     ? `
-  <CodigoActividadReceptor>${actRecDigits.padStart(6, '0')}</CodigoActividadReceptor>`
+  <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
     : '';
-  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptor ? actRecDigits.padStart(6, '0') : '(no enviado)');
+  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptor ? actRecCode : '(no enviado)');
 
   const otrosCargosXml = otrosCargos > 0 ? `
   <OtrosCargos>
