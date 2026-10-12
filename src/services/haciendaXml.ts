@@ -206,7 +206,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     return `
     <LineaDetalle>
       <NumeroLinea>${index + 1}</NumeroLinea>
-      <Codigo>${cabys}</Codigo>
+      <CodigoCABYS>${cabys}</CodigoCABYS>
       <Cantidad>${Number(item.quantity).toFixed(3)}</Cantidad>
       <UnidadMedida>${unidad}</UnidadMedida>
       <Detalle>${escapeXml(String(item.name).slice(0, 200))}</Detalle>
