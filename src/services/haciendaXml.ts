@@ -365,7 +365,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <TotalServExonerado>0.00000</TotalServExonerado>
     <TotalServNoSujeto>0.00000</TotalServNoSujeto>
     <TotalMercanciasGravadas>${f5(totMercGrav)}</TotalMercanciasGravadas>
-    <TotalMercExentas>${f5(totMercExe)}</TotalMercExentas>
+    <TotalMercanciasExentas>${f5(totMercExe)}</TotalMercanciasExentas>
     <TotalMercExonerada>0.00000</TotalMercExonerada>
     <TotalMercNoSujeta>0.00000</TotalMercNoSujeta>
     <TotalGravado>${f5(totGravado)}</TotalGravado>
