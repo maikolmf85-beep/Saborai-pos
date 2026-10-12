@@ -83,6 +83,23 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const servicio10 = Math.round(subtotal * 0.10);
   const total = Math.round(subtotal + iva13 + servicio10);
 
+  // Opción de emitir a Hacienda (DGT) o solo ticket interno de caja
+  const [emitToHacienda, setEmitToHacienda] = useState<boolean>(() => {
+    if (tenant.taxRegime === 'SIMPLIFIED') return false;
+    try {
+      const saved = localStorage.getItem('saborai_pos_emit_hacienda');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  const handleToggleHacienda = (val: boolean) => {
+    setEmitToHacienda(val);
+    try {
+      localStorage.setItem('saborai_pos_emit_hacienda', String(val));
+    } catch {}
+  };
+
   useEffect(() => {
     if (isOpen) {
       setPaymentMode('single');
@@ -97,6 +114,16 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setMixedSinpe(0);
       setShowReceiptView(false);
       setIsProcessing(false);
+      setGeneratedXml('');
+
+      if (isSimplified) {
+        setEmitToHacienda(false);
+      } else {
+        try {
+          const saved = localStorage.getItem('saborai_pos_emit_hacienda');
+          if (saved !== null) setEmitToHacienda(saved === 'true');
+        } catch {}
+      }
       
       // Fetch daily exchange rate from Hacienda API
       fetch('https://api.hacienda.go.cr/indicadores/tc')
@@ -259,24 +286,28 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       fechaEmision: emissionDate.toISOString()
     };
     
-    const xml = generateHaciendaXmlV44(invoiceObj, tenant);
-    invoiceObj.xmlContent = xml;
-    setGeneratedXml(xml);
+    if (emitToHacienda && !isSimplified) {
+      const xml = generateHaciendaXmlV44(invoiceObj, tenant);
+      invoiceObj.xmlContent = xml;
+      setGeneratedXml(xml);
 
-    haciendaService.emitInvoice(invoiceObj, (status, detail) => {
-      if (onNotify) {
-        onNotify({
-          id: `hacienda_${Date.now()}`,
-          type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
-          title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
-          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${generatedClave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${generatedClave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
-          station: 'Bar',
-          tableNumber: table.number,
-          server: 'Sistema',
-          timestamp: new Date()
-        });
-      }
-    });
+      haciendaService.emitInvoice(invoiceObj, (status, detail) => {
+        if (onNotify) {
+          onNotify({
+            id: `hacienda_${Date.now()}`,
+            type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
+            title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
+            message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${generatedClave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${generatedClave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
+            station: 'Bar',
+            tableNumber: table.number,
+            server: 'Sistema',
+            timestamp: new Date()
+          });
+        }
+      });
+    } else {
+      setGeneratedXml('');
+    }
 
     setTimeout(() => {
       setIsProcessing(false);
@@ -350,7 +381,10 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <span>
-                  <strong>¡Pago registrado con éxito!</strong> Factura transmitida a Hacienda Costa Rica v4.4.
+                  <strong>¡Pago registrado con éxito!</strong>{' '}
+                  {emitToHacienda
+                    ? 'Factura transmitida a Hacienda Costa Rica v4.4.'
+                    : 'Ticket de caja interno generado.'}
                 </span>
               </div>
             </div>
@@ -367,7 +401,11 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
               <div className="py-2 border-b border-dashed border-stone-400 space-y-0.5 text-[10px]">
                 <div className="font-bold text-center uppercase">
-                  {isSimplified ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : 'TIQUETE ELECTRÓNICO v4.4'}
+                  {isSimplified 
+                    ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' 
+                    : emitToHacienda 
+                      ? 'TIQUETE ELECTRÓNICO v4.4' 
+                      : 'TICKET DE CAJA / RECIBO INTERNO'}
                 </div>
                 <div>Consecutivo: {consecutivo}</div>
                 <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -476,15 +514,17 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     <div className="font-bold text-[8px] uppercase">Régimen de Tributación Simplificada DGT</div>
                     <div>Ley N° 4946: 10% de Servicio incluido para meseros</div>
                   </>
-                ) : (
+                ) : emitToHacienda ? (
                   <div>Clave Hacienda: {clave50Digitos}</div>
+                ) : (
+                  <div>* Comprobante para control interno de caja *</div>
                 )}
                 <div className="font-bold text-[8px] text-stone-800">¡Gracias por su visita a {tenant.name}!</div>
               </div>
             </div>
 
             {/* Print & Close Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
+            <div className={`grid grid-cols-1 ${generatedXml ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-2 pt-2`}>
               <button
                 type="button"
                 onClick={() => window.print()}
@@ -494,14 +534,16 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                 <span>Re-imprimir</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleDownloadXmlInvoice}
-                className="py-3 px-3 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
-              >
-                <Download className="w-4 h-4 text-[#588157]" />
-                <span>Bajar XML</span>
-              </button>
+              {generatedXml ? (
+                <button
+                  type="button"
+                  onClick={handleDownloadXmlInvoice}
+                  className="py-3 px-3 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                >
+                  <Download className="w-4 h-4 text-[#588157]" />
+                  <span>Bajar XML</span>
+                </button>
+              ) : null}
 
               <button
                 type="button"
@@ -533,6 +575,50 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
               <span className="text-xs text-stone-300 font-semibold px-2.5 py-1 rounded-lg bg-white/10 border border-white/10">
                 {items.length} ítems
               </span>
+            </div>
+
+            {/* Selector Opción A: Emitir a Hacienda (v4.4) vs Solo Ticket de Caja Interno */}
+            <div className="flex items-center justify-between p-3 sm:p-3.5 rounded-2xl bg-stone-50 border border-stone-200">
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${
+                  emitToHacienda ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-600'
+                }`}>
+                  {emitToHacienda ? <ShieldCheck className="w-5 h-5" /> : <Receipt className="w-5 h-5" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-stone-900 leading-tight">
+                      {emitToHacienda ? 'Emitir a Hacienda DGT (v4.4)' : 'Solo Ticket de Caja Interno'}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
+                      emitToHacienda ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-200 text-stone-700'
+                    }`}>
+                      {emitToHacienda ? 'Oficial DGT' : 'Control Interno'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-stone-500 block mt-0.5">
+                    {emitToHacienda 
+                      ? 'Firma y transmite el Tiquete Electrónico oficial a Hacienda CR.' 
+                      : 'Cierre rápido local sin firma ni envío a Hacienda.'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Interruptor Switch */}
+              <button
+                type="button"
+                onClick={() => handleToggleHacienda(!emitToHacienda)}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  emitToHacienda ? 'bg-emerald-600' : 'bg-stone-300'
+                }`}
+                title={emitToHacienda ? 'Desactivar emisión a Hacienda' : 'Activar emisión a Hacienda'}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    emitToHacienda ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
 
             {/* Mode Toggle: Pago Único vs Pago Mixto */}
@@ -914,11 +1000,15 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
               className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-xs"
             >
               {isProcessing ? (
-                <span>Emitiendo Factura Hacienda CR...</span>
+                <span>{emitToHacienda ? 'Emitiendo Factura Hacienda CR...' : 'Registrando Pago en Caja...'}</span>
               ) : (
                 <>
                   <Printer className="w-4 h-4 text-[#a9b994]" />
-                  <span>Cobrar ₡{total.toLocaleString()} e Imprimir Factura</span>
+                  <span>
+                    {emitToHacienda 
+                      ? `Cobrar ₡${total.toLocaleString()} y Emitir a Hacienda` 
+                      : `Cobrar ₡${total.toLocaleString()} e Imprimir Ticket`}
+                  </span>
                 </>
               )}
             </button>
