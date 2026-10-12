@@ -150,6 +150,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     if (raw) savedLocalHc = JSON.parse(raw);
   } catch {}
   const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
+  const activeDocType = emittedInfo?.tipo ?? docType;
 
   const claveInfo = emittedInfo ?? {
     ...buildClaveYConsecutivo({
