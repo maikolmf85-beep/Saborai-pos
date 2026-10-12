@@ -198,7 +198,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     const impuestoXml = `
       <Impuesto>
         <Codigo>01</Codigo>
-        <CodigoTarifaIVA>${tarifaCode(rate)}</CodigoTarifaIVA>
+        <CodigoTarifa>${tarifaCode(rate)}</CodigoTarifa>
         <Tarifa>${(rate * 100).toFixed(2)}</Tarifa>
         <Monto>${f5(impuesto)}</Monto>
       </Impuesto>`;
