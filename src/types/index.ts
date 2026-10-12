@@ -9,6 +9,7 @@ export interface HaciendaConfig {
   pinP12: string;
   p12FileName?: string;
   p12Base64?: string;
+  cedulaEmisor?: string;
   tipoIdentificacion?: '01' | '02' | '03' | '04';
   codigoActividad?: string;
   // Ubicación del emisor: debe coincidir exactamente con la registrada en ATV

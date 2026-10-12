@@ -144,10 +144,16 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [previewDate] = useState(() => new Date());
   const [previewSecurity] = useState(() => randomSecurityCode());
   const [emittedInfo, setEmittedInfo] = useState<{ clave: string; consecutivo: string; fecha: Date; tipo: 'FE' | 'TE' } | null>(null);
-  const activeDocType = emittedInfo?.tipo ?? docType;
+  let savedLocalHc: any = null;
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
+    if (raw) savedLocalHc = JSON.parse(raw);
+  } catch {}
+  const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
+
   const claveInfo = emittedInfo ?? {
     ...buildClaveYConsecutivo({
-      cedula: tenant.cedulaJuridica,
+      cedula: effectiveCedula,
       branchCode,
       terminalCode,
       tipo: docType,
@@ -409,7 +415,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     // Reservar consecutivo real y construir el comprobante definitivo
     const emissionDate = new Date();
     const built = buildClaveYConsecutivo({
-      cedula: tenant.cedulaJuridica,
+      cedula: effectiveCedula,
       branchCode,
       terminalCode,
       tipo: docType,
@@ -420,6 +426,10 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
     const finalInvoice: ElectronicInvoiceCR = {
       ...invoiceObject,
+      emisor: {
+        ...invoiceObject.emisor,
+        cedulaJuridica: effectiveCedula
+      },
       clave50Digitos: built.clave,
       consecutivo: built.consecutivo,
       tipoDocumento: docType,
@@ -436,12 +446,18 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     finalInvoice.xmlContent = generateHaciendaXmlV44(finalInvoice, tenant);
 
     haciendaService.emitInvoice(finalInvoice, (status, detail) => {
+      let msg = detail || '';
+      if (status === 'RECHAZADO' && detail && detail.includes('-408')) {
+        msg = 'Error -408 en Hacienda: El Código de Actividad no coincide con su registro en ATV. Vaya a Ajustes → Hacienda y seleccione su actividad inscrita en ATV.';
+      } else if (status === 'ACEPTADO') {
+        msg = `Hacienda aceptó la factura ${built.clave.slice(-6)}`;
+      }
       if (onNotify) {
         onNotify({
           id: `hacienda_${Date.now()}`,
           type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
-          title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
-          message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${built.clave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${built.clave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
+          title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada (DGT)' : '⏳ Procesando DGT...',
+          message: msg || `Enviando XML a Hacienda...`,
           station: 'Bar',
           tableNumber: 0,
           server: 'Sistema',

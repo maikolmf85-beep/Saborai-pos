@@ -257,7 +257,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   } catch {}
   const hc = { ...(tenant.haciendaConfig || {}), ...(savedHc || {}) };
 
-  const emisorCedula = normalizeCedula(tenant.cedulaJuridica || hc?.cedulaEmisor || '');
+  const emisorCedula = normalizeCedula(hc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica || '');
   const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
   const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
   const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(0, 20);

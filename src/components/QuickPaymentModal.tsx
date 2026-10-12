@@ -203,8 +203,17 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
     const emissionDate = new Date();
     const docType = 'TE' as const; // Consumidor final sin identificar => Tiquete Electrónico
+    
+    // Obtener la cédula del emisor más fresca (de la configuración guardada o del tenant)
+    let savedLocalHc: any = null;
+    try {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
+      if (raw) savedLocalHc = JSON.parse(raw);
+    } catch {}
+    const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
+
     const { clave: generatedClave, consecutivo: generatedConsecutivo } = buildClaveYConsecutivo({
-      cedula: tenant.cedulaJuridica,
+      cedula: effectiveCedula,
       branchCode,
       terminalCode,
       tipo: docType,
@@ -250,7 +259,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       consecutivo: generatedConsecutivo,
       emisor: {
         nombre: tenant.name,
-        cedulaJuridica: tenant.cedulaJuridica,
+        cedulaJuridica: effectiveCedula,
         nombreComercial: "Saborai POS",
         correo: tenant.email,
         sucursal: branchCode,
@@ -292,12 +301,18 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setGeneratedXml(xml);
 
       haciendaService.emitInvoice(invoiceObj, (status, detail) => {
+        let msg = detail || '';
+        if (status === 'RECHAZADO' && detail && detail.includes('-408')) {
+          msg = 'Error -408 en Hacienda: El Código de Actividad no coincide con su registro en ATV. Vaya a Ajustes → Hacienda y seleccione su actividad inscrita en ATV.';
+        } else if (status === 'ACEPTADO') {
+          msg = `Hacienda aceptó la factura ${generatedClave.slice(-6)}`;
+        }
         if (onNotify) {
           onNotify({
             id: `hacienda_${Date.now()}`,
             type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
-            title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada' : '⏳ Procesando DGT...',
-            message: status === 'ACEPTADO' ? `Hacienda aceptó la factura ${generatedClave.slice(-6)}` : status === 'RECHAZADO' ? `Error en DGT para ${generatedClave.slice(-6)}: ${detail || 'sin detalle'}` : (detail || `Enviando XML a Hacienda...`),
+            title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada (DGT)' : '⏳ Procesando DGT...',
+            message: msg || `Enviando XML a Hacienda...`,
             station: 'Bar',
             tableNumber: table.number,
             server: 'Sistema',

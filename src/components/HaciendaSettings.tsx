@@ -117,6 +117,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       pinP12: pinP12.trim(),
       p12FileName,
       p12Base64,
+      cedulaEmisor: cedulaEmisor.trim(),
       tipoIdentificacion,
       codigoActividad,
       provincia,
@@ -155,6 +156,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       setPinP12(cfg.pinP12 || '');
       setP12FileName(cfg.p12FileName || '');
       setP12Base64(cfg.p12Base64 || '');
+      const ced = cfg.cedulaEmisor || tenant.cedulaJuridica || '';
+      if (ced) setCedulaEmisor(ced);
       setTipoIdentificacion(cfg.tipoIdentificacion || '02');
       setCodigoActividad(cfg.codigoActividad || '561001');
       setProvincia(cfg.provincia || '1');
@@ -167,6 +170,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       setIsValidated(cfg.isValidated || false);
       setCertExpiresOn(cfg.certExpiresOn);
       setLastTestedAt(cfg.lastTestedAt);
+
+      if (normalizeCedula(ced).length >= 9) {
+        handleLookupActividades(ced);
+      }
     }
   }, [tenant.id]);
 
