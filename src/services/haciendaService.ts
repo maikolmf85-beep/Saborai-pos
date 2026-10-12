@@ -1,5 +1,11 @@
-import { ElectronicInvoiceCR, HaciendaConfig } from '../types';
-import { formatHaciendaDate, validateInvoiceForHacienda } from './haciendaXml';
+import { ElectronicInvoiceCR, HaciendaConfig, TenantInfo } from '../types';
+import { 
+  formatHaciendaDate, 
+  validateInvoiceForHacienda, 
+  buildClaveYConsecutivo, 
+  generateHaciendaXmlV44, 
+  reserveConsecutivoNumber 
+} from './haciendaXml';
 
 class HaciendaService {
   private invoices: ElectronicInvoiceCR[] = [];
@@ -244,10 +250,69 @@ class HaciendaService {
     }
   }
 
-  public voidInvoice(clave: string, onStatusChange?: (status: string) => void) {
-    // Aquí en un sistema real se enviaría una Nota de Crédito a Hacienda
+  public async voidInvoice(
+    clave: string, 
+    onStatusChange?: (status: string, message?: string) => void,
+    tenant?: TenantInfo
+  ) {
+    const inv = this.invoices.find(i => i.clave50Digitos === clave);
     this.updateInvoiceStatus(clave, 'ANULADO');
-    if (onStatusChange) onStatusChange('ANULADO');
+    if (onStatusChange) onStatusChange('ANULADO', 'Factura marcada como anulada.');
+
+    if (!inv) return;
+
+    // Emisión oficial de Nota de Crédito Electrónica v4.4 a Hacienda
+    const cfg = this.getConfig();
+    if (cfg && (cfg.atvUsername || tenant?.haciendaConfig?.atvUsername)) {
+      const activeTenant: TenantInfo = tenant || {
+        id: 'current',
+        name: inv.emisor.nombre,
+        cedulaJuridica: inv.emisor.cedulaJuridica,
+        email: inv.emisor.correo,
+        phone: '50622222222',
+        location: 'Costa Rica',
+        plan: 'pro',
+        status: 'ACTIVE',
+        currency: inv.moneda,
+        monthlyFee: 0,
+        haciendaConfig: cfg
+      };
+
+      const branch = inv.emisor.sucursal || cfg.sucursal || '001';
+      const terminal = inv.emisor.terminal || cfg.terminal || '00001';
+      const ncNumero = reserveConsecutivoNumber(branch, terminal, 'NC');
+      const now = new Date();
+      const { clave: ncClave, consecutivo: ncConsecutivo } = buildClaveYConsecutivo({
+        cedula: inv.emisor.cedulaJuridica,
+        branchCode: branch,
+        terminalCode: terminal,
+        tipo: 'NC',
+        numero: ncNumero,
+        fecha: now
+      });
+
+      const notaCredito: ElectronicInvoiceCR = {
+        ...inv,
+        clave50Digitos: ncClave,
+        consecutivo: ncConsecutivo,
+        tipoDocumento: 'NC',
+        fechaEmision: now.toISOString(),
+        estadoHacienda: 'PROCESANDO',
+        referencia: {
+          clave: inv.clave50Digitos,
+          fechaEmision: formatHaciendaDate(new Date(inv.fechaEmision as any)),
+          tipoDoc: inv.tipoDocumento === 'FE' ? 'FE' : 'TE',
+          codigo: '01',
+          razon: 'Anulación de comprobante por Nota de Crédito'
+        }
+      };
+
+      const ncXml = generateHaciendaXmlV44(notaCredito, activeTenant);
+      notaCredito.xmlContent = ncXml;
+
+      if (onStatusChange) onStatusChange('PROCESANDO', 'Emitiendo Nota de Crédito v4.4 a Hacienda...');
+      this.emitInvoice(notaCredito, onStatusChange);
+    }
   }
 
   private updateInvoiceStatus(

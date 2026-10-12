@@ -186,7 +186,14 @@ export interface ElectronicInvoiceCR {
   };
   fechaEmision: string;
   condicionVenta: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
-  tipoDocumento?: 'FE' | 'TE'; // FE = Factura Electrónica (01), TE = Tiquete Electrónico (04)
+  tipoDocumento?: 'FE' | 'TE' | 'NC' | 'ND'; // FE=01, ND=02, NC=03, TE=04
+  referencia?: {
+    clave: string;
+    fechaEmision: string;
+    tipoDoc: 'FE' | 'TE';
+    codigo: '01' | '02' | '03' | '04' | '05' | '99';
+    razon: string;
+  };
   codigoActividadReceptor?: string;
   pagos?: { tipo: 'efectivo' | 'tarjeta' | 'sinpe' | 'otros'; monto: number }[];
   errorMensaje?: string; // Motivo de rechazo devuelto por Hacienda

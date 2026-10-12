@@ -25,9 +25,9 @@ export function formatHaciendaDate(date: Date): string {
   return `${p.y}-${p.m}-${p.d}T${p.h}:${p.mi}:${p.s}-06:00`;
 }
 
-export type TipoDocumentoCR = 'FE' | 'TE';
+export type TipoDocumentoCR = 'FE' | 'TE' | 'NC' | 'ND';
 
-const TIPO_DOC_CODE: Record<TipoDocumentoCR, string> = { FE: '01', TE: '04' };
+const TIPO_DOC_CODE: Record<TipoDocumentoCR, string> = { FE: '01', ND: '02', NC: '03', TE: '04' };
 
 function seqKey(branch: string, terminal: string, tipo: TipoDocumentoCR) {
   return `saborai_hacienda_seq_${branch}_${terminal}_${tipo}`;
@@ -114,12 +114,15 @@ export function buildClaveYConsecutivo(opts: {
 export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?: TenantInfo): string | null {
   if (!/^\d{50}$/.test(invoice.clave50Digitos)) return 'La clave generada no tiene 50 dígitos numéricos.';
   if (!/^\d{20}$/.test(invoice.consecutivo)) return 'El número consecutivo no tiene 20 dígitos.';
-  if (!invoice.items || invoice.items.length === 0) return 'La factura no tiene líneas de detalle.';
+  if (!invoice.items || invoice.items.length === 0) return 'El documento no tiene líneas de detalle.';
   for (const it of invoice.items) {
     const cabys = String(it.cabysCode || '').replace(/\D/g, '');
     if (cabys.length !== 13 || /^0+$/.test(cabys)) {
       return `El producto "${it.name}" no tiene un código CABYS válido (13 dígitos). Edítelo en Menú → Producto → CABYS.`;
     }
+  }
+  if ((invoice.tipoDocumento === 'NC' || invoice.tipoDocumento === 'ND') && !invoice.referencia?.clave) {
+    return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
   if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
   return null;
@@ -157,8 +160,18 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 
   const hasReceptorId = !!(invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
   const tipoDoc: TipoDocumentoCR = invoice.tipoDocumento || (hasReceptorId ? 'FE' : 'TE');
-  const rootName = tipoDoc === 'FE' ? 'FacturaElectronica' : 'TiqueteElectronico';
-  const ns = tipoDoc === 'FE' ? 'facturaElectronica' : 'tiqueteElectronico';
+  let rootName = 'TiqueteElectronico';
+  let ns = 'tiqueteElectronico';
+  if (tipoDoc === 'FE') {
+    rootName = 'FacturaElectronica';
+    ns = 'facturaElectronica';
+  } else if (tipoDoc === 'NC') {
+    rootName = 'NotaCreditoElectronica';
+    ns = 'notaCreditoElectronica';
+  } else if (tipoDoc === 'ND') {
+    rootName = 'NotaDebitoElectronica';
+    ns = 'notaDebitoElectronica';
+  }
 
   const taxable = (invoice.iva13 + invoice.iva4 + invoice.iva2 + invoice.iva1) > 0;
 
@@ -260,7 +273,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
   const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
   const actReceptorXml = tipoDoc === 'FE' && hasReceptorId && actRecValida
-    ? `\n    <CodigoActividad>${actRecCode}</CodigoActividad>`
+    ? `\n    <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
     : '';
 
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
@@ -286,11 +299,24 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 
   const telefono = (tenant.phone || '').replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
 
+  let referenciaXml = '';
+  if (invoice.referencia) {
+    const refTipoDoc = invoice.referencia.tipoDoc === 'FE' ? '01' : (invoice.referencia.tipoDoc === 'TE' ? '04' : '01');
+    referenciaXml = `
+  <InformacionReferencia>
+    <TipoDoc>${refTipoDoc}</TipoDoc>
+    <Numero>${invoice.referencia.clave}</Numero>
+    <FechaEmision>${invoice.referencia.fechaEmision}</FechaEmision>
+    <Codigo>${invoice.referencia.codigo || '01'}</Codigo>
+    <Razon>${escapeXml(invoice.referencia.razon || 'Anulación de comprobante electrónico')}</Razon>
+  </InformacionReferencia>`;
+  }
+
   const finalXml = `<?xml version="1.0" encoding="utf-8"?>
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
   <ProveedorSistemas>${proveedor}</ProveedorSistemas>
-  <CodigoActividad>${codigoActividad}</CodigoActividad>
+  <CodigoActividadEmisor>${codigoActividad}</CodigoActividadEmisor>
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${fechaEmision}</FechaEmision>
   <Emisor>
@@ -333,7 +359,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <TotalImpuesto>${f5(totImp)}</TotalImpuesto>
     <TotalOtrosCargos>${f5(otrosCargos)}</TotalOtrosCargos>${mediosPagoXml}
     <TotalComprobante>${f5(totComprobante)}</TotalComprobante>
-  </ResumenFactura>
+  </ResumenFactura>${referenciaXml}
 </${rootName}>`;
 
   // Log para visualizar visualmente que MontoTotalLinea quedó al final

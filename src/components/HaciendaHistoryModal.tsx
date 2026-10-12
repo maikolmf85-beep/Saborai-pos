@@ -76,8 +76,8 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   };
 
   const handleAnular = (clave: string) => {
-    if (confirm('¿Estás seguro de que deseas anular esta factura? En un sistema real esto emitirá una Nota de Crédito a Hacienda.')) {
-      haciendaService.voidInvoice(clave);
+    if (confirm('¿Deseas anular este documento? Se generará y emitirá una Nota de Crédito Electrónica v4.4 ante el Ministerio de Hacienda.')) {
+      haciendaService.voidInvoice(clave, undefined, tenant);
     }
   };
 
@@ -101,8 +101,8 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
               <Building2 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-xl font-bold text-stone-900 tracking-tight">Historial DGT Hacienda</h2>
-              <p className="text-xs text-stone-500">Documentos electrónicos emitidos a Hacienda CR v4.4</p>
+              <h2 className="text-xl font-bold text-stone-900 tracking-tight">Historial DGT Hacienda v4.4</h2>
+              <p className="text-xs text-stone-500">Facturas, Tiquetes y Notas de Crédito Electrónicas oficiales</p>
             </div>
           </div>
           <button
@@ -143,9 +143,18 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
               {filteredInvoices.map(inv => (
                 <div key={inv.clave50Digitos} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white border border-stone-200 rounded-2xl hover:border-[#588157]/40 transition-colors gap-4">
                   <div className="space-y-1.5 flex-1 overflow-hidden">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-stone-900 truncate">
                         {inv.receptor.nombre || 'Cliente General'}
+                      </span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border ${
+                        inv.tipoDocumento === 'NC'
+                          ? 'bg-purple-100 text-purple-800 border-purple-200'
+                          : inv.tipoDocumento === 'FE'
+                          ? 'bg-blue-100 text-blue-800 border-blue-200'
+                          : 'bg-stone-100 text-stone-700 border-stone-200'
+                      }`}>
+                        {inv.tipoDocumento === 'NC' ? 'Nota Crédito (03)' : inv.tipoDocumento === 'FE' ? 'Factura Electrónica (01)' : 'Tiquete Electrónico (04)'}
                       </span>
                       {getStatusBadge(inv.estadoHacienda)}
                     </div>

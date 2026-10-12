@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Key, 
@@ -14,10 +13,13 @@ import {
   Info,
   Server,
   CalendarCheck,
-  Trash2
+  Trash2,
+  FileCode,
+  Sparkles
 } from 'lucide-react';
-import { TenantInfo, HaciendaConfig } from '../types';
+import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
+import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo } from '../services/haciendaXml';
 
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
@@ -76,6 +78,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   };
   const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
   const [terminal, setTerminal] = useState(initialConfig?.terminal || '00001');
+  const [proveedorSistemas, setProveedorSistemas] = useState(initialConfig?.proveedorSistemas || '');
   const [isValidated, setIsValidated] = useState<boolean>(initialConfig?.isValidated || false);
   const [certExpiresOn, setCertExpiresOn] = useState<string | undefined>(initialConfig?.certExpiresOn);
   const [lastTestedAt, setLastTestedAt] = useState<string | undefined>(initialConfig?.lastTestedAt);
@@ -107,6 +110,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       otrasSenas,
       sucursal,
       terminal,
+      proveedorSistemas: proveedorSistemas.trim() || undefined,
       isValidated,
       certExpiresOn,
       lastTestedAt,
@@ -144,6 +148,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       setOtrasSenas(cfg.otrasSenas || tenant.location || '');
       setSucursal(cfg.sucursal || '001');
       setTerminal(cfg.terminal || '00001');
+      setProveedorSistemas(cfg.proveedorSistemas || '');
       setIsValidated(cfg.isValidated || false);
       setCertExpiresOn(cfg.certExpiresOn);
       setLastTestedAt(cfg.lastTestedAt);
@@ -325,6 +330,172 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               </div>
             </div>
           </div>
+
+          {/* Barra de Cumplimiento 100% Hacienda v4.4 */}
+          {(() => {
+            const hasEmisor = !!cedulaEmisor.replace(/\D/g, '');
+            const hasAct = /^\d{6}$/.test(codigoActividad.trim());
+            const hasUbi = !!(provincia && canton && distrito);
+            const hasCred = !!(atvUsername.trim() && atvPassword.trim());
+            const hasCert = !!(p12Base64 && pinP12.trim());
+            const hasTerm = !!(sucursal && terminal);
+
+            const checks = [
+              { label: 'Cédula Emisor', ok: hasEmisor },
+              { label: 'Actividad DGT (6 dgt)', ok: hasAct },
+              { label: 'Ubicación ATV', ok: hasUbi },
+              { label: 'Credenciales ATV', ok: hasCred },
+              { label: 'Llave .p12 y PIN', ok: hasCert },
+              { label: 'Sucursal y Terminal', ok: hasTerm },
+              { label: 'Conexión Validada', ok: isValidated },
+            ];
+
+            const completed = checks.filter(c => c.ok).length;
+            const pct = Math.round((completed / checks.length) * 100);
+
+            const handleDownloadSampleXml = () => {
+              const now = new Date();
+              const { clave, consecutivo } = buildClaveYConsecutivo({
+                cedula: cedulaEmisor || '3101123456',
+                branchCode: sucursal || '001',
+                terminalCode: terminal || '00001',
+                tipo: 'FE',
+                numero: 1,
+                fecha: now
+              });
+
+              const sampleInvoice: ElectronicInvoiceCR = {
+                clave50Digitos: clave,
+                consecutivo: consecutivo,
+                emisor: {
+                  nombre: tenant.name,
+                  cedulaJuridica: cedulaEmisor || '3101123456',
+                  nombreComercial: tenant.name,
+                  correo: tenant.email,
+                  sucursal: sucursal || '001',
+                  terminal: terminal || '00001'
+                },
+                receptor: {
+                  nombre: 'Cliente de Prueba SaborAI',
+                  tipoIdentificacion: '01-Fisica',
+                  identificacion: '111111111',
+                  correo: 'cliente@prueba.com'
+                },
+                fechaEmision: now.toISOString(),
+                condicionVenta: '01-Efectivo',
+                tipoDocumento: 'FE',
+                moneda: 'CRC',
+                tipoCambio: 1,
+                items: [
+                  {
+                    id: 'sample_1',
+                    name: 'Almuerzo Ejecutivo Restaurante',
+                    price: 5000,
+                    quantity: 1,
+                    cabysCode: '6311000000000',
+                    taxRate: 0.13,
+                    category: 'Cocina'
+                  }
+                ],
+                subtotal: 5000,
+                iva13: 650,
+                iva4: 0,
+                iva2: 0,
+                iva1: 0,
+                servicio10: 500,
+                totalComprobante: 6150,
+                medioPago: '01-Efectivo',
+                estadoHacienda: 'PROCESANDO'
+              };
+
+              const xml = generateHaciendaXmlV44(sampleInvoice, {
+                ...tenant,
+                cedulaJuridica: cedulaEmisor || '3101123456',
+                haciendaConfig: {
+                  environment,
+                  atvUsername,
+                  atvPassword,
+                  pinP12,
+                  tipoIdentificacion,
+                  codigoActividad,
+                  provincia,
+                  canton,
+                  distrito,
+                  otrasSenas,
+                  proveedorSistemas,
+                  sucursal,
+                  terminal
+                }
+              });
+
+              downloadXmlFile(xml, `FacturaElectronica_Prueba_v4.4_${consecutivo}.xml`);
+            };
+
+            return (
+              <div className="mt-6 pt-5 border-t border-stone-800">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-wider text-stone-300">
+                        Estado de Cumplimiento Hacienda v4.4:
+                      </span>
+                      <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                        pct === 100 
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' 
+                          : pct >= 70 
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                      }`}>
+                        {pct}% {pct === 100 ? '✓ 100% OPERATIVO' : 'CONFIGURADO'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-stone-400 mt-0.5">
+                      {pct === 100 
+                        ? 'Tu restaurante cuenta con todos los parámetros de la versión 4.4 de Hacienda Costa Rica.' 
+                        : `${completed} de ${checks.length} requerimientos completados para facturar al 100%.`}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadSampleXml}
+                    className="px-3.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border border-stone-700"
+                    title="Descargar archivo XML de prueba bajo el esquema oficial v4.4"
+                  >
+                    <FileCode className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Descargar XML de Prueba v4.4</span>
+                  </button>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-stone-950 rounded-full h-2 overflow-hidden border border-stone-800">
+                  <div 
+                    className={`h-full transition-all duration-500 ${
+                      pct === 100 ? 'bg-emerald-400' : pct >= 70 ? 'bg-amber-400' : 'bg-rose-400'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+
+                {/* Checklist pill tags */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2 mt-3">
+                  {checks.map((chk, i) => (
+                    <div 
+                      key={i} 
+                      className={`px-2 py-1.5 rounded-lg text-[10px] font-medium flex items-center gap-1.5 border ${
+                        chk.ok 
+                          ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/60' 
+                          : 'bg-stone-950/60 text-stone-500 border-stone-800'
+                      }`}
+                    >
+                      {chk.ok ? <Check className="w-3 h-3 text-emerald-400 shrink-0" /> : <div className="w-2 h-2 rounded-full bg-stone-600 shrink-0" />}
+                      <span className="truncate">{chk.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Formulario Principal en 2 Columnas */}
@@ -538,6 +709,19 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   placeholder="00001"
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (12 dígitos numéricos - v4.4)</label>
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={proveedorSistemas}
+                  onChange={(e) => setProveedorSistemas(e.target.value.replace(/\D/g, ''))}
+                  onBlur={() => persistConfig()}
+                  placeholder={cedulaEmisor.replace(/\D/g, '').padStart(12, '0') || '310100000000'}
+                  className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
+                />
+                <span className="text-[11px] text-stone-400">En v4.4 es obligatorio informar el proveedor de software (12 dígitos con ceros). Si se deja vacío se usará la cédula del emisor.</span>
               </div>
             </div>
           </div>
