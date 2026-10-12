@@ -286,6 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (pe: any) {
           console.warn('No se pudo inspeccionar el certificado:', pe.message);
         }
+        console.log('=== [HACIENDA v4.4 API] XML RECIBIDO PREVIO A FIRMA XAdES-EPES ===\n' + rawXml);
         // signer.sign devuelve el XML firmado convertido directamente a Base64
         finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin.trim());
       } catch (signError: any) {

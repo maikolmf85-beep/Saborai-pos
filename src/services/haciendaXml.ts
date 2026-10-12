@@ -144,6 +144,20 @@ function tarifaCode(rate: number): string {
   return '10'; // Tarifa exenta
 }
 
+function tarifaPorCodigo(code: string): string {
+  switch (code) {
+    case '08': return '13.00';
+    case '07': return '8.00';
+    case '04': return '4.00';
+    case '03': return '2.00';
+    case '02': return '1.00';
+    case '09': return '0.50';
+    case '01': return '0.00';
+    case '10': return '0.00';
+    default: return '13.00';
+  }
+}
+
 function medioPagoCode(tipo: string): string {
   const t = tipo.toLowerCase();
   if (t.includes('sinpe')) return '06';
@@ -198,7 +212,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     const impuestoXml = `
       <Impuesto>
         <Codigo>01</Codigo>
-        <CodigoTarifa>${tarifaCode(rate)}</CodigoTarifa>
+        <CodigoTarifaIVA>${tarifaCode(rate)}</CodigoTarifaIVA>
         <Tarifa>${(rate * 100).toFixed(2)}</Tarifa>
         <Monto>${f5(impuesto)}</Monto>
       </Impuesto>`;
@@ -214,6 +228,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
       <MontoTotal>${f5(monto)}</MontoTotal>
       <SubTotal>${f5(monto)}</SubTotal>
       <BaseImponible>${f5(monto)}</BaseImponible>${impuestoXml}
+      <ImpuestoAsumidoEmisorFabrica>0.00000</ImpuestoAsumidoEmisorFabrica>
+      <ImpuestoNeto>${f5(impuesto)}</ImpuestoNeto>
       <MontoTotalLinea>${f5(monto + impuesto)}</MontoTotalLinea>
     </LineaDetalle>`;
   }).join('');
@@ -229,7 +245,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const emisorCedula = normalizeCedula(tenant.cedulaJuridica);
   const emisorTipoId = tenant.haciendaConfig?.tipoIdentificacion || '02';
   const codigoActividad = normalizeActividad(tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0');
+  const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(0, 20);
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
   const hc = tenant.haciendaConfig;
@@ -237,8 +253,6 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const canton = (hc?.canton || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
   const distrito = (hc?.distrito || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
   const otrasSenas = (hc?.otrasSenas || tenant.location || 'San José, Costa Rica').trim();
-  console.log('[Hacienda] Emisor.Ubicacion:', { provincia, canton, distrito, otrasSenas },
-    '| CodigoActividadEmisor:', codigoActividad, '| Emisor:', emisorTipoId, emisorCedula);
 
   const esCredito = (invoice.condicionVenta as string).includes('Credito');
   const condicionVenta = esCredito ? '02' : '01';
@@ -266,28 +280,27 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <TotalDesgloseImpuesto>
       <Codigo>01</Codigo>
       <CodigoTarifaIVA>${code}</CodigoTarifaIVA>
+      <Tarifa>${tarifaPorCodigo(code)}</Tarifa>
       <TotalMontoImpuesto>${f5(monto)}</TotalMontoImpuesto>
     </TotalDesgloseImpuesto>`).join('');
 
-  // Actividad del receptor: solo si el cliente la proporcionó y es un código válido de 6 dígitos (nunca valores dummy)
+  // Actividad del receptor en la cabecera (v4.4: únicamente en Factura si el cliente lo requiere para crédito)
   const actRecCode = normalizeActividad(invoice.codigoActividadReceptor || '');
   const actRecValida = actRecCode.length === 6 && !/^0+$/.test(actRecCode);
-  const actReceptorXml = tipoDoc === 'FE' && hasReceptorId && actRecValida
-    ? `\n    <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
+  const actReceptorHeaderXml = (tipoDoc === 'FE' && hasReceptorId && actRecValida)
+    ? `\n  <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
     : '';
 
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
-  const receptorXml = tipoDoc === 'FE' && hasReceptorId ? `
+  const receptorXml = (tipoDoc === 'FE' && hasReceptorId) ? `
   <Receptor>
     <Nombre>${escapeXml(invoice.receptor.nombre)}</Nombre>
     <Identificacion>
       <Tipo>${receptorTipo}</Tipo>
       <Numero>${invoice.receptor.identificacion.replace(/[^0-9]/g, '')}</Numero>
-    </Identificacion>${actReceptorXml}${invoice.receptor.correo ? `
+    </Identificacion>${invoice.receptor.correo ? `
     <CorreoElectronico>${escapeXml(invoice.receptor.correo)}</CorreoElectronico>` : ''}
   </Receptor>` : '';
-
-  console.log('[Hacienda] Receptor:', hasReceptorId ? invoice.receptor?.identificacion : '(sin receptor)', '| CodigoActividadReceptor:', actReceptorXml ? actRecCode : '(no enviado)');
 
   const otrosCargosXml = otrosCargos > 0 ? `
   <OtrosCargos>
@@ -316,7 +329,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 <${rootName} xmlns="https://cdn.comprobanteselectronicos.go.cr/xml-schemas/v4.4/${ns}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <Clave>${invoice.clave50Digitos}</Clave>
   <ProveedorSistemas>${proveedor}</ProveedorSistemas>
-  <CodigoActividadEmisor>${codigoActividad}</CodigoActividadEmisor>
+  <CodigoActividadEmisor>${codigoActividad}</CodigoActividadEmisor>${actReceptorHeaderXml}
   <NumeroConsecutivo>${invoice.consecutivo}</NumeroConsecutivo>
   <FechaEmision>${fechaEmision}</FechaEmision>
   <Emisor>
@@ -349,10 +362,16 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     </CodigoTipoMoneda>
     <TotalServGravados>${f5(totServGrav)}</TotalServGravados>
     <TotalServExentos>${f5(totServExe)}</TotalServExentos>
+    <TotalServExonerado>0.00000</TotalServExonerado>
+    <TotalServNoSujeto>0.00000</TotalServNoSujeto>
     <TotalMercanciasGravadas>${f5(totMercGrav)}</TotalMercanciasGravadas>
-    <TotalMercanciasExentas>${f5(totMercExe)}</TotalMercanciasExentas>
+    <TotalMercExentas>${f5(totMercExe)}</TotalMercExentas>
+    <TotalMercExonerada>0.00000</TotalMercExonerada>
+    <TotalMercNoSujeta>0.00000</TotalMercNoSujeta>
     <TotalGravado>${f5(totGravado)}</TotalGravado>
     <TotalExento>${f5(totExento)}</TotalExento>
+    <TotalExonerado>0.00000</TotalExonerado>
+    <TotalNoSujeto>0.00000</TotalNoSujeto>
     <TotalVenta>${f5(totVenta)}</TotalVenta>
     <TotalDescuentos>0.00000</TotalDescuentos>
     <TotalVentaNeta>${f5(totVenta)}</TotalVentaNeta>${desgloseXml}
@@ -362,8 +381,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   </ResumenFactura>${referenciaXml}
 </${rootName}>`;
 
-  // Log para visualizar visualmente que MontoTotalLinea quedó al final
-  console.log('=== XML GENERADO V4.4 ===');
+  // Log completo en consola para auditoría visual pre-firma
+  console.log('=== [HACIENDA v4.4] XML COMPLETO PARA FIRMA DIGITAL ===');
   console.log(finalXml);
   
   return finalXml;
