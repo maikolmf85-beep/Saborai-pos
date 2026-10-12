@@ -125,6 +125,10 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
     return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
   if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
+  const act = tenant?.haciendaConfig?.codigoActividad;
+  if (act && !/^\d{6}$/.test(act.trim())) {
+    return 'El código de actividad económica del emisor debe tener exactamente 6 dígitos numéricos registrados en ATV.';
+  }
   return null;
 }
 
@@ -197,8 +201,11 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     const rate = taxable ? (item.taxRate || 0) : 0;
     const monto = r5(item.price * item.quantity);
     const impuesto = r5(monto * rate);
-    const isService = cabys.startsWith('63');
-    const unidad = isService ? 'Os' : 'Unid';
+    // Catálogo oficial CABYS (BCCR/Hacienda): 0 a 4 = Mercancías (Bienes), 5 a 9 = Servicios
+    const firstDigit = parseInt(cabys.charAt(0), 10);
+    const isService = !isNaN(firstDigit) && firstDigit >= 5;
+    const rawUnit = (item as any).unidadMedida || (item as any).unit;
+    const unidad = rawUnit || (isService ? 'Os' : 'Unid');
 
     if (rate > 0) {
       if (isService) totServGrav += monto; else totMercGrav += monto;
@@ -242,13 +249,20 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const otrosCargos = invoice.servicio10 > 0 ? r5(totVenta * 0.10) : 0;
   const totComprobante = r5(totVenta + totImp + otrosCargos);
 
-  const emisorCedula = normalizeCedula(tenant.cedulaJuridica);
-  const emisorTipoId = tenant.haciendaConfig?.tipoIdentificacion || '02';
-  const codigoActividad = normalizeActividad(tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(0, 20);
+  // Obtener la configuración más reciente (localStorage tiene prioridad sobre tenant desactualizado)
+  let savedHc: any = null;
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
+    if (raw) savedHc = JSON.parse(raw);
+  } catch {}
+  const hc = { ...(tenant.haciendaConfig || {}), ...(savedHc || {}) };
+
+  const emisorCedula = normalizeCedula(tenant.cedulaJuridica || hc?.cedulaEmisor || '');
+  const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
+  const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
+  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(0, 20);
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
-  const hc = tenant.haciendaConfig;
   const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
   const canton = (hc?.canton || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
   const distrito = (hc?.distrito || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);

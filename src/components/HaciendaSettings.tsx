@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
-import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo } from '../services/haciendaXml';
+import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
 
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
@@ -57,23 +57,37 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const [canton, setCanton] = useState(initialConfig?.canton || '01');
   const [distrito, setDistrito] = useState(initialConfig?.distrito || '01');
   const [otrasSenas, setOtrasSenas] = useState(initialConfig?.otrasSenas || tenant.location || '');
-  const [actividadesAtv, setActividadesAtv] = useState<{ codigo: string; descripcion: string; estado: string }[]>([]);
+  const [actividadesAtv, setActividadesAtv] = useState<{ codigo: string; descripcion: string; estado: string; tipo?: string }[]>([]);
   const [lookupMsg, setLookupMsg] = useState('');
 
-  const handleLookupActividades = async () => {
-    const id = cedulaEmisor.replace(/\D/g, '').replace(/^0+/, '');
+  const handleLookupActividades = async (forcedId?: string) => {
+    const rawId = forcedId || cedulaEmisor;
+    const id = normalizeCedula(rawId);
     if (!id) { setLookupMsg('Escribe primero la cédula del emisor.'); return; }
-    setLookupMsg('Consultando Hacienda...');
+    setLookupMsg('Consultando actividades registradas en el RUT de Hacienda...');
     try {
       const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${id}`);
       if (!res.ok) throw new Error('No encontrado');
       const data = await res.json();
-      const acts = (data.actividades || []) as { codigo: string; descripcion: string; estado: string }[];
+      const acts = (data.actividades || []) as { codigo: string; descripcion: string; estado: string; tipo?: string }[];
       setActividadesAtv(acts);
-      setLookupMsg(acts.length ? `${data.nombre || ''} — ${acts.length} actividad(es) registrada(s). Elige una:` : 'El contribuyente no tiene actividades registradas en Hacienda.');
+      if (acts.length > 0) {
+        const activeActs = acts.filter(a => a.estado === 'A');
+        const match = activeActs.find(a => a.codigo === codigoActividad);
+        if (!match && activeActs.length > 0) {
+          const auto = activeActs.find(a => a.tipo === 'P') || activeActs[0];
+          setCodigoActividad(auto.codigo);
+          persistConfig({ codigoActividad: auto.codigo });
+          setLookupMsg(`✅ Se autoseleccionó tu actividad principal en ATV: ${auto.codigo} (${auto.descripcion}).`);
+        } else {
+          setLookupMsg(`${data.nombre || ''} — ${acts.length} actividad(es) en ATV. Código activo: ${codigoActividad}`);
+        }
+      } else {
+        setLookupMsg('El contribuyente no tiene actividades registradas en Hacienda.');
+      }
     } catch {
       setActividadesAtv([]);
-      setLookupMsg('No se pudo consultar Hacienda para esa cédula.');
+      setLookupMsg('No se pudo consultar Hacienda para esa cédula (verifique su número o conexión).');
     }
   };
   const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
@@ -239,6 +253,9 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
         certExpiresOn: expires,
         lastTestedAt: now
       });
+
+      // Consultar y auto-asignar actividades registradas en ATV
+      handleLookupActividades(cedulaEmisor);
 
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -603,7 +620,12 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   type="text"
                   value={cedulaEmisor}
                   onChange={(e) => setCedulaEmisor(e.target.value)}
-                  onBlur={() => persistConfig()}
+                  onBlur={() => {
+                    persistConfig();
+                    if (normalizeCedula(cedulaEmisor).length >= 9 && actividadesAtv.length === 0) {
+                      handleLookupActividades(cedulaEmisor);
+                    }
+                  }}
                   placeholder={tipoIdentificacion === '01' ? '4-0188-0588' : '3-101-123456'}
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
@@ -611,7 +633,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 <div className="mt-2">
                   <button
                     type="button"
-                    onClick={handleLookupActividades}
+                    onClick={() => handleLookupActividades()}
                     className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-stone-900 text-white hover:bg-stone-700"
                   >
                     Consultar mis actividades en Hacienda

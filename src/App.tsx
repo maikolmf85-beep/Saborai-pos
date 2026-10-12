@@ -71,7 +71,7 @@ export function App() {
           ...parsed,
           taxRegime: parsed.taxRegime || 'TRADITIONAL',
           includeService10ByDefault: parsed.includeService10ByDefault ?? true,
-          haciendaConfig: parsed.haciendaConfig || savedHaciendaConfig
+          haciendaConfig: { ...(parsed.haciendaConfig || {}), ...(savedHaciendaConfig || {}) }
         };
       }
       return { ...initialTenant, haciendaConfig: savedHaciendaConfig };
@@ -79,6 +79,22 @@ export function App() {
       return initialTenant;
     }
   });
+
+  // Mantener tenant.haciendaConfig reactivo cuando se actualiza desde HaciendaSettings
+  useEffect(() => {
+    const handleCfgUpdate = (e: any) => {
+      const cfg = e.detail;
+      if (cfg) {
+        setTenant(prev => ({
+          ...prev,
+          cedulaJuridica: cfg.cedulaEmisor || prev.cedulaJuridica,
+          haciendaConfig: { ...(prev.haciendaConfig || {}), ...cfg }
+        }));
+      }
+    };
+    window.addEventListener('saborai_hacienda_config_updated', handleCfgUpdate);
+    return () => window.removeEventListener('saborai_hacienda_config_updated', handleCfgUpdate);
+  }, []);
 
   const broadcastTenantRef = useRef<((t: TenantInfo) => void) | null>(null);
   const broadcastStaffRef = useRef<((s: UserProfile[]) => void) | null>(null);
