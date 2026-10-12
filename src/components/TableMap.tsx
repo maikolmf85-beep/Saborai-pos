@@ -75,6 +75,11 @@ export const TableMap: React.FC<TableMapProps> = ({
       });
       return nextTables;
     });
+    setSelectedTable(prev => {
+      if (!prev) return null;
+      const updated = initialTablesList.find(t => t.id === prev.id);
+      return updated || prev;
+    });
   }, [initialTablesList]);
 
   const [selectedZone, setSelectedZone] = useState<string>(tenantZones[0] || 'General');

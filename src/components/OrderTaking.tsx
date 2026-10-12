@@ -314,7 +314,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const handlePaymentComplete = (_method: string, _amount: number) => {
-    if (paymentTargetDiner.id === 'ALL') {
+    const isAll = paymentTargetDiner.id === 'ALL';
+    const remainingItems = isAll ? [] : currentOrderItems.filter(i => i.subAccountId !== paymentTargetDiner.id);
+
+    if (isAll || remainingItems.length === 0) {
       const updatedTable: Table = {
         ...table,
         status: 'AVAILABLE',
@@ -323,7 +326,6 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       onSaveOrder(updatedTable);
       onBackToTables();
     } else {
-      const remainingItems = currentOrderItems.filter(i => i.subAccountId !== paymentTargetDiner.id);
       const updatedTable: Table = {
         ...table,
         activeOrder: {

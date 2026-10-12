@@ -616,7 +616,11 @@ export function App() {
 
     // 2. Save table state
     handleUpdateTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));
-    setSelectedTableForOrder(updatedTable);
+    if (updatedTable.status === 'AVAILABLE') {
+      setSelectedTableForOrder(null);
+    } else {
+      setSelectedTableForOrder(updatedTable);
+    }
 
     // Save locally in IndexedDB
     localDB.saveItem('tables', updatedTable);
@@ -968,6 +972,10 @@ export function App() {
               setIsCashShiftModalOpen(true);
             }}
             onOpenHaciendaHistory={() => setIsHaciendaHistoryOpen(true)}
+            onBackToTables={() => {
+              setSelectedTableForOrder(null);
+              setActiveTab('pos');
+            }}
           />
         )}
 

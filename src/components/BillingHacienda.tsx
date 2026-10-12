@@ -16,7 +16,8 @@ import {
   Receipt,
   Lock,
   Search,
-  Save
+  Save,
+  ChevronLeft
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
@@ -32,6 +33,7 @@ interface BillingHaciendaProps {
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
   onOpenHaciendaHistory?: () => void;
   onNotify?: (notif: PosNotification) => void;
+  onBackToTables?: () => void;
 }
 
 export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
@@ -40,7 +42,8 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   onSaveTable,
   onOpenCashShift,
   onOpenHaciendaHistory,
-  onNotify
+  onNotify,
+  onBackToTables
 }) => {
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
   const [copiedClave, setCopiedClave] = useState(false);
@@ -466,6 +469,40 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
         });
       }
     });
+
+    // 3. Liberar la mesa si se pagó la cuenta completa, o actualizar ítems si fue por subcuenta
+    const isPayingAll = selectedSubAccount === 'ALL';
+    const remainingItems = isPayingAll ? [] : orderItems.filter(i => (i.subAccountId || 1) !== selectedSubAccount);
+
+    let updatedTable: Table;
+    if (isPayingAll || remainingItems.length === 0) {
+      updatedTable = {
+        ...selectedTable,
+        status: 'AVAILABLE',
+        activeOrder: undefined
+      };
+      setOrderItems([]);
+    } else {
+      updatedTable = {
+        ...selectedTable,
+        activeOrder: {
+          orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
+          server: selectedTable.activeOrder?.server || 'Mesero General',
+          openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
+          subAccounts,
+          items: remainingItems
+        }
+      };
+      setOrderItems(remainingItems);
+    }
+
+    if (onSaveTable) {
+      onSaveTable(updatedTable);
+    }
+
+    if (onEmitInvoice) {
+      onEmitInvoice(finalInvoice);
+    }
   };
 
   return (
@@ -474,22 +511,34 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900 tracking-tight flex items-center gap-2 flex-wrap">
-            <span>Caja & Facturación Electrónica</span>
-            <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
-              isSimplified
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                : 'bg-stone-100 text-stone-600 border border-stone-200'
-            }`}>
-              {isSimplified ? 'Régimen Simplificado CR (0% IVA • 10% Serv)' : 'Hacienda CR v4.4 (IVA 13%)'}
-            </span>
+          <div className="flex items-center gap-3 mb-1">
+            {onBackToTables && (
+              <button
+                type="button"
+                onClick={onBackToTables}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition-all border border-stone-200/80 cursor-pointer shadow-2xs"
+              >
+                <ChevronLeft className="w-4 h-4 text-stone-600" />
+                <span>Volver a Salones</span>
+              </button>
+            )}
+            <h1 className="text-2xl font-bold text-stone-900 tracking-tight flex items-center gap-2 flex-wrap">
+              <span>Caja & Facturación Electrónica</span>
+              <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
+                isSimplified
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-stone-100 text-stone-600 border border-stone-200'
+              }`}>
+                {isSimplified ? 'Régimen Simplificado CR (0% IVA • 10% Serv)' : 'Hacienda CR v4.4 (IVA 13%)'}
+              </span>
 
-            {/* Active Register Chip */}
-            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full border bg-white text-stone-800 border-stone-300 shadow-2xs flex items-center gap-1.5" title={`Terminal DGT: ${terminalCode} - ${currentRegister.name}`}>
-              <span className={`w-2 h-2 rounded-full ${currentShift ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
-              <span>{currentRegister.name} ({terminalCode})</span>
-            </span>
-          </h1>
+              {/* Active Register Chip */}
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full border bg-white text-stone-800 border-stone-300 shadow-2xs flex items-center gap-1.5" title={`Terminal DGT: ${terminalCode} - ${currentRegister.name}`}>
+                <span className={`w-2 h-2 rounded-full ${currentShift ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                <span>{currentRegister.name} ({terminalCode})</span>
+              </span>
+            </h1>
+          </div>
           <p className="text-xs text-stone-500 mt-0.5">
             {isSimplified
               ? 'Comprobante de Régimen Simplificado con desglose del 10% de servicio de mesa (Ley N° 4946).'
@@ -910,6 +959,17 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
               </>
             )}
           </button>
+
+          {isInvoiceEmitted && onBackToTables && (
+            <button
+              type="button"
+              onClick={onBackToTables}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm animate-in fade-in"
+            >
+              <CheckCircle2 className="w-4 h-4 text-white" />
+              <span>Mesa Liberada ✓ Volver a Salones</span>
+            </button>
+          )}
 
         </div>
 

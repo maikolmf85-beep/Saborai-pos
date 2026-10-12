@@ -368,7 +368,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         
         {/* Close button */}
         <button
-          onClick={onClose}
+          onClick={showReceiptView ? handleFinalizeAndClose : onClose}
           className="absolute top-5 right-5 p-1 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
         >
           <X className="w-5 h-5" />
