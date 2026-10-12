@@ -280,7 +280,6 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <TotalDesgloseImpuesto>
       <Codigo>01</Codigo>
       <CodigoTarifaIVA>${code}</CodigoTarifaIVA>
-      <Tarifa>${tarifaPorCodigo(code)}</Tarifa>
       <TotalMontoImpuesto>${f5(monto)}</TotalMontoImpuesto>
     </TotalDesgloseImpuesto>`).join('');
 
