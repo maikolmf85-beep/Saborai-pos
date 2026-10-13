@@ -6,6 +6,14 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/auth/reset-password",
+      "destination": "/api/auth/password"
+    },
+    {
+      "source": "/api/auth/update-password",
+      "destination": "/api/auth/password"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
