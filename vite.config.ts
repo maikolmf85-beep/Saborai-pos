@@ -1,12 +1,20 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, Plugin } from 'vite'
 
-function haciendaDevPlugin(): Plugin {
+function apiDevPlugin(): Plugin {
   return {
-    name: 'hacienda-api-dev-server',
+    name: 'api-dev-server',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (req.url && (req.url === '/api/hacienda' || req.url.startsWith('/api/hacienda?'))) {
+        const url = req.url || '';
+        let targetModule = '';
+        if (url === '/api/hacienda' || url.startsWith('/api/hacienda?')) {
+          targetModule = '/api/hacienda.ts';
+        } else if (url === '/api/parse-menu' || url.startsWith('/api/parse-menu?')) {
+          targetModule = '/api/parse-menu.ts';
+        }
+
+        if (targetModule) {
           if (req.method === 'OPTIONS') {
             res.statusCode = 200;
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -26,7 +34,7 @@ function haciendaDevPlugin(): Plugin {
             }
 
             try {
-              const module = await server.ssrLoadModule('/api/hacienda.ts');
+              const module = await server.ssrLoadModule(targetModule);
               const handler = module.default;
               const resAdapter: any = {
                 setHeader: (name: string, val: string) => res.setHeader(name, val),
@@ -46,7 +54,7 @@ function haciendaDevPlugin(): Plugin {
             } catch (err: any) {
               res.statusCode = 500;
               res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify({ error: 'Error ejecutando API Hacienda local', details: err.message }));
+              res.end(JSON.stringify({ error: `Error ejecutando ${targetModule} local`, details: err.message }));
             }
           });
           return;
@@ -59,7 +67,7 @@ function haciendaDevPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), haciendaDevPlugin()],
+  plugins: [react(), apiDevPlugin()],
   server: {
     proxy: {
       '/api/notion': {

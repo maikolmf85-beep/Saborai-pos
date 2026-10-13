@@ -3,6 +3,7 @@ import { TenantInfo, MenuItem, TaxRegime, SubscriptionPlan } from '../types';
 import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
 import { CabysResult, searchCabys, suggestCabys, isValidCabys } from '../services/cabysService';
+import { MenuUploaderModal } from './MenuUploaderModal';
 
 interface MenuEditorProps {
   menuItems: MenuItem[];
@@ -22,6 +23,9 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   // Custom categories management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  
+  // AI Menu Upload state
+  const [isAiUploadOpen, setIsAiUploadOpen] = useState(false);
   
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
@@ -162,6 +166,27 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
   const categories = ['Todas', ...dynamicCategories];
 
+  const handleImportFromAi = (importedItems: MenuItem[], newCats: string[]) => {
+    // 1. Si la IA detectó nuevas categorías, incorporarlas a la configuración del tenant
+    if (newCats.length > 0) {
+      const mergedCats = Array.from(new Set([...dynamicCategories, ...newCats]));
+      onUpdateTenant({
+        ...tenant,
+        menuCategories: mergedCats
+      });
+    }
+
+    // 2. Integrar los nuevos productos importados al menú existente
+    const mergedMenu = [...importedItems, ...menuItems];
+    onUpdateMenu(mergedMenu);
+
+    // 3. Autocompletar códigos CABYS en segundo plano si no tienen uno asignado
+    autoAssignMissing(importedItems).then(({ items: withCabys }) => {
+      const byId = new Map(withCabys.map(i => [i.id, i]));
+      onUpdateMenu(mergedMenu.map(m => byId.get(m.id) || m));
+    });
+  };
+
   const filteredItems = menuItems.filter(item => {
     const matchesCategory = activeCategory === 'Todas' || item.category === activeCategory;
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -280,6 +305,14 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               className="pl-9 pr-4 py-2 w-full sm:w-64 bg-white border border-stone-200 rounded-xl text-xs focus:outline-none focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
             />
           </div>
+          <button
+            onClick={() => setIsAiUploadOpen(true)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs shrink-0 cursor-pointer"
+            title="Digitaliza tu carta o menú con Inteligencia Artificial (PDF o Imagen)"
+          >
+            <Sparkles className="w-4 h-4 text-emerald-100" />
+            <span>Cargar con IA</span>
+          </button>
           <button
             onClick={() => setIsBulkAddOpen(true)}
             className="px-4 py-2 bg-stone-100 text-stone-700 border border-stone-200 rounded-xl text-xs font-bold hover:bg-stone-200 transition-all flex items-center gap-2 shadow-xs shrink-0"
@@ -974,6 +1007,15 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
           </div>
         </div>
       )}
+
+      {/* AI Menu Uploader Modal */}
+      <MenuUploaderModal
+        isOpen={isAiUploadOpen}
+        onClose={() => setIsAiUploadOpen(false)}
+        onImportSuccess={handleImportFromAi}
+        taxRegime={taxRegime}
+        existingCategories={dynamicCategories}
+      />
     </div>
   );
 };
