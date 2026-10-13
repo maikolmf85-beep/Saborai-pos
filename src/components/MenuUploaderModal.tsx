@@ -15,7 +15,8 @@ import {
   DollarSign,
   Utensils,
   Layers,
-  Edit3
+  Edit3,
+  Key
 } from 'lucide-react';
 import { MenuItem, TaxRegime } from '../types';
 import { soundService } from '../services/soundEffects';
@@ -67,6 +68,12 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('Todas');
   const [newCatInput, setNewCatInput] = useState<string>('');
   const [showAddCatInput, setShowAddCatInput] = useState(false);
+
+  // Gemini API Key manual override (persisted in localStorage)
+  const [customApiKey, setCustomApiKey] = useState<string>(() => {
+    return (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_gemini_api_key') : '') || '';
+  });
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -127,6 +134,56 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     setExtractedProducts([]);
   };
 
+  /** Redimensiona fotos grandes para evitar superar el límite de payload (4.5MB) de Vercel */
+  const prepareFileDataUri = async (file: File): Promise<{ dataUri: string; mimeType: string }> => {
+    if (file.type.startsWith('image/')) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1920;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            const reader = new FileReader();
+            reader.onload = () => resolve({ dataUri: reader.result as string, mimeType: file.type || 'image/jpeg' });
+            reader.readAsDataURL(file);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL('image/jpeg', 0.85);
+          resolve({ dataUri: compressed, mimeType: 'image/jpeg' });
+        };
+        img.onerror = () => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ dataUri: reader.result as string, mimeType: file.type || 'image/jpeg' });
+          reader.readAsDataURL(file);
+        };
+        img.src = URL.createObjectURL(file);
+      });
+    } else {
+      // Documentos PDF
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ dataUri: reader.result as string, mimeType: file.type || 'application/pdf' });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+  };
+
   const handleProcessFileWithAI = async () => {
     if (!selectedFile) return;
 
@@ -135,31 +192,40 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     soundService.playKeyClickSound();
 
     try {
-      // 1. Convert file to Base64
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = (err) => reject(err);
-        reader.readAsDataURL(selectedFile);
-      });
+      // 1. Optimizar y convertir archivo a Base64
+      const { dataUri: fileDataUri, mimeType: resolvedMime } = await prepareFileDataUri(selectedFile);
 
-      const fileDataUri = await base64Promise;
+      // 2. Invocar endpoint seguro /api/parse-menu
+      const effectiveKey = customApiKey.trim();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (effectiveKey) {
+        headers['x-gemini-api-key'] = effectiveKey;
+      }
 
-      // 2. Call backend endpoint /api/parse-menu
       const res = await fetch('/api/parse-menu', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           fileBase64: fileDataUri,
-          mimeType: selectedFile.type || (selectedFile.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg')
+          mimeType: resolvedMime,
+          geminiApiKey: effectiveKey || undefined
         })
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || errJson.details || `Error del servidor (${res.status})`);
+        const fullMessage = errJson.details
+          ? `${errJson.error || 'Error'}: ${errJson.details}`
+          : (errJson.error || `Error del servidor (${res.status})`);
+        
+        // Si el error es de API key, abrir automáticamente el campo para ingresarla
+        if (fullMessage.toLowerCase().includes('api_key') || fullMessage.toLowerCase().includes('api key')) {
+          setShowApiKeyInput(true);
+        }
+
+        throw new Error(fullMessage);
       }
 
       const data = await res.json();
@@ -421,6 +487,69 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                   />
                 </div>
               )}
+
+              {/* Gemini API Key Box (Manual override or Vercel ENV) */}
+              <div className="p-3 bg-stone-50 border border-stone-200/90 rounded-2xl text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-stone-800 font-bold">
+                    <Key className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Google Gemini API Key</span>
+                    {customApiKey ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Clave personalizada activa ✓
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-stone-500 font-normal">
+                        (Lee variable GEMINI_API_KEY del servidor por defecto)
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                    className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                  >
+                    {showApiKeyInput ? 'Ocultar' : customApiKey ? 'Editar clave' : 'Ingresar clave manual'}
+                  </button>
+                </div>
+
+                {showApiKeyInput && (
+                  <div className="pt-2 border-t border-stone-200 space-y-2 animate-in fade-in">
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={customApiKey}
+                        onChange={(e) => {
+                          const val = e.target.value.trim();
+                          setCustomApiKey(val);
+                          if (val) {
+                            localStorage.setItem('saborai_gemini_api_key', val);
+                          } else {
+                            localStorage.removeItem('saborai_gemini_api_key');
+                          }
+                        }}
+                        placeholder="Pega tu API Key de Google (AIzaSy...)"
+                        className="flex-1 px-3 py-1.5 bg-white border border-stone-300 rounded-xl text-xs font-mono text-stone-900 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                      />
+                      {customApiKey && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomApiKey('');
+                            localStorage.removeItem('saborai_gemini_api_key');
+                          }}
+                          className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition-colors"
+                        >
+                          Limpiar
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-500">
+                      💡 Si tu servidor Vercel aún no tiene la variable <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">GEMINI_API_KEY</code>, puedes pegar tu clave gratuita de <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-emerald-700 font-bold underline">Google AI Studio</a> aquí mismo. Se guardará localmente en tu navegador.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Instructions Pill Cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-stone-600">

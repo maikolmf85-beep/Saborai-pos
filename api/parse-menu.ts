@@ -1,5 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI, Type } from '@google/genai';
+import dotenv from 'dotenv';
+
+// Cargar variables de entorno en desarrollo local
+try {
+  dotenv.config();
+  dotenv.config({ path: '.env.local' });
+} catch {}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS Headers
@@ -8,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-gemini-api-key'
   );
 
   if (req.method === 'OPTIONS') {
@@ -19,27 +26,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método no permitido. Solo se acepta POST.' });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({
-      error: 'GEMINI_API_KEY no configurada en las variables de entorno del servidor. Agrega GEMINI_API_KEY en tu archivo .env o en la configuración de Vercel.'
-    });
-  }
+  const { fileBase64, mimeType, geminiApiKey } = (req.body as any) || {};
 
-  const { fileBase64, mimeType } = (req.body as any) || {};
+  // Buscar API Key en headers, body o variables de entorno del servidor
+  const apiKey = (
+    (req.headers['x-gemini-api-key'] as string) ||
+    geminiApiKey ||
+    process.env.GEMINI_API_KEY ||
+    process.env.VITE_GEMINI_API_KEY
+  )?.trim();
 
-  if (!fileBase64 || !mimeType) {
+  if (!apiKey || apiKey === 'tu_clave_aqui' || apiKey === 'tu_api_key_aqui') {
     return res.status(400).json({
-      error: 'Cuerpo de solicitud inválido. Se requieren fileBase64 y mimeType.'
+      error: 'GEMINI_API_KEY no configurada',
+      details: 'Debes configurar GEMINI_API_KEY en las variables de entorno de Vercel (Project Settings → Environment Variables) o ingresar tu clave en la ventana de carga del menú.'
     });
   }
 
-  // Limpiar el prefijo Data URI en caso de estar presente
+  if (!fileBase64) {
+    return res.status(400).json({
+      error: 'Cuerpo de solicitud inválido',
+      details: 'Se requiere el contenido del archivo en base64 (fileBase64).'
+    });
+  }
+
+  // Normalizar mimeType
+  let resolvedMime = mimeType ? String(mimeType).trim().toLowerCase() : 'image/jpeg';
+  if (resolvedMime === 'application/octet-stream' || !resolvedMime) {
+    resolvedMime = 'image/jpeg';
+  }
+
+  // Limpiar prefijo Data URI
   const cleanBase64 = String(fileBase64).replace(/^data:[^;]+;base64,/, '').trim();
 
   if (!cleanBase64) {
     return res.status(400).json({
-      error: 'El contenido base64 del archivo está vacío o no es válido.'
+      error: 'Archivo vacío',
+      details: 'El contenido base64 del archivo está vacío o no es válido.'
     });
   }
 
@@ -47,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ai = new GoogleGenAI({ apiKey });
 
     const promptText = `
-Eres un asistente experto en digitalización de cartas y menús de restaurantes para sistemas POS de alta precisión.
+Eres un asistente experto en digitalización de cartas y menús de restaurantes para sistemas POS gastronómicos.
 Analiza detenidamente la carta o menú provisto (imagen o archivo PDF).
 Extrae todos los productos y platos organizados por sus categorías correspondientes (por ejemplo: Entradas, Platos Fuertes, Pastas, Carnes, Bebidas, Cocteles, Postres, etc.).
 
@@ -69,7 +92,7 @@ Reglas de extracción:
           parts: [
             {
               inlineData: {
-                mimeType,
+                mimeType: resolvedMime,
                 data: cleanBase64
               }
             },
@@ -128,16 +151,36 @@ Reglas de extracción:
 
     const responseText = response.text;
     if (!responseText) {
-      return res.status(500).json({ error: 'La IA no devolvió contenido interpretable.' });
+      return res.status(500).json({
+        error: 'Respuesta vacía',
+        details: 'La IA no devolvió contenido interpretable para este archivo.'
+      });
     }
 
     const parsedData = JSON.parse(responseText);
     return res.status(200).json(parsedData);
   } catch (error: any) {
     console.error('Error en /api/parse-menu:', error);
+
+    let detailedMessage = 'Error desconocido al invocar Gemini.';
+    if (error?.message) {
+      detailedMessage = String(error.message);
+      try {
+        const jsonStart = detailedMessage.indexOf('{');
+        if (jsonStart !== -1) {
+          const parsed = JSON.parse(detailedMessage.slice(jsonStart));
+          if (parsed.error?.message) {
+            detailedMessage = parsed.error.message;
+          }
+        }
+      } catch {}
+    } else if (typeof error === 'string') {
+      detailedMessage = error;
+    }
+
     return res.status(500).json({
       error: 'Error al procesar el menú con Gemini IA',
-      details: error?.message || 'Error desconocido en la llamada a Gemini'
+      details: detailedMessage
     });
   }
 }
