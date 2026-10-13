@@ -84,70 +84,94 @@ Reglas de extracción:
 4. Asegúrate de no omitir ningún plato o bebida visible en el documento.
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    const candidateModels = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-flash-latest'];
+    let response: any = null;
+    let lastError: any = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                mimeType: resolvedMime,
-                data: cleanBase64
-              }
-            },
-            {
-              text: promptText
-            }
-          ]
-        }
-      ],
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            categorias: {
-              type: Type.ARRAY,
-              description: 'Lista de categorías con sus respectivos platos o bebidas',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  nombre_categoria: {
-                    type: Type.STRING,
-                    description: 'Nombre de la categoría del menú'
-                  },
-                  productos: {
-                    type: Type.ARRAY,
-                    description: 'Lista de productos dentro de esta categoría',
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        nombre: {
-                          type: Type.STRING,
-                          description: 'Nombre del plato o producto'
-                        },
-                        descripcion: {
-                          type: Type.STRING,
-                          description: 'Descripción breve de ingredientes o receta'
-                        },
-                        precio: {
-                          type: Type.NUMBER,
-                          description: 'Precio numérico del ítem'
-                        }
-                      },
-                      required: ['nombre', 'precio']
-                    }
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: resolvedMime,
+                    data: cleanBase64
                   }
                 },
-                required: ['nombre_categoria', 'productos']
-              }
+                {
+                  text: promptText
+                }
+              ]
             }
-          },
-          required: ['categorias']
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                categorias: {
+                  type: Type.ARRAY,
+                  description: 'Lista de categorías con sus respectivos platos o bebidas',
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      nombre_categoria: {
+                        type: Type.STRING,
+                        description: 'Nombre de la categoría del menú'
+                      },
+                      productos: {
+                        type: Type.ARRAY,
+                        description: 'Lista de productos dentro de esta categoría',
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            nombre: {
+                              type: Type.STRING,
+                              description: 'Nombre del plato o producto'
+                            },
+                            descripcion: {
+                              type: Type.STRING,
+                              description: 'Descripción breve de ingredientes o receta'
+                            },
+                            precio: {
+                              type: Type.NUMBER,
+                              description: 'Precio numérico del ítem'
+                            }
+                          },
+                          required: ['nombre', 'precio']
+                        }
+                      }
+                    },
+                    required: ['nombre_categoria', 'productos']
+                  }
+                }
+              },
+              required: ['categorias']
+            }
+          }
+        });
+
+        if (response && response.text) {
+          break; // Éxito con este modelo
         }
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || '');
+        if (msg.includes('no longer available') || msg.includes('not found') || msg.includes('not supported') || msg.includes('is not available')) {
+          console.warn(`Modelo ${modelName} no disponible, intentando siguiente...`);
+          continue;
+        }
+        throw err;
       }
-    });
+    }
+
+    if (!response && lastError) {
+      throw lastError;
+    }
 
     const responseText = response.text;
     if (!responseText) {
