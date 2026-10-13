@@ -65,11 +65,12 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
 
   // Extracted data state
   const [extractedProducts, setExtractedProducts] = useState<ExtractedProduct[]>([]);
+  const [extractedProvider, setExtractedProvider] = useState<string | null>(null);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>('Todas');
   const [newCatInput, setNewCatInput] = useState<string>('');
   const [showAddCatInput, setShowAddCatInput] = useState(false);
 
-  // Gemini API Key manual override (persisted in localStorage)
+  // IA API Key manual override (persisted in localStorage)
   const [customApiKey, setCustomApiKey] = useState<string>(() => {
     return (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_gemini_api_key') : '') || '';
   });
@@ -201,7 +202,11 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         'Content-Type': 'application/json'
       };
       if (effectiveKey) {
-        headers['x-gemini-api-key'] = effectiveKey;
+        if (effectiveKey.startsWith('sk-ant-')) {
+          headers['x-anthropic-api-key'] = effectiveKey;
+        } else {
+          headers['x-gemini-api-key'] = effectiveKey;
+        }
       }
 
       const res = await fetch('/api/parse-menu', {
@@ -210,7 +215,9 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         body: JSON.stringify({
           fileBase64: fileDataUri,
           mimeType: resolvedMime,
-          geminiApiKey: effectiveKey || undefined
+          customKey: effectiveKey || undefined,
+          geminiApiKey: effectiveKey && !effectiveKey.startsWith('sk-ant-') ? effectiveKey : undefined,
+          anthropicApiKey: effectiveKey && effectiveKey.startsWith('sk-ant-') ? effectiveKey : undefined
         })
       });
 
@@ -220,8 +227,12 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
           ? `${errJson.error || 'Error'}: ${errJson.details}`
           : (errJson.error || `Error del servidor (${res.status})`);
         
-        // Si el error es de API key, abrir automáticamente el campo para ingresarla
-        if (fullMessage.toLowerCase().includes('api_key') || fullMessage.toLowerCase().includes('api key')) {
+        // Si el error es de API key o denegación de proyecto, abrir automáticamente el campo para revisarla
+        if (
+          fullMessage.toLowerCase().includes('api_key') || 
+          fullMessage.toLowerCase().includes('api key') ||
+          fullMessage.toLowerCase().includes('denied access')
+        ) {
           setShowApiKeyInput(true);
         }
 
@@ -229,6 +240,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
       }
 
       const data = await res.json();
+      setExtractedProvider(data.provider || 'IA Multimodal');
       const categorias: ExtractedCategory[] = data.categorias || [];
 
       if (!Array.isArray(categorias) || categorias.length === 0) {
@@ -378,7 +390,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
               <h2 className="text-base sm:text-lg font-black text-stone-900 tracking-tight flex items-center gap-2">
                 <span>Carga Inteligente de Menú por IA</span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Gemini 3.8 Flash
+                  Claude & Gemini IA
                 </span>
               </h2>
               <p className="text-xs text-stone-500">
@@ -488,19 +500,19 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                 </div>
               )}
 
-              {/* Gemini API Key Box (Manual override or Vercel ENV) */}
+              {/* Multi-Engine API Key Box (Manual override or Server ENV) */}
               <div className="p-3 bg-stone-50 border border-stone-200/90 rounded-2xl text-xs space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-stone-800 font-bold">
                     <Key className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Google Gemini API Key</span>
+                    <span>Motor de IA (Claude / Gemini)</span>
                     {customApiKey ? (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        Clave personalizada activa ✓
+                        {customApiKey.startsWith('sk-ant-') ? 'Claude Key activa ✓' : 'Gemini Key activa ✓'}
                       </span>
                     ) : (
                       <span className="text-[10px] text-stone-500 font-normal">
-                        (Lee variable GEMINI_API_KEY del servidor por defecto)
+                        (Usa el motor IA configurado en el servidor por defecto)
                       </span>
                     )}
                   </div>
@@ -509,7 +521,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                     onClick={() => setShowApiKeyInput(!showApiKeyInput)}
                     className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
                   >
-                    {showApiKeyInput ? 'Ocultar' : customApiKey ? 'Editar clave' : 'Ingresar clave manual'}
+                    {showApiKeyInput ? 'Ocultar' : customApiKey ? 'Editar clave' : 'Configurar clave'}
                   </button>
                 </div>
 
@@ -528,7 +540,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                             localStorage.removeItem('saborai_gemini_api_key');
                           }
                         }}
-                        placeholder="Pega tu API Key de Google (AIzaSy...)"
+                        placeholder="sk-ant-... (Claude) o AIzaSy... (Gemini)"
                         className="flex-1 px-3 py-1.5 bg-white border border-stone-300 rounded-xl text-xs font-mono text-stone-900 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
                       />
                       {customApiKey && (
@@ -538,14 +550,14 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                             setCustomApiKey('');
                             localStorage.removeItem('saborai_gemini_api_key');
                           }}
-                          className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition-colors"
+                          className="px-3 py-1.5 bg-stone-200 hover:bg-stone-300 text-stone-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                         >
                           Limpiar
                         </button>
                       )}
                     </div>
                     <p className="text-[11px] text-stone-500">
-                      💡 Si tu servidor Vercel aún no tiene la variable <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">GEMINI_API_KEY</code>, puedes pegar tu clave gratuita de <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-emerald-700 font-bold underline">Google AI Studio</a> aquí mismo. Se guardará localmente en tu navegador.
+                      💡 <strong>Recomendación:</strong> Puedes dejar este campo vacío si tu servidor ya tiene <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">ANTHROPIC_API_KEY</code> o <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">GEMINI_API_KEY</code>. Si tu proyecto de Google fue denegado o prefieres usar tu propia clave, puedes pegar tu clave de Anthropic (<code className="font-mono text-stone-700">sk-ant-...</code>) o de Google (<code className="font-mono text-stone-700">AIzaSy...</code>) aquí.
                     </p>
                   </div>
                 )}
@@ -600,12 +612,12 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
               <div className="space-y-1">
                 <h3 className="text-base font-black text-stone-900">Analizando menú con IA...</h3>
                 <p className="text-xs text-stone-500 max-w-sm mx-auto">
-                  Gemini 3.8 Flash está procesando el archivo, agrupando categorías, recetas y precios estructurados.
+                  La IA multimodal está procesando el archivo, agrupando categorías, recetas y precios estructurados.
                 </p>
               </div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full text-[11px] font-semibold border border-emerald-200">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                <span>Extrayendo estructura del menú...</span>
+                <span>Extrayendo estructura del menú con visión artificial...</span>
               </div>
             </div>
           )}
@@ -621,6 +633,11 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     <span>{extractedProducts.length} platos detectados</span>
                   </span>
+                  {extractedProvider && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      {extractedProvider}
+                    </span>
+                  )}
                   <span className="text-stone-300">|</span>
                   <span className="text-xs text-stone-600 font-semibold">
                     {distinctCategories.length} categorías
