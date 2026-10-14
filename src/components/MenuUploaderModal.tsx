@@ -16,7 +16,8 @@ import {
   Utensils,
   Layers,
   Edit3,
-  Key
+  Key,
+  RotateCw
 } from 'lucide-react';
 import { MenuItem, TaxRegime } from '../types';
 import { soundService } from '../services/soundEffects';
@@ -80,6 +81,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
   });
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [isGoogleDenied, setIsGoogleDenied] = useState(false);
+  const [isHighDemand, setIsHighDemand] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -138,6 +140,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     setStep('upload');
     setErrorMsg(null);
     setIsGoogleDenied(false);
+    setIsHighDemand(false);
     setExtractedProducts([]);
   };
 
@@ -241,8 +244,16 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         const errJson = await res.json().catch(() => ({}));
         const fullMessage = errJson.details || errJson.error || `Error del servidor (${res.status})`;
         
-        // Si el error es de denegación de proyecto en Google Cloud
+        // Si el error es de alta demanda en Gemini
         if (
+          errJson.isHighDemand ||
+          fullMessage.toLowerCase().includes('high demand') ||
+          fullMessage.toLowerCase().includes('alta demanda') ||
+          fullMessage.toLowerCase().includes('spikes in demand') ||
+          fullMessage.toLowerCase().includes('temporarily')
+        ) {
+          setIsHighDemand(true);
+        } else if (
           errJson.isGoogleDenied ||
           fullMessage.toLowerCase().includes('denied access') ||
           fullMessage.toLowerCase().includes('permission_denied')
@@ -441,18 +452,38 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
           {errorMsg && (
             <div className="mb-4 space-y-3 animate-in fade-in">
               <div className={`p-3.5 rounded-2xl border flex items-start gap-2.5 text-xs ${
-                isGoogleDenied
+                isGoogleDenied || isHighDemand
                   ? 'bg-amber-50 border-amber-300 text-amber-900'
                   : 'bg-red-50 border-red-200 text-red-800'
               }`}>
-                <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${isGoogleDenied ? 'text-amber-600' : 'text-red-600'}`} />
+                <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${isGoogleDenied || isHighDemand ? 'text-amber-600' : 'text-red-600'}`} />
                 <div className="flex-1 space-y-2">
                   <div>
                     <span className="font-bold block">
-                      {isGoogleDenied ? 'Acceso denegado en Google Cloud (Proyecto Gemini bloqueado):' : 'No pudimos procesar el archivo:'}
+                      {isHighDemand 
+                        ? 'Alta demanda en Google Gemini:' 
+                        : isGoogleDenied 
+                        ? 'Acceso denegado en Google Cloud (Proyecto Gemini bloqueado):' 
+                        : 'No pudimos procesar el archivo:'}
                     </span>
                     <span className="leading-relaxed">{errorMsg}</span>
                   </div>
+
+                  {isHighDemand && (
+                    <div className="pt-2 flex items-center justify-between gap-3 border-t border-amber-200">
+                      <p className="text-[11px] text-amber-800">
+                        Los picos de demanda en Google suelen durar solo unos segundos.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleProcessFileWithAI}
+                        className="px-3.5 py-1.5 bg-amber-800 hover:bg-amber-900 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer shrink-0"
+                      >
+                        <RotateCw className="w-3.5 h-3.5" />
+                        <span>Reintentar ahora</span>
+                      </button>
+                    </div>
+                  )}
 
                   {isGoogleDenied && (
                     <div className="p-3 bg-white/90 rounded-xl border border-amber-200 text-[11px] text-stone-700 space-y-1.5 shadow-2xs">

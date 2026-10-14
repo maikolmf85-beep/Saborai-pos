@@ -70,28 +70,67 @@ async function parseWithGemini(
   apiKey: string,
   cleanBase64: string,
   resolvedMime: string
-): Promise<any> {
+): Promise<{ data: any; model: string }> {
   const ai = new GoogleGenAI({ apiKey });
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+  const preferredModel = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
-  const response = await ai.models.generateContent({
-    model: modelName,
-    contents: [
-      {
-        inlineData: {
-          data: cleanBase64,
-          mimeType: resolvedMime || 'image/jpeg'
+  const candidateModels = [
+    preferredModel,
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-flash-latest'
+  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < candidateModels.length; attempt++) {
+    const currentModel = candidateModels[attempt];
+    try {
+      const response = await ai.models.generateContent({
+        model: currentModel,
+        contents: [
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType: resolvedMime || 'image/jpeg'
+            }
+          },
+          PROMPT_TEXT
+        ],
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: GEMINI_SCHEMA
         }
-      },
-      PROMPT_TEXT
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: GEMINI_SCHEMA
-    }
-  });
+      });
 
-  return JSON.parse(response.text || '{}');
+      const parsed = JSON.parse(response.text || '{}');
+      return { data: parsed, model: currentModel };
+    } catch (err: any) {
+      lastError = err;
+      const msg = String(err?.message || err || '');
+      console.warn(`Intento con modelo ${currentModel} falló:`, msg);
+
+      const isHighDemandOrUnavailable =
+        msg.includes('high demand') ||
+        msg.includes('overloaded') ||
+        msg.includes('UNAVAILABLE') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('503') ||
+        msg.includes('429') ||
+        msg.includes('not found') ||
+        msg.includes('no longer available');
+
+      if (attempt < candidateModels.length - 1 && isHighDemandOrUnavailable) {
+        // Pausa breve de 1s antes de intentar con el siguiente modelo de Gemini
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  if (lastError) throw lastError;
+  throw new Error('Gemini no pudo procesar la solicitud.');
 }
 
 async function parseWithClaude(
@@ -257,11 +296,12 @@ async function processMenuExtraction(params: {
   let usedEngine = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
   const errors: string[] = [];
 
-  // Intento principal: Gemini (usando GEMINI_MODEL o gemini-3.8-flash)
+  // Intento principal: Gemini (usando GEMINI_MODEL o gemini-3.8-flash y candidatos de respaldo)
   if (hasGemini && detectedGeminiKey) {
     try {
-      menuData = await parseWithGemini(detectedGeminiKey, cleanBase64, resolvedMime);
-      usedEngine = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+      const geminiRes = await parseWithGemini(detectedGeminiKey, cleanBase64, resolvedMime);
+      menuData = geminiRes.data;
+      usedEngine = geminiRes.model;
     } catch (geminiErr: any) {
       const gMsg = String(geminiErr?.message || geminiErr);
       console.warn('Gemini falló en /api/parse-menu:', gMsg);
@@ -305,9 +345,20 @@ async function processMenuExtraction(params: {
 function formatAiError(error: any) {
   const rawMsg = String(error?.message || error || '');
   let isGoogleDenied = false;
+  let isHighDemand = false;
   let userFriendly = rawMsg;
 
   if (
+    rawMsg.includes('high demand') ||
+    rawMsg.includes('overloaded') ||
+    rawMsg.includes('UNAVAILABLE') ||
+    rawMsg.includes('503') ||
+    rawMsg.includes('429')
+  ) {
+    isHighDemand = true;
+    userFriendly =
+      'Los servidores de Gemini están experimentando alta demanda en este momento. Por favor espera unos segundos y vuelve a presionar "Analizar Carta con IA".';
+  } else if (
     rawMsg.includes('Your project has been denied access') ||
     rawMsg.includes('PERMISSION_DENIED') ||
     rawMsg.includes('"code":403') ||
@@ -331,9 +382,14 @@ function formatAiError(error: any) {
   }
 
   return {
-    error: isGoogleDenied ? 'Acceso denegado en Google Cloud (Proyecto Gemini)' : 'Error al procesar el menú con IA',
+    error: isHighDemand
+      ? 'Alta demanda en los servidores de Google Gemini'
+      : isGoogleDenied
+      ? 'Acceso denegado en Google Cloud (Proyecto Gemini)'
+      : 'Error al procesar el menú con IA',
     details: userFriendly,
     isGoogleDenied,
+    isHighDemand,
     rawError: rawMsg
   };
 }
