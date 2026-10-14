@@ -643,8 +643,14 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                         </button>
                       )}
                     </div>
+                    {customApiKey && (
+                      <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Clave guardada para futuros usos en este navegador.</span>
+                      </p>
+                    )}
                     <p className="text-[11px] text-stone-500">
-                      💡 <strong>Recomendación:</strong> Puedes dejar este campo vacío si tu servidor ya tiene <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">ANTHROPIC_API_KEY</code> o <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">GEMINI_API_KEY</code>. Si tu proyecto de Google fue denegado o prefieres usar tu propia clave, puedes pegar tu clave de Anthropic (<code className="font-mono text-stone-700">sk-ant-...</code>) o de Google (<code className="font-mono text-stone-700">AIzaSy...</code>) aquí.
+                      💡 <strong>¿Por qué funciona al pegarla aquí?</strong> Porque esta clave nueva que creaste tiene cuota fresca y sin congestión. Para que funcione en todos tus dispositivos sin tener que escribirla nunca más, actualiza la variable <code className="bg-stone-200 px-1 rounded text-stone-800 font-mono">GEMINI_API_KEY</code> en tu panel de <strong>Vercel</strong> (Project Settings → Environment Variables) con esta misma clave.
                     </p>
                   </div>
                 )}
