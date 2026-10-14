@@ -302,6 +302,42 @@ async function processMenuExtraction(params: {
   throw new Error(errors[0] || 'Error en la lectura del menú con IA.');
 }
 
+function formatAiError(error: any) {
+  const rawMsg = String(error?.message || error || '');
+  let isGoogleDenied = false;
+  let userFriendly = rawMsg;
+
+  if (
+    rawMsg.includes('Your project has been denied access') ||
+    rawMsg.includes('PERMISSION_DENIED') ||
+    rawMsg.includes('"code":403') ||
+    rawMsg.includes('code: 403')
+  ) {
+    isGoogleDenied = true;
+    userFriendly =
+      'Google Cloud denegó el acceso a este proyecto de Gemini. Para solucionarlo: Crea una nueva clave en Google AI Studio (aistudio.google.com/apikey) eligiendo "Create in new project" (Nuevo Proyecto), o configura tu clave de Claude (Anthropic).';
+  } else if (rawMsg.includes('API_KEY_INVALID') || rawMsg.includes('API key not valid')) {
+    userFriendly = 'La API Key de IA no es válida o está vencida. Por favor ingresa una clave vigente de Gemini o Claude.';
+  } else {
+    try {
+      const jsonStart = rawMsg.indexOf('{');
+      if (jsonStart !== -1) {
+        const parsed = JSON.parse(rawMsg.slice(jsonStart));
+        if (parsed.error?.message) {
+          userFriendly = parsed.error.message;
+        }
+      }
+    } catch {}
+  }
+
+  return {
+    error: isGoogleDenied ? 'Acceso denegado en Google Cloud (Proyecto Gemini)' : 'Error al procesar el menú con IA',
+    details: userFriendly,
+    isGoogleDenied,
+    rawError: rawMsg
+  };
+}
+
 /**
  * Endpoint Web Standard: export async function POST(req: Request)
  */
@@ -312,10 +348,8 @@ export async function POST(req: Request) {
     return Response.json(result);
   } catch (error: any) {
     console.error('Error al procesar el menú con Gemini IA:', error);
-    return Response.json(
-      { error: `Error en la lectura del menú: ${error.message || error}` },
-      { status: 500 }
-    );
+    const formatted = formatAiError(error);
+    return Response.json(formatted, { status: 500 });
   }
 }
 
@@ -359,9 +393,7 @@ export default async function handler(req: any, res?: any) {
     return res.status(200).json(result);
   } catch (error: any) {
     console.error('Error al procesar el menú con Gemini IA:', error);
-    return res.status(500).json({
-      error: `Error en la lectura del menú: ${error.message || error}`,
-      details: error.message || String(error)
-    });
+    const formatted = formatAiError(error);
+    return res.status(500).json(formatted);
   }
 }

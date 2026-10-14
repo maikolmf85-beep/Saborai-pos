@@ -79,6 +79,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     return (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_gemini_api_key') : '') || '';
   });
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [isGoogleDenied, setIsGoogleDenied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,6 +137,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     setFilePreviewUrl(null);
     setStep('upload');
     setErrorMsg(null);
+    setIsGoogleDenied(false);
     setExtractedProducts([]);
   };
 
@@ -202,15 +204,25 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
 
       // 2. Invocar endpoint seguro /api/parse-menu
       const effectiveKey = customApiKey.trim();
+      const envClaudeKey = (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined)?.trim();
+      const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
+
+      const finalGeminiKey = effectiveKey && !effectiveKey.startsWith('sk-ant-')
+        ? effectiveKey
+        : (!effectiveKey ? envGeminiKey : undefined);
+
+      const finalAnthropicKey = effectiveKey && effectiveKey.startsWith('sk-ant-')
+        ? effectiveKey
+        : (!effectiveKey ? envClaudeKey : undefined);
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
-      if (effectiveKey) {
-        if (effectiveKey.startsWith('sk-ant-')) {
-          headers['x-anthropic-api-key'] = effectiveKey;
-        } else {
-          headers['x-gemini-api-key'] = effectiveKey;
-        }
+      if (finalAnthropicKey) {
+        headers['x-anthropic-api-key'] = finalAnthropicKey;
+      }
+      if (finalGeminiKey) {
+        headers['x-gemini-api-key'] = finalGeminiKey;
       }
 
       const res = await fetch('/api/parse-menu', {
@@ -220,23 +232,24 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
           fileBase64: fileDataUri,
           mimeType: resolvedMime,
           customKey: effectiveKey || undefined,
-          geminiApiKey: effectiveKey && !effectiveKey.startsWith('sk-ant-') ? effectiveKey : undefined,
-          anthropicApiKey: effectiveKey && effectiveKey.startsWith('sk-ant-') ? effectiveKey : undefined
+          geminiApiKey: finalGeminiKey,
+          anthropicApiKey: finalAnthropicKey
         })
       });
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        const fullMessage = errJson.details
-          ? `${errJson.error || 'Error'}: ${errJson.details}`
-          : (errJson.error || `Error del servidor (${res.status})`);
+        const fullMessage = errJson.details || errJson.error || `Error del servidor (${res.status})`;
         
-        // Si el error es de API key o denegación de proyecto, abrir automáticamente el campo para revisarla
+        // Si el error es de denegación de proyecto en Google Cloud
         if (
-          fullMessage.toLowerCase().includes('api_key') || 
-          fullMessage.toLowerCase().includes('api key') ||
-          fullMessage.toLowerCase().includes('denied access')
+          errJson.isGoogleDenied ||
+          fullMessage.toLowerCase().includes('denied access') ||
+          fullMessage.toLowerCase().includes('permission_denied')
         ) {
+          setIsGoogleDenied(true);
+          setShowApiKeyInput(true);
+        } else if (fullMessage.toLowerCase().includes('api_key') || fullMessage.toLowerCase().includes('api key')) {
           setShowApiKeyInput(true);
         }
 
@@ -426,18 +439,47 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
           
           {/* Error Banner */}
           {errorMsg && (
-            <div className="mb-4 p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2.5 text-xs text-red-800 animate-in fade-in">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <span className="font-bold block">No pudimos procesar el archivo:</span>
-                <span>{errorMsg}</span>
+            <div className="mb-4 space-y-3 animate-in fade-in">
+              <div className={`p-3.5 rounded-2xl border flex items-start gap-2.5 text-xs ${
+                isGoogleDenied
+                  ? 'bg-amber-50 border-amber-300 text-amber-900'
+                  : 'bg-red-50 border-red-200 text-red-800'
+              }`}>
+                <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${isGoogleDenied ? 'text-amber-600' : 'text-red-600'}`} />
+                <div className="flex-1 space-y-2">
+                  <div>
+                    <span className="font-bold block">
+                      {isGoogleDenied ? 'Acceso denegado en Google Cloud (Proyecto Gemini bloqueado):' : 'No pudimos procesar el archivo:'}
+                    </span>
+                    <span className="leading-relaxed">{errorMsg}</span>
+                  </div>
+
+                  {isGoogleDenied && (
+                    <div className="p-3 bg-white/90 rounded-xl border border-amber-200 text-[11px] text-stone-700 space-y-1.5 shadow-2xs">
+                      <p className="font-bold text-amber-900">
+                        ⚡ Solución recomendada en 1 minuto:
+                      </p>
+                      <ol className="list-decimal list-inside space-y-1 text-stone-600">
+                        <li>
+                          Abre <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-emerald-700 font-bold underline">Google AI Studio (Crear clave)</a>.
+                        </li>
+                        <li>
+                          Haz clic en el botón <strong>"Create API Key"</strong> y selecciona <strong>"Create in new project"</strong> (en un proyecto NUEVO, no en el que está bloqueado).
+                        </li>
+                        <li>
+                          Pega tu nueva clave en el campo <strong>"Motor de IA"</strong> abajo o directamente en las variables de entorno de Vercel.
+                        </li>
+                      </ol>
+                    </div>
+                  )}
+                </div>
+                <button 
+                  onClick={() => setErrorMsg(null)}
+                  className="text-stone-400 hover:text-stone-700 font-bold p-1"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <button 
-                onClick={() => setErrorMsg(null)}
-                className="text-red-500 hover:text-red-800 font-bold"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
             </div>
           )}
 
