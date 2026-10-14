@@ -13,11 +13,11 @@ import {
   Volume2, 
   VolumeX, 
   UserPlus,
-  Banknote,
   Vault,
   Landmark,
   BarChart3
 } from 'lucide-react';
+import { CashRegister } from './CashRegisterIcon';
 import { TenantInfo, UserProfile } from '../types';
 
 export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu' | 'reports';
@@ -236,7 +236,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-shift-btn"
               onClick={() => onOpenCashShift('status')}
-              icon={<Banknote className="w-5 h-5" />}
+              icon={<CashRegister className="w-5 h-5" />}
               label={isShiftOpen ? "Turno de Caja Activo" : "Caja Cerrada"}
               sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Ver balance y movimientos` : `${activeRegisterName || 'Caja'} • Clic para abrir turno`}
               badge={
