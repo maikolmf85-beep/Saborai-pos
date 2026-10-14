@@ -28,6 +28,8 @@ export interface ExtractedProduct {
   precio: number;
   categoria: string;
   selected: boolean;
+  tipo_producto?: string;
+  cabys?: string;
 }
 
 export interface ExtractedCategory {
@@ -36,6 +38,8 @@ export interface ExtractedCategory {
     nombre: string;
     descripcion?: string;
     precio: number;
+    tipo_producto?: string;
+    cabys?: string;
   }>;
 }
 
@@ -239,9 +243,10 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         throw new Error(fullMessage);
       }
 
-      const data = await res.json();
-      setExtractedProvider(data.provider || 'IA Multimodal');
-      const categorias: ExtractedCategory[] = data.categorias || [];
+      const payload = await res.json();
+      const menuData = payload.data || payload;
+      setExtractedProvider(payload.provider || 'Gemini 3.8 Flash');
+      const categorias: ExtractedCategory[] = menuData.categorias || [];
 
       if (!Array.isArray(categorias) || categorias.length === 0) {
         throw new Error('No se detectaron platos ni categorías en el documento. Asegúrate de que el archivo sea legible e inténtalo nuevamente.');
@@ -262,7 +267,9 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
               descripcion: prod.descripcion ? prod.descripcion.trim() : '',
               precio: typeof prod.precio === 'number' ? Math.max(0, prod.precio) : 0,
               categoria: catName,
-              selected: true
+              selected: true,
+              tipo_producto: prod.tipo_producto || undefined,
+              cabys: prod.cabys ? String(prod.cabys).trim() : undefined
             });
           }
         });
@@ -341,8 +348,11 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
       return;
     }
 
-    // Determine station based on category name
-    const guessStation = (cat: string, name: string): 'Cocina' | 'Bar' | 'Postres' => {
+    // Determine station based on category name and tipo_producto
+    const guessStation = (cat: string, name: string, tipo?: string): 'Cocina' | 'Bar' | 'Postres' => {
+      if (tipo === 'bebida_alcoholica' || tipo === 'bebida_no_alcoholica') {
+        return 'Bar';
+      }
       const lower = `${cat} ${name}`.toLowerCase();
       if (lower.includes('bebida') || lower.includes('coctel') || lower.includes('cerveza') || lower.includes('trago') || lower.includes('vino') || lower.includes('café') || lower.includes('cafe') || lower.includes('jugo') || lower.includes('refresco') || lower.includes('smoothie')) {
         return 'Bar';
@@ -354,19 +364,23 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     };
 
     // Build MenuItem objects
-    const newMenuItems: MenuItem[] = approvedProducts.map((p, index) => ({
-      id: `item_ai_${Date.now()}_${index}`,
-      name: p.nombre.trim(),
-      description: p.descripcion.trim(),
-      price: Math.max(0, p.precio),
-      category: p.categoria.trim(),
-      station: guessStation(p.categoria, p.nombre),
-      cabysCode: '0000000000000',
-      taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
-      available: true,
-      imageIcon: guessStation(p.categoria, p.nombre) === 'Bar' ? '🍹' : guessStation(p.categoria, p.nombre) === 'Postres' ? '🍰' : '🍽️',
-      ingredients: []
-    }));
+    const newMenuItems: MenuItem[] = approvedProducts.map((p, index) => {
+      const station = guessStation(p.categoria, p.nombre, p.tipo_producto);
+      const validCabys = p.cabys && /^\d{13}$/.test(p.cabys) ? p.cabys : '0000000000000';
+      return {
+        id: `item_ai_${Date.now()}_${index}`,
+        name: p.nombre.trim(),
+        description: p.descripcion.trim(),
+        price: Math.max(0, p.precio),
+        category: p.categoria.trim(),
+        station,
+        cabysCode: validCabys,
+        taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
+        available: true,
+        imageIcon: station === 'Bar' ? '🍹' : station === 'Postres' ? '🍰' : '🍽️',
+        ingredients: []
+      };
+    });
 
     // Detect new categories
     const newlyAddedCategories = distinctCategories.filter(c => !existingCategories.includes(c));
