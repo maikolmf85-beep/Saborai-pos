@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, 
   UploadCloud, 
@@ -77,11 +77,21 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
 
   // IA API Key manual override (persisted in localStorage)
   const [customApiKey, setCustomApiKey] = useState<string>(() => {
-    return (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_gemini_api_key') : '') || '';
+    return (typeof localStorage !== 'undefined' ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key')) : '') || '';
   });
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [isGoogleDenied, setIsGoogleDenied] = useState(false);
   const [isHighDemand, setIsHighDemand] = useState(false);
+
+  // Sincronizar clave guardada cada vez que se abre el modal
+  useEffect(() => {
+    if (isOpen && typeof localStorage !== 'undefined') {
+      const saved = (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim();
+      if (saved) {
+        setCustomApiKey(saved);
+      }
+    }
+  }, [isOpen]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -206,7 +216,10 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
       const { dataUri: fileDataUri, mimeType: resolvedMime } = await prepareFileDataUri(selectedFile);
 
       // 2. Invocar endpoint seguro /api/parse-menu
-      const effectiveKey = customApiKey.trim();
+      const effectiveKey = (
+        customApiKey.trim() ||
+        (typeof localStorage !== 'undefined' ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim() : '')
+      );
       const envClaudeKey = (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined)?.trim();
       const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
 
@@ -482,6 +495,54 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
                         <RotateCw className="w-3.5 h-3.5" />
                         <span>Reintentar ahora</span>
                       </button>
+                    </div>
+                  )}
+
+                  {/* Inline key configuration right inside the banner */}
+                  {(isHighDemand || isGoogleDenied) && (
+                    <div className="pt-2.5 border-t border-amber-200/90 space-y-2">
+                      <div className="flex items-center justify-between text-[11px] text-amber-950 font-bold">
+                        <span>🔑 Guarda tu clave activa para este navegador:</span>
+                        <span className="text-[10px] text-amber-700 font-normal">(No volverá a fallar)</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={customApiKey}
+                          onChange={(e) => {
+                            const val = e.target.value.trim();
+                            setCustomApiKey(val);
+                            if (typeof localStorage !== 'undefined') {
+                              if (val) {
+                                localStorage.setItem('saborai_gemini_api_key', val);
+                                localStorage.setItem('saborai_ai_api_key', val);
+                              } else {
+                                localStorage.removeItem('saborai_gemini_api_key');
+                                localStorage.removeItem('saborai_ai_api_key');
+                              }
+                            }
+                          }}
+                          placeholder="Pega aquí tu clave de Gemini (AIzaSy...)"
+                          className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-mono text-stone-900 outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                        />
+                        <button
+                          type="button"
+                          disabled={!customApiKey.trim()}
+                          onClick={() => {
+                            if (customApiKey.trim()) {
+                              if (typeof localStorage !== 'undefined') {
+                                localStorage.setItem('saborai_gemini_api_key', customApiKey.trim());
+                                localStorage.setItem('saborai_ai_api_key', customApiKey.trim());
+                              }
+                              setErrorMsg(null);
+                              handleProcessFileWithAI();
+                            }
+                          }}
+                          className="px-4 py-1.5 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer shrink-0"
+                        >
+                          Guardar y Analizar
+                        </button>
+                      </div>
                     </div>
                   )}
 
