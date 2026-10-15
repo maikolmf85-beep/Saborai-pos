@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { PrinterDevice } from '../types';
-import { initialPrinters } from '../data/mockData';
+import React, { useState, useEffect } from 'react';
+import { 
+  PrinterConfig, 
+  PrinterConnectionType, 
+  PrinterRole, 
+  PrintReceiptData 
+} from '../types/printer';
+import { printerService } from '../services/printerService';
 import { 
   Printer, 
   Wifi, 
@@ -8,310 +13,506 @@ import {
   Usb, 
   Plus, 
   Check, 
-  Sliders, 
   Trash2,
+  FileCheck,
+  AlertCircle,
+  ToggleLeft,
+  ToggleRight,
   RefreshCw,
-  FileCheck
+  Sliders,
+  Sparkles
 } from 'lucide-react';
 
 export const PrinterSettings: React.FC = () => {
-  const [printers, setPrinters] = useState<PrinterDevice[]>(initialPrinters);
-  const [testPrintSuccess, setTestPrintSuccess] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [printers, setPrinters] = useState<PrinterConfig[]>([]);
+  const [editingPrinter, setEditingPrinter] = useState<PrinterConfig | null>(null);
+  const [showModal, setShowModal] = useState<boolean>(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
-  const [newPrinter, setNewPrinter] = useState<Partial<PrinterDevice>>({
+  // Formulario temporal
+  const [formData, setFormData] = useState<Partial<PrinterConfig>>({
     name: '',
-    connectionType: 'IP',
-    ipAddress: '192.168.1.180',
+    role: 'caja',
+    connectionType: 'network',
+    ipAddress: '192.168.1.200',
     port: 9100,
     paperWidth: '80mm',
+    enabled: true,
     autoCutter: true,
-    printLogo: true,
-    assignedStation: 'COCINA',
-    status: 'ONLINE'
+    openDrawer: true,
+    beepOnPrint: false
   });
 
-  const handleTestPrint = async (printerId: string) => {
-    const printer = printers.find(p => p.id === printerId);
-    if (!printer) return;
+  useEffect(() => {
+    loadPrinters();
+  }, []);
 
-    if (printer.connectionType === 'BLUETOOTH') {
-      try {
-        // @ts-ignore
-        if (!navigator.bluetooth) {
-          alert('Tu navegador no soporta Web Bluetooth. Por favor usa Google Chrome, Edge o un dispositivo Android.');
-          return;
-        }
-        // @ts-ignore
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb'] // ESC/POS Generic Service
-        });
-        await device.gatt?.connect();
-        alert(`✅ Emparejado exitosamente con la impresora Bluetooth: ${device.name || 'Dispositivo POS'}`);
-        setTestPrintSuccess(printerId);
-        setTimeout(() => setTestPrintSuccess(null), 2500);
-      } catch (err: any) {
-        if (err.name === 'NotFoundError') {
-          alert('No seleccionaste ninguna impresora. Asegúrate de que esté encendida.');
-        } else {
-          alert(`Error al conectar por Bluetooth: ${err.message}`);
-        }
-      }
-    } else if (printer.connectionType === 'IP') {
-      alert(`Buscando impresora en red LAN en la dirección IP: ${printer.ipAddress}:${printer.port}...\n\nNota: Para imprimir por red local directamente desde la web, asegúrate de tener la app "Saborai Print Node" corriendo en tu PC, o estar conectado a la misma red Wi-Fi.`);
-      
-      // Simulación de ping/conexión exitosa a la IP
-      setTimeout(() => {
-        setTestPrintSuccess(printerId);
-        setTimeout(() => setTestPrintSuccess(null), 2500);
-      }, 1500);
-    } else {
-      setTestPrintSuccess(printerId);
-      setTimeout(() => setTestPrintSuccess(null), 2500);
-      window.print();
+  const loadPrinters = () => {
+    setPrinters(printerService.loadPrinters());
+  };
+
+  const handleOpenAdd = () => {
+    setEditingPrinter(null);
+    setFormData({
+      id: `prn_${Date.now()}`,
+      name: '',
+      role: 'caja',
+      connectionType: 'network',
+      ipAddress: '192.168.1.200',
+      port: 9100,
+      paperWidth: '80mm',
+      enabled: true,
+      autoCutter: true,
+      openDrawer: true,
+      beepOnPrint: false
+    });
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (printer: PrinterConfig) => {
+    setEditingPrinter(printer);
+    setFormData({ ...printer });
+    setShowModal(true);
+  };
+
+  const handleDelete = (id: string) => {
+    if (confirm('¿Deseas eliminar la configuración de esta impresora?')) {
+      printerService.deletePrinter(id);
+      loadPrinters();
     }
   };
 
-  const handleAddPrinter = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPrinter.name) return;
-    const added: PrinterDevice = {
-      id: `prn_${Date.now()}`,
-      name: newPrinter.name,
-      connectionType: newPrinter.connectionType || 'IP',
-      ipAddress: newPrinter.ipAddress,
-      port: newPrinter.port || 9100,
-      paperWidth: newPrinter.paperWidth || '80mm',
-      autoCutter: newPrinter.autoCutter ?? true,
-      printLogo: newPrinter.printLogo ?? true,
-      assignedStation: newPrinter.assignedStation || 'COCINA',
-      status: 'ONLINE'
-    };
-    setPrinters([...printers, added]);
-    setShowAddModal(false);
-    setNewPrinter({
-      name: '',
-      connectionType: 'IP',
-      ipAddress: '192.168.1.180',
-      port: 9100,
-      paperWidth: '80mm',
-      autoCutter: true,
-      printLogo: true,
-      assignedStation: 'COCINA',
-      status: 'ONLINE'
-    });
+  const handleToggleEnabled = (printer: PrinterConfig) => {
+    const updated = { ...printer, enabled: !printer.enabled };
+    printerService.savePrinter(updated);
+    loadPrinters();
   };
 
-  const handleDeletePrinter = (id: string) => {
-    setPrinters(printers.filter(p => p.id !== id));
+  const handlePairUsb = async (printerId: string) => {
+    const res = await printerService.requestUsbDevice(printerId);
+    if (res.success) {
+      alert(`✅ Impresora USB emparejada correctamente (VendorID: ${res.vendorId}).`);
+      loadPrinters();
+    } else {
+      alert(`⚠️ ${res.error}`);
+    }
+  };
+
+  const handlePairBluetooth = async (printerId: string) => {
+    const res = await printerService.requestBluetoothDevice(printerId);
+    if (res.success) {
+      alert(`✅ Impresora Bluetooth emparejada correctamente: ${res.name || 'Dispositivo'}.`);
+      loadPrinters();
+    } else {
+      alert(`⚠️ ${res.error}`);
+    }
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.name) return;
+
+    const newPrinter: PrinterConfig = {
+      id: formData.id || `prn_${Date.now()}`,
+      name: formData.name,
+      role: (formData.role as PrinterRole) || 'caja',
+      connectionType: (formData.connectionType as PrinterConnectionType) || 'network',
+      ipAddress: formData.ipAddress,
+      port: formData.port ? Number(formData.port) : 9100,
+      vendorId: formData.vendorId,
+      productId: formData.productId,
+      macAddress: formData.macAddress,
+      paperWidth: formData.paperWidth || '80mm',
+      enabled: formData.enabled ?? true,
+      autoCutter: formData.autoCutter ?? true,
+      openDrawer: formData.openDrawer ?? false,
+      beepOnPrint: formData.beepOnPrint ?? false
+    };
+
+    printerService.savePrinter(newPrinter);
+    setShowModal(false);
+    loadPrinters();
+  };
+
+  const handleTestPrint = async (printer: PrinterConfig) => {
+    setTestingId(printer.id);
+    setTestResult(null);
+
+    const sampleReceipt: PrintReceiptData = {
+      title: 'SABORAI RESTAURANTE POS',
+      subtitle: `PRUEBA DE IMPRESORA (${printer.name})`,
+      orderNumber: 'TEST-001',
+      tableName: 'Barra 01',
+      waiterName: 'Administrador',
+      date: new Date().toLocaleString(),
+      items: [
+        { name: 'Hamburguesa SaborAI Especial', quantity: 1, price: 6500, subtotal: 6500 },
+        { name: 'Cerveza Imperial Draft', quantity: 2, price: 2000, subtotal: 4000 }
+      ],
+      subtotal: 10500,
+      serviceCharge: 1050,
+      tax: 1365,
+      total: 12915,
+      footerNotes: [
+        `Impresora: ${printer.name} (${printer.connectionType.toUpperCase()})`,
+        'Impresion silenciosa sin ventanas de dialogo',
+        '¡SaborAI POS Hardware Listo!'
+      ]
+    };
+
+    try {
+      const res = await printerService.printToConfig(printer, sampleReceipt);
+      setTestResult({
+        id: printer.id,
+        success: res.success,
+        message: res.success 
+          ? `¡Ticket de prueba enviado exitosamente vía ${res.methodUsed?.toUpperCase()}!` 
+          : (res.error || 'Error al enviar a la impresora')
+      });
+    } catch (err: any) {
+      setTestResult({
+        id: printer.id,
+        success: false,
+        message: err.message || 'Error durante la prueba de impresión'
+      });
+    } finally {
+      setTestingId(null);
+      setTimeout(() => setTestResult(null), 4000);
+    }
   };
 
   return (
     <div className="p-4 sm:p-6 max-w-[1700px] mx-auto space-y-6">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#6b686d]/15">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-800/80">
         <div>
-          <h2 className="text-2xl font-black text-[#3b3733]">Configuración Avanzada de Impresoras POS</h2>
-          <p className="text-xs text-[#6b686d]">
-            Administra comanderas de red (IP/Ethernet), Bluetooth inalámbrico, WebUSB y enrutamiento por estación.
+          <h2 className="text-2xl font-black text-stone-100 flex items-center gap-2">
+            <Printer className="w-6 h-6 text-[#a9b994]" />
+            <span>Administración Unificada de Impresoras</span>
+          </h2>
+          <p className="text-xs text-stone-400 mt-1">
+            Configuración y enrutamiento por roles (Caja, Cocina, Bar) mediante Red (IP), USB y Bluetooth con impresión silenciosa.
           </p>
         </div>
 
         <button
-          onClick={() => setShowAddModal(true)}
-          className="px-5 py-2.5 bg-[#3b3733] text-[#fcfeff] rounded-2xl text-xs font-bold hover:bg-[#272320] transition-all flex items-center gap-2 shadow-sm"
+          type="button"
+          onClick={handleOpenAdd}
+          className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-100 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm border border-stone-700 cursor-pointer"
         >
           <Plus className="w-4 h-4 text-[#a9b994]" />
-          <span>Agregar Nueva Impresora</span>
+          <span>Agregar Impresora</span>
         </button>
       </div>
 
-      {/* Printer Devices Grid */}
+      {/* Grid de impresoras configuradas */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {printers.map((printer) => (
-          <div
-            key={printer.id}
-            className="p-6 rounded-3xl bg-[#fcfeff] border border-[#6b686d]/20 shadow-sm flex flex-col justify-between space-y-4 hover:border-[#a9b994] transition-all"
-          >
-            <div>
-              <div className="flex items-start justify-between gap-2 mb-3">
-                <div className="p-3 rounded-2xl bg-[#a9b994]/20 text-[#3b3733]">
-                  {printer.connectionType === 'IP' && <Wifi className="w-6 h-6 text-[#3b3733]" />}
-                  {printer.connectionType === 'BLUETOOTH' && <Bluetooth className="w-6 h-6 text-[#3b3733]" />}
-                  {printer.connectionType === 'USB' && <Usb className="w-6 h-6 text-[#3b3733]" />}
+        {printers.map((printer) => {
+          const isTesting = testingId === printer.id;
+          const result = testResult?.id === printer.id ? testResult : null;
+
+          return (
+            <div
+              key={printer.id}
+              className={`p-6 rounded-3xl bg-stone-900/90 border transition-all flex flex-col justify-between space-y-4 shadow-xl backdrop-blur-sm ${
+                printer.enabled 
+                  ? 'border-stone-800 hover:border-[#a9b994]/60' 
+                  : 'border-stone-800/50 opacity-60'
+              }`}
+            >
+              <div>
+                {/* Cabecera de la tarjeta */}
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 text-[#a9b994] flex items-center justify-center">
+                    {printer.connectionType === 'network' && <Wifi className="w-5 h-5 text-[#a9b994]" />}
+                    {printer.connectionType === 'bluetooth' && <Bluetooth className="w-5 h-5 text-blue-400" />}
+                    {printer.connectionType === 'usb' && <Usb className="w-5 h-5 text-amber-400" />}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-stone-700">
+                      Rol: {printer.role.toUpperCase()}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleEnabled(printer)}
+                      className="cursor-pointer text-stone-400 hover:text-stone-200 transition-colors"
+                      title={printer.enabled ? 'Deshabilitar impresora' : 'Habilitar impresora'}
+                    >
+                      {printer.enabled ? (
+                        <ToggleRight className="w-7 h-7 text-emerald-400" />
+                      ) : (
+                        <ToggleLeft className="w-7 h-7 text-stone-600" />
+                      )}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-[#a9b994] animate-pulse" />
-                  <span className="text-[10px] font-bold uppercase text-[#a9b994]">{printer.status}</span>
-                </div>
-              </div>
+                <h3 className="font-bold text-base text-stone-100">{printer.name}</h3>
+                
+                <p className="text-xs text-stone-400 mt-1 font-mono">
+                  {printer.connectionType === 'network' && `LAN: ${printer.ipAddress || '192.168.1.200'}:${printer.port || 9100}`}
+                  {printer.connectionType === 'usb' && (printer.vendorId ? `USB Conectado (VID: ${printer.vendorId})` : 'WebUSB listo para emparejar')}
+                  {printer.connectionType === 'bluetooth' && 'Web Bluetooth BLE'}
+                </p>
 
-              <h3 className="font-bold text-base text-[#3b3733]">{printer.name}</h3>
-              <p className="text-xs text-[#6b686d] mt-0.5">
-                {printer.connectionType === 'IP' ? `IP: ${printer.ipAddress}:${printer.port}` : `Conexión: ${printer.connectionType}`}
-              </p>
+                {/* Especificaciones */}
+                <div className="mt-4 pt-3 border-t border-stone-800/80 grid grid-cols-2 gap-2 text-xs">
+                  <div className="p-2 rounded-xl bg-stone-950/60 border border-stone-800/60">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Ancho Papel:</span>
+                    <span className="font-bold text-stone-200">{printer.paperWidth}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-stone-950/60 border border-stone-800/60">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Corte:</span>
+                    <span className="font-bold text-stone-200">{printer.autoCutter ? 'Automático' : 'Manual'}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-stone-950/60 border border-stone-800/60">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Gaveta:</span>
+                    <span className="font-bold text-stone-200">{printer.openDrawer ? 'Abre Gaveta' : 'Sin Gaveta'}</span>
+                  </div>
+                  <div className="p-2 rounded-xl bg-stone-950/60 border border-stone-800/60">
+                    <span className="block text-[10px] font-bold text-stone-400 uppercase">Aviso Sonoro:</span>
+                    <span className="font-bold text-stone-200">{printer.beepOnPrint ? 'Bip Activo' : 'Silencioso'}</span>
+                  </div>
+                </div>
 
-              {/* Hardware specifications */}
-              <div className="mt-4 pt-3 border-t border-[#6b686d]/10 grid grid-cols-2 gap-2 text-xs">
-                <div className="p-2 rounded-xl bg-gray-50">
-                  <span className="block text-[10px] font-bold text-[#6b686d] uppercase">Papel:</span>
-                  <span className="font-bold text-[#3b3733]">{printer.paperWidth}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-gray-50">
-                  <span className="block text-[10px] font-bold text-[#6b686d] uppercase">Estación:</span>
-                  <span className="font-bold text-[#3b3733]">{printer.assignedStation}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-gray-50">
-                  <span className="block text-[10px] font-bold text-[#6b686d] uppercase">Autocutter:</span>
-                  <span className="font-bold text-[#3b3733]">{printer.autoCutter ? 'Habilitado' : 'Manual'}</span>
-                </div>
-                <div className="p-2 rounded-xl bg-gray-50">
-                  <span className="block text-[10px] font-bold text-[#6b686d] uppercase">Logo Gráfico:</span>
-                  <span className="font-bold text-[#3b3733]">{printer.printLogo ? 'Saborai Logo' : 'Desactivado'}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="pt-2 flex items-center gap-2">
-              <button
-                onClick={() => handleTestPrint(printer.id)}
-                className="flex-1 py-2.5 bg-[#3b3733] text-[#fcfeff] rounded-xl text-xs font-bold hover:bg-[#25221f] transition-all flex items-center justify-center gap-1.5"
-              >
-                {testPrintSuccess === printer.id ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-[#a9b994]" />
-                    <span>¡Enviado a Impresora!</span>
-                  </>
-                ) : (
-                  <>
-                    <FileCheck className="w-3.5 h-3.5 text-[#a9b994]" />
-                    <span>Prueba de Impresión</span>
-                  </>
+                {/* Estado o emparejamiento especial */}
+                {printer.connectionType === 'usb' && !printer.vendorId && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePairUsb(printer.id)}
+                      className="w-full py-1.5 px-3 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-amber-500/20 transition-all cursor-pointer"
+                    >
+                      <Usb className="w-3.5 h-3.5" />
+                      <span>Emparejar WebUSB</span>
+                    </button>
+                  </div>
                 )}
-              </button>
 
-              <button
-                onClick={() => handleDeletePrinter(printer.id)}
-                className="p-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50"
-                title="Eliminar Impresora"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                {printer.connectionType === 'bluetooth' && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePairBluetooth(printer.id)}
+                      className="w-full py-1.5 px-3 bg-blue-500/10 border border-blue-500/30 text-blue-300 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-blue-500/20 transition-all cursor-pointer"
+                    >
+                      <Bluetooth className="w-3.5 h-3.5" />
+                      <span>Emparejar Dispositivo Bluetooth</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Resultado de la prueba */}
+                {result && (
+                  <div className={`mt-3 p-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                    result.success 
+                      ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300' 
+                      : 'bg-rose-500/20 border border-rose-500/40 text-rose-300'
+                  }`}>
+                    {result.success ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+                    <span>{result.message}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Botones de acción */}
+              <div className="pt-2 flex items-center gap-2 border-t border-stone-800/80">
+                <button
+                  type="button"
+                  onClick={() => handleTestPrint(printer)}
+                  disabled={isTesting || !printer.enabled}
+                  className="flex-1 py-2.5 bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-stone-100 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-stone-700"
+                >
+                  {isTesting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 text-[#a9b994] animate-spin" />
+                      <span>Enviando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileCheck className="w-3.5 h-3.5 text-[#a9b994]" />
+                      <span>Prueba Silenciosa</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(printer)}
+                  className="p-2.5 rounded-xl border border-stone-700 bg-stone-800 text-stone-300 hover:text-white cursor-pointer"
+                  title="Editar Configuración"
+                >
+                  <Sliders className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleDelete(printer.id)}
+                  className="p-2.5 rounded-xl border border-rose-900/40 bg-rose-950/20 text-rose-400 hover:bg-rose-950/50 cursor-pointer"
+                  title="Eliminar Impresora"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+
             </div>
-
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Add Printer Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#3b3733]/50 backdrop-blur-sm">
-          <div className="bg-[#fcfeff] border border-[#6b686d]/20 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative space-y-4">
-            <h3 className="text-xl font-black text-[#3b3733]">Registrar Nueva Impresora</h3>
-            
-            <form onSubmit={handleAddPrinter} className="space-y-4">
+      {/* Modal para Crear / Editar Impresora */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-stone-900 border border-stone-700 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative space-y-5 text-stone-100">
+            <h3 className="text-xl font-black text-stone-100 flex items-center gap-2">
+              <Printer className="w-5 h-5 text-[#a9b994]" />
+              <span>{editingPrinter ? 'Editar Impresora' : 'Registrar Nueva Impresora'}</span>
+            </h3>
+
+            <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1">Nombre Identificador</label>
+                <label className="block text-xs font-bold text-stone-300 uppercase mb-1">Nombre Identificador</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej. Comandera Parrilla Exterior"
-                  value={newPrinter.name}
-                  onChange={(e) => setNewPrinter({ ...newPrinter, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] focus:border-[#a9b994] focus:outline-none"
+                  placeholder="Ej. Comandera Cocina Caliente"
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-700 bg-stone-950 text-xs text-stone-100 focus:border-[#a9b994] focus:outline-none"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1">Tipo Conexión</label>
+                  <label className="block text-xs font-bold text-stone-300 uppercase mb-1">Rol / Estación</label>
                   <select
-                    value={newPrinter.connectionType}
-                    onChange={(e) => setNewPrinter({ ...newPrinter, connectionType: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] bg-white"
+                    value={formData.role || 'caja'}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as PrinterRole })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-stone-700 bg-stone-950 text-xs text-stone-100 focus:border-[#a9b994] focus:outline-none"
                   >
-                    <option value="IP">Red Ethernet / IP</option>
-                    <option value="BLUETOOTH">Bluetooth Inalámbrico</option>
-                    <option value="USB">WebUSB / Spooler</option>
+                    <option value="caja">Caja (Facturas & Comprobantes)</option>
+                    <option value="cocina">Cocina (Comandas Calientes)</option>
+                    <option value="bar">Bar (Bebidas y Cócteles)</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1">Estación Destino</label>
+                  <label className="block text-xs font-bold text-stone-300 uppercase mb-1">Tipo de Conexión</label>
                   <select
-                    value={newPrinter.assignedStation}
-                    onChange={(e) => setNewPrinter({ ...newPrinter, assignedStation: e.target.value as any })}
-                    className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733] bg-white"
+                    value={formData.connectionType || 'network'}
+                    onChange={(e) => setFormData({ ...formData, connectionType: e.target.value as PrinterConnectionType })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-stone-700 bg-stone-950 text-xs text-stone-100 focus:border-[#a9b994] focus:outline-none"
                   >
-                    <option value="COCINA">Cocina Caliente</option>
-                    <option value="BAR">Bar & Bebidas</option>
-                    <option value="PRECUENTA">Pre-Cuenta Salón</option>
-                    <option value="FACTURACION">Caja Facturación</option>
+                    <option value="network">Red (Ethernet / Wi-Fi IP)</option>
+                    <option value="usb">USB (WebUSB Directo)</option>
+                    <option value="bluetooth">Bluetooth Inalámbrico</option>
                   </select>
                 </div>
               </div>
 
-              {newPrinter.connectionType === 'IP' && (
-                <div className="grid grid-cols-3 gap-3">
+              {/* Opciones condicionales de red */}
+              {formData.connectionType === 'network' && (
+                <div className="grid grid-cols-3 gap-3 p-3 rounded-2xl bg-stone-950/80 border border-stone-800">
                   <div className="col-span-2">
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1">Dirección IP</label>
+                    <label className="block text-[10px] font-bold text-stone-400 uppercase mb-1">Dirección IP</label>
                     <input
                       type="text"
-                      value={newPrinter.ipAddress}
-                      onChange={(e) => setNewPrinter({ ...newPrinter, ipAddress: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733]"
+                      placeholder="192.168.1.200"
+                      value={formData.ipAddress || ''}
+                      onChange={(e) => setFormData({ ...formData, ipAddress: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-700 bg-stone-900 text-xs text-stone-100 focus:border-[#a9b994] focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-[#3b3733] uppercase mb-1">Puerto</label>
+                    <label className="block text-[10px] font-bold text-stone-400 uppercase mb-1">Puerto (ePOS)</label>
                     <input
                       type="number"
-                      value={newPrinter.port}
-                      onChange={(e) => setNewPrinter({ ...newPrinter, port: Number(e.target.value) })}
-                      className="w-full px-3 py-2 rounded-xl border border-[#6b686d]/25 text-xs text-[#3b3733]"
+                      placeholder="9100"
+                      value={formData.port || 9100}
+                      onChange={(e) => setFormData({ ...formData, port: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl border border-stone-700 bg-stone-900 text-xs text-stone-100 focus:border-[#a9b994] focus:outline-none"
                     />
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="cutter"
-                    checked={newPrinter.autoCutter}
-                    onChange={(e) => setNewPrinter({ ...newPrinter, autoCutter: e.target.checked })}
-                    className="rounded text-[#3b3733]"
-                  />
-                  <label htmlFor="cutter" className="text-xs text-[#3b3733] font-medium">Corte Automático (Autocutter)</label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="logo"
-                    checked={newPrinter.printLogo}
-                    onChange={(e) => setNewPrinter({ ...newPrinter, printLogo: e.target.checked })}
-                    className="rounded text-[#3b3733]"
-                  />
-                  <label htmlFor="logo" className="text-xs text-[#3b3733] font-medium">Imprimir Logo</label>
+              {/* Ancho del papel */}
+              <div>
+                <label className="block text-xs font-bold text-stone-300 uppercase mb-1">Ancho del Papel Térmico</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paperWidth: '80mm' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      formData.paperWidth === '80mm'
+                        ? 'border-[#a9b994] bg-[#a9b994]/20 text-[#a9b994]'
+                        : 'border-stone-800 bg-stone-950 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    80mm (Estándar Térmico)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, paperWidth: '58mm' })}
+                    className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all ${
+                      formData.paperWidth === '58mm'
+                        ? 'border-[#a9b994] bg-[#a9b994]/20 text-[#a9b994]'
+                        : 'border-stone-800 bg-stone-950 text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    58mm (Portátil / Estrecho)
+                  </button>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-[#6b686d]/15">
+              {/* Opciones de hardware */}
+              <div className="space-y-2 pt-2 border-t border-stone-800">
+                <label className="flex items-center gap-2.5 text-xs text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.autoCutter ?? true}
+                    onChange={(e) => setFormData({ ...formData, autoCutter: e.target.checked })}
+                    className="rounded border-stone-700 text-[#a9b994] focus:ring-0"
+                  />
+                  <span>Activar corte automático de papel (Autocutter)</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 text-xs text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.openDrawer ?? false}
+                    onChange={(e) => setFormData({ ...formData, openDrawer: e.target.checked })}
+                    className="rounded border-stone-700 text-[#a9b994] focus:ring-0"
+                  />
+                  <span>Disparar apertura de gaveta de dinero al imprimir</span>
+                </label>
+
+                <label className="flex items-center gap-2.5 text-xs text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.beepOnPrint ?? false}
+                    onChange={(e) => setFormData({ ...formData, beepOnPrint: e.target.checked })}
+                    className="rounded border-stone-700 text-[#a9b994] focus:ring-0"
+                  />
+                  <span>Emitir pitido de aviso sonoro al imprimir (Ideal cocina)</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-stone-800">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-[#6b686d]"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2.5 text-xs font-bold text-stone-400 hover:text-stone-200 cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-[#3b3733] text-[#fcfeff] rounded-xl text-xs font-bold hover:bg-[#25221f]"
+                  className="px-5 py-2.5 bg-[#a9b994] hover:bg-[#97a783] text-stone-950 rounded-xl text-xs font-black shadow-md cursor-pointer transition-all"
                 >
                   Guardar Impresora
                 </button>
@@ -324,3 +525,5 @@ export const PrinterSettings: React.FC = () => {
     </div>
   );
 };
+
+export default PrinterSettings;
