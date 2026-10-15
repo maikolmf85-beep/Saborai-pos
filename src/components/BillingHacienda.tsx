@@ -27,7 +27,7 @@ import { PosNotification } from './NotificationToast';
 
 interface BillingHaciendaProps {
   tenant: TenantInfo;
-  selectedTable: Table;
+  selectedTable?: Table | null;
   onEmitInvoice?: (invoice: ElectronicInvoiceCR) => void;
   onSaveTable?: (updatedTable: Table) => void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
@@ -52,7 +52,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [transferToast, setTransferToast] = useState<string | null>(null);
 
   // Subaccounts list state (defaults to 2 subaccounts if none exist)
-  const defaultSubs: SubAccount[] = selectedTable.activeOrder?.subAccounts?.length
+  const defaultSubs: SubAccount[] = selectedTable?.activeOrder?.subAccounts?.length
     ? selectedTable.activeOrder.subAccounts
     : [
         { id: 1, name: 'Cuenta 1 (Comensal 1)' },
@@ -99,7 +99,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   ];
 
   const [orderItems, setOrderItems] = useState<TableItem[]>(
-    selectedTable.activeOrder?.items?.length ? selectedTable.activeOrder.items : fallbackItems
+    selectedTable?.activeOrder?.items?.length ? selectedTable.activeOrder.items : fallbackItems
   );
 
   // Transfer item modal/popover state
@@ -109,10 +109,10 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
   // Sync state if selectedTable changes
   useEffect(() => {
-    if (selectedTable.activeOrder?.items?.length) {
+    if (selectedTable?.activeOrder?.items?.length) {
       setOrderItems(selectedTable.activeOrder.items);
     }
-    if (selectedTable.activeOrder?.subAccounts?.length) {
+    if (selectedTable?.activeOrder?.subAccounts?.length) {
       setSubAccounts(selectedTable.activeOrder.subAccounts);
     }
   }, [selectedTable]);
@@ -220,7 +220,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     const updatedSubs = [...subAccounts, newSub];
     setSubAccounts(updatedSubs);
 
-    if (onSaveTable) {
+    if (onSaveTable && selectedTable) {
       onSaveTable({
         ...selectedTable,
         activeOrder: {
@@ -273,7 +273,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     setItemToTransfer(null);
 
     // Save back to table state
-    if (onSaveTable) {
+    if (onSaveTable && selectedTable) {
       onSaveTable({
         ...selectedTable,
         activeOrder: {
@@ -474,21 +474,33 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     const isPayingAll = selectedSubAccount === 'ALL';
     const remainingItems = isPayingAll ? [] : orderItems.filter(i => (i.subAccountId || 1) !== selectedSubAccount);
 
+    const effectiveTable: Table = selectedTable || {
+      id: 'tbl_caja_rapida',
+      number: 0,
+      name: 'Venta Directa / Caja',
+      zone: 'Caja',
+      seats: 1,
+      status: 'AVAILABLE',
+      x: 0,
+      y: 0
+    };
+
     let updatedTable: Table;
     if (isPayingAll || remainingItems.length === 0) {
       updatedTable = {
-        ...selectedTable,
+        ...effectiveTable,
         status: 'AVAILABLE',
         activeOrder: undefined
       };
       setOrderItems([]);
     } else {
       updatedTable = {
-        ...selectedTable,
+        ...effectiveTable,
+        status: 'OCCUPIED',
         activeOrder: {
-          orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
-          server: selectedTable.activeOrder?.server || 'Mesero General',
-          openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
+          orderNumber: selectedTable?.activeOrder?.orderNumber || 'ORD-8921',
+          server: selectedTable?.activeOrder?.server || 'Mesero General',
+          openedAt: selectedTable?.activeOrder?.openedAt || 'Ahora',
           subAccounts,
           items: remainingItems
         }
@@ -496,7 +508,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       setOrderItems(remainingItems);
     }
 
-    if (onSaveTable) {
+    if (onSaveTable && selectedTable) {
       onSaveTable(updatedTable);
     }
 
@@ -1015,7 +1027,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
               </div>
               <div>Consecutivo: {consecutivo}</div>
               <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
-              <div>Mesa: {selectedTable.name}</div>
+              <div>Mesa: {selectedTable?.name || 'Venta Directa / Caja'}</div>
               <div>Cliente: {isFacturaElectronica ? customerName : 'Cliente Contado'}</div>
               {isFacturaElectronica && <div>Cédula: {customerCedula}</div>}
               {isFacturaElectronica && <div>Actividad: {customerActivityCode}</div>}

@@ -50,19 +50,19 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   
   // Subaccounts / Named Diners state
-  const initialSubAccounts: SubAccount[] = table.activeOrder?.subAccounts?.length
+  const initialSubAccounts: SubAccount[] = table?.activeOrder?.subAccounts?.length
     ? table.activeOrder.subAccounts
     : [
         { id: 1, name: 'Cuenta 1' }
       ];
 
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>(initialSubAccounts);
-  const [selectedSubAccount, setSelectedSubAccount] = useState<number>(initialSubAccounts[0].id);
+  const [selectedSubAccount, setSelectedSubAccount] = useState<number>(initialSubAccounts[0]?.id || 1);
   const [editingDinerId, setEditingDinerId] = useState<number | null>(null);
   const [editingDinerName, setEditingDinerName] = useState('');
 
   const [currentOrderItems, setCurrentOrderItems] = useState<TableItem[]>(
-    table.activeOrder?.items || []
+    table?.activeOrder?.items || []
   );
   
   const [selectedItemForNotes, setSelectedItemForNotes] = useState<string | null>(null);
@@ -266,9 +266,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       ...table,
       status: 'OCCUPIED',
       activeOrder: {
-        orderNumber: table.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-        server: table.activeOrder?.server || 'Mesero General',
-        openedAt: table.activeOrder?.openedAt || 'Ahora',
+        orderNumber: table?.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+        server: table?.activeOrder?.server || 'Mesero General',
+        openedAt: table?.activeOrder?.openedAt || 'Ahora',
         subAccounts,
         items: currentOrderItems
       }
@@ -299,7 +299,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         message: `${table.name}: ${currentOrderItems.length} producto(s) enviados.`,
         station: primaryStation,
         tableNumber: table.number,
-        server: updatedTable.activeOrder?.server,
+        server: updatedTable?.activeOrder?.server,
         timestamp: new Date()
       });
     }
@@ -329,7 +329,11 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       const updatedTable: Table = {
         ...table,
         activeOrder: {
-          ...table.activeOrder!,
+          ...(table?.activeOrder || {}),
+          orderNumber: table?.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+          server: table?.activeOrder?.server || 'Mesero General',
+          openedAt: table?.activeOrder?.openedAt || 'Ahora',
+          subAccounts: subAccounts,
           items: remainingItems
         }
       };
@@ -368,14 +372,14 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-stone-900">{table.name}</h2>
+              <h2 className="text-xl font-bold text-stone-900">{table?.name || 'Mesa'}</h2>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200">
-                {table.activeOrder?.orderNumber || 'Nueva Comanda'}
+                {table?.activeOrder?.orderNumber || 'Nueva Comanda'}
               </span>
             </div>
             <div className="flex items-center gap-2 mt-0.5">
               <span className="text-xs text-stone-500">
-                {table.zone} • {table.seats} sillas
+                {table?.zone || 'General'} • {table?.seats || 2} sillas
               </span>
               <span className="text-stone-300">•</span>
               {onOpenQuickSwitch ? (
@@ -386,13 +390,13 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                   title="Cambiar salonero encargado con PIN"
                 >
                   <User className="w-3 h-3 text-[#588157]" />
-                  <span>Salonero: {table.activeOrder?.server || 'Mesero General'}</span>
+                  <span>Salonero: {table?.activeOrder?.server || 'Mesero General'}</span>
                   <ArrowRightLeft className="w-2.5 h-2.5 text-stone-400 group-hover:text-stone-700" />
                 </button>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-stone-800 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">
                   <User className="w-3 h-3 text-[#588157]" />
-                  <span>Salonero: {table.activeOrder?.server || 'Mesero General'}</span>
+                  <span>Salonero: {table?.activeOrder?.server || 'Mesero General'}</span>
                 </span>
               )}
             </div>
@@ -883,9 +887,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         table={{
           ...table,
           activeOrder: {
-            orderNumber: table.activeOrder?.orderNumber || 'ORD-NEW',
-            server: table.activeOrder?.server || 'Mesero',
-            openedAt: table.activeOrder?.openedAt || 'Ahora',
+            orderNumber: table?.activeOrder?.orderNumber || 'ORD-NEW',
+            server: table?.activeOrder?.server || 'Mesero',
+            openedAt: table?.activeOrder?.openedAt || 'Ahora',
             subAccounts,
             items: currentOrderItems
           }

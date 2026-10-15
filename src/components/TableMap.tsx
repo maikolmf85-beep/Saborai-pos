@@ -139,8 +139,8 @@ export const TableMap: React.FC<TableMapProps> = ({
 
   const filteredTables = tables.filter(t => t.zone === selectedZone);
 
-  const calculateTableTotal = (table: Table) => {
-    if (!table.activeOrder) return 0;
+  const calculateTableTotal = (table?: Table | null) => {
+    if (!table?.activeOrder?.items) return 0;
     return table.activeOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   };
 
@@ -701,7 +701,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   {/* Items count & Subtotal */}
                   <div className="pt-2 border-t border-stone-200/60 flex items-baseline justify-between">
                     <span className="text-xs text-stone-500">
-                      {selectedTable.activeOrder.items.reduce((s, it) => s + it.quantity, 0)} ítems comandados
+                      {(selectedTable.activeOrder?.items || []).reduce((s, it) => s + it.quantity, 0)} ítems comandados
                     </span>
                     <span className="text-base font-black text-stone-900">
                       ₡{calculateTableTotal(selectedTable).toLocaleString()}

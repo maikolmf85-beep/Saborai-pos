@@ -72,7 +72,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const [generatedXml, setGeneratedXml] = useState('');
   const [consecutivo, setConsecutivo] = useState('');
 
-  const rawItems = table.activeOrder?.items || [];
+  const rawItems = table?.activeOrder?.items || [];
   const items: TableItem[] = subAccountId === 'ALL'
     ? rawItems
     : rawItems.filter(i => (i.subAccountId || 1) === subAccountId);

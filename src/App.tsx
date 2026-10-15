@@ -544,8 +544,10 @@ export function App() {
   };
 
   const handleSaveOrder = (updatedTable: Table) => {
+    if (!updatedTable) return;
+
     // 1. Process new items for KDS
-    if (updatedTable.activeOrder) {
+    if (updatedTable.activeOrder && Array.isArray(updatedTable.activeOrder.items)) {
       const newKitchenItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && (i.category === 'Cocina' || !i.category));
       const newBarItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && i.category === 'Bar');
 
@@ -629,11 +631,11 @@ export function App() {
     localDB.saveItem('tables', updatedTable);
 
     // If offline, enqueue for cloud sync
-    if (!isOnline) {
+    if (!isOnline && updatedTable) {
       localDB.enqueueOfflineAction(
         'UPDATE_TABLE',
         updatedTable,
-        `Comanda actualizada en ${updatedTable.name} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`
+        `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`
       );
     }
   };
@@ -968,7 +970,7 @@ export function App() {
         {activeTab === 'billing' && (
           <BillingHacienda
             tenant={tenant}
-            selectedTable={selectedTableForOrder || tables[0]}
+            selectedTable={selectedTableForOrder || tables.find(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK') || tables[0] || null}
             onSaveTable={handleSaveOrder}
             onNotify={addNotification}
             onOpenCashShift={(tab) => {
@@ -1131,17 +1133,26 @@ export function App() {
                // Find item
                const item = menuItems.find(m => m.name.toLowerCase().includes((cmd.product || '').toLowerCase()));
                if (item) {
-                 const newOrder = { ...(selectedTableForOrder.activeOrder || { orderNumber: `ORD-${Date.now()}`, server: currentUser?.name || 'Mesero', openedAt: new Date().toISOString(), subAccounts: [{ id: 1, name: 'General' }], items: [] }) };
-                 newOrder.items.push({
-                    id: `itm_${Date.now()}`,
-                    name: item.name,
-                    quantity: cmd.quantity || 1,
-                    price: item.price,
-                    notes: 'Agregado por Nysa IA',
-                    cabysCode: item.cabysCode,
-                    taxRate: item.taxRate,
-                    category: item.station === 'Bar' ? 'Bar' : 'Cocina'
-                 });
+                 const existingItems = selectedTableForOrder.activeOrder?.items ? [...selectedTableForOrder.activeOrder.items] : [];
+                 const newOrder = {
+                    orderNumber: selectedTableForOrder.activeOrder?.orderNumber || `ORD-${Date.now()}`,
+                    server: selectedTableForOrder.activeOrder?.server || currentUser?.name || 'Mesero',
+                    openedAt: selectedTableForOrder.activeOrder?.openedAt || new Date().toISOString(),
+                    subAccounts: selectedTableForOrder.activeOrder?.subAccounts || [{ id: 1, name: 'General' }],
+                    items: [
+                      ...existingItems,
+                      {
+                        id: `itm_${Date.now()}`,
+                        name: item.name,
+                        quantity: cmd.quantity || 1,
+                        price: item.price,
+                        notes: 'Agregado por Nysa IA',
+                        cabysCode: item.cabysCode,
+                        taxRate: item.taxRate,
+                        category: item.station === 'Bar' ? 'Bar' : 'Cocina'
+                      }
+                    ]
+                 };
                  handleSaveOrder({ ...selectedTableForOrder, status: 'OCCUPIED', activeOrder: newOrder });
                  addNotification({
                    id: `nysa_${Date.now()}`,
