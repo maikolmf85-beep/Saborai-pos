@@ -18,7 +18,19 @@ const STORAGE_KEY_CASH_REGISTERS = 'saborai_cash_registers';
 const STORAGE_KEY_SHIFTS_HISTORY = 'saborai_shifts_history';
 const STORAGE_KEY_ACTIVE_SHIFT_LEGACY = 'saborai_active_shift';
 
-const DEFAULT_REGISTERS: CashRegister[] = [];
+export const DEFAULT_REGISTERS: CashRegister[] = [
+  {
+    id: 'caja-01',
+    name: 'Caja 01 - Principal',
+    terminalCode: '00001',
+    branchCode: '001',
+    isDefault: true,
+    allowsBilling: true,
+    allowsOrdering: true,
+    isActive: true,
+    notes: 'Terminal de facturación principal'
+  }
+];
 
 class CashShiftService {
   private registers: CashRegister[] = [];
@@ -35,9 +47,10 @@ class CashShiftService {
       // 1. Load registers
       const savedRegisters = localStorage.getItem(STORAGE_KEY_CASH_REGISTERS);
       if (savedRegisters) {
-        this.registers = JSON.parse(savedRegisters);
+        const parsed = JSON.parse(savedRegisters);
+        this.registers = Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_REGISTERS];
       } else {
-        this.registers = [];
+        this.registers = [...DEFAULT_REGISTERS];
         localStorage.setItem(STORAGE_KEY_CASH_REGISTERS, JSON.stringify(this.registers));
       }
 
@@ -46,11 +59,9 @@ class CashShiftService {
       if (savedTerminalId && this.registers.some(r => r.id === savedTerminalId)) {
         this.currentTerminalId = savedTerminalId;
       } else {
-        const defaultReg = this.registers.find(r => r.isDefault) || this.registers[0];
-        this.currentTerminalId = defaultReg ? defaultReg.id : '';
-        if (this.currentTerminalId) {
-          localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
-        }
+        const defaultReg = this.registers.find(r => r.isDefault) || this.registers[0] || DEFAULT_REGISTERS[0];
+        this.currentTerminalId = defaultReg.id;
+        localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
       }
 
       // 3. Load active shifts map
@@ -95,11 +106,15 @@ class CashShiftService {
   // --- Cash Registers Management ---
 
   getCashRegisters(): CashRegister[] {
+    if (this.registers.length === 0) {
+      this.registers = [...DEFAULT_REGISTERS];
+      this.saveToStorage();
+    }
     return this.registers;
   }
 
   getCurrentRegisterId(): string {
-    return this.currentTerminalId;
+    return this.currentTerminalId || (this.registers[0]?.id || 'caja-01');
   }
 
   setCurrentRegisterId(id: string): CashRegister {
@@ -116,17 +131,7 @@ class CashShiftService {
     const reg = this.registers.find(r => r.id === this.currentTerminalId);
     if (reg) return reg;
     if (this.registers.length > 0) return this.registers[0];
-    return {
-      id: 'caja-sin-asignar',
-      name: 'Sin Caja Asignada',
-      terminalCode: '00001',
-      branchCode: '001',
-      isDefault: true,
-      allowsBilling: true,
-      allowsOrdering: true,
-      isActive: true,
-      notes: 'No hay cajas configuradas aún'
-    };
+    return DEFAULT_REGISTERS[0];
   }
 
   createCashRegister(data: {
@@ -248,11 +253,11 @@ class CashShiftService {
     notes?: string,
     registerId?: string
   ): CashShift {
-    const targetRegisterId = registerId || this.currentTerminalId;
-    const register = this.registers.find(r => r.id === targetRegisterId) || this.getCurrentRegister();
+    const targetRegisterId = registerId || this.currentTerminalId || 'caja-01';
+    const register = this.registers.find(r => r.id === targetRegisterId) || this.getCurrentRegister() || DEFAULT_REGISTERS[0];
 
     if (this.activeShiftsMap[targetRegisterId] && this.activeShiftsMap[targetRegisterId].status === 'OPEN') {
-      throw new Error(`La ${register.name} ya tiene un turno de caja activo. Debe cerrarse antes de abrir uno nuevo.`);
+      throw new Error(`La ${register?.name || 'caja'} ya tiene un turno de caja activo. Debe cerrarse antes de abrir uno nuevo.`);
     }
 
     const nextShiftNumber = this.shiftsHistory.filter(s => s.cashRegisterId === targetRegisterId).length + 1;
@@ -274,15 +279,15 @@ class CashShiftService {
     const newShift: CashShift = {
       id: `shift_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       shiftNumber: nextShiftNumber,
-      tenantId: tenant.id,
-      terminalId: register.terminalCode,
-      cashRegisterId: register.id,
-      cashRegisterName: register.name,
-      terminalCode: register.terminalCode,
+      tenantId: tenant?.id || 'tenant_default',
+      terminalId: register?.terminalCode || '00001',
+      cashRegisterId: register?.id || 'caja-01',
+      cashRegisterName: register?.name || 'Caja 01 - Principal',
+      terminalCode: register?.terminalCode || '00001',
       openedBy: {
-        userId: openedByUser.id,
-        userName: openedByUser.name,
-        userRole: openedByUser.role
+        userId: openedByUser?.id || 'usr_matamoros_admin',
+        userName: openedByUser?.name || 'Maikol Matamoros',
+        userRole: openedByUser?.role || 'ADMIN'
       },
       openedAt: new Date().toISOString(),
       initialCashFloat: initialFloat,

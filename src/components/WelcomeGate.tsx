@@ -300,11 +300,6 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         return;
       }
 
-      // Credenciales correctas ✅
-      localStorage.setItem('saborai_token', data.token);
-      localStorage.removeItem('saborai_user'); // Clean legacy
-      localStorage.removeItem('saborai_tenant');
-      
       const user: UserProfile = {
         id: data.user.id,
         name: data.user.name,
@@ -328,6 +323,13 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         monthlyFee: data.tenant.monthly_fee || 45000,
         onboardingCompleted: data.tenant.onboarding_completed ?? false
       };
+
+      // Credenciales correctas ✅
+      localStorage.setItem('saborai_token', data.token);
+      try {
+        localStorage.setItem('saborai_user', JSON.stringify(user));
+        localStorage.setItem('saborai_tenant', JSON.stringify(tenant));
+      } catch {}
 
       setIsProcessing(false);
       const sub: SaboraiSubscription = { 

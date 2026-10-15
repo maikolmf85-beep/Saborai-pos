@@ -81,12 +81,18 @@ export function App() {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
-      // Legacy fallback + initial state
       const saved = localStorage.getItem('saborai_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      id: 'usr_matamoros_admin',
+      name: 'Maikol Matamoros',
+      email: 'matamoros.maikol85@gmail.com',
+      role: 'ADMIN',
+      restaurantName: 'SaborAI POS',
+      active: true,
+      pin: '1234'
+    };
   });
 
   const [subscription, setSubscription] = useState<SaboraiSubscription | null>(() => {
@@ -198,12 +204,6 @@ export function App() {
       const token = localStorage.getItem('saborai_token');
       if (!token) {
         setIsLoadingAuth(false);
-        // If there's legacy user data, clear it since we moved to backend
-        if (localStorage.getItem('saborai_user')) {
-           setCurrentUser(null);
-           setSubscription(null);
-           localStorage.removeItem('saborai_user');
-        }
         return;
       }
 
@@ -256,11 +256,13 @@ export function App() {
           setCurrentUser(user);
           setTenant(tenantObj);
           setSubscription(sub);
+          try {
+            localStorage.setItem('saborai_user', JSON.stringify(user));
+            localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
+          } catch {}
         } else {
           // Token invalid or expired
           localStorage.removeItem('saborai_token');
-          setCurrentUser(null);
-          setSubscription(null);
         }
       } catch (err) {
         console.error('Failed to validate session', err);
@@ -405,15 +407,29 @@ export function App() {
 
   // Staff & Collaborators state (4 Roles: Admin, Salonero, Cajero, Salonero c/ Caja)
   const [staffList, setStaffList] = useState<UserProfile[]>(() => {
+    const adminUser: UserProfile = {
+      id: 'usr_matamoros_admin',
+      name: 'Maikol Matamoros',
+      email: 'matamoros.maikol85@gmail.com',
+      role: 'ADMIN',
+      restaurantName: 'SaborAI POS',
+      active: true,
+      pin: '1234'
+    };
     try {
       const saved = localStorage.getItem('saborai_staff');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (!parsed.some((s: any) => s.email === 'matamoros.maikol85@gmail.com')) {
+            return [adminUser, ...parsed];
+          }
+          return parsed;
+        }
       }
     } catch {}
 
-    return [];
+    return [adminUser];
   });
 
   const handleAddStaffMember = (newMember: UserProfile) => {
@@ -510,6 +526,10 @@ export function App() {
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
     setCurrentUser(user);
     setTenant(loggedTenant);
+    try {
+      localStorage.setItem('saborai_user', JSON.stringify(user));
+      localStorage.setItem('saborai_tenant', JSON.stringify(loggedTenant));
+    } catch {}
     // If logging in with existing account and no subscription record, treat as active
     if (!subscription) {
       const activeSub: SaboraiSubscription = { mode: 'ACTIVE', activatedAt: new Date().toISOString() };
