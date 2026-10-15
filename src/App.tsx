@@ -16,6 +16,7 @@ import { HaciendaHistoryModal } from './components/HaciendaHistoryModal';
 import { cashShiftService } from './services/cashShiftService';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { AICopilotChat } from './components/AICopilotChat';
+import { NyzaLearningHub } from './components/NyzaLearningHub';
 import { AuthScreen } from './components/AuthScreen';
 import { NysaOnboarding } from './components/NysaOnboarding';
 import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
@@ -31,7 +32,7 @@ import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
-import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
+import { Sparkles, WifiOff, Lock, Eye, BrainCircuit } from 'lucide-react';
 
 export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => 
@@ -330,6 +331,7 @@ export function App() {
   }, [broadcastTenant, broadcastStaff]);
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
   const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
@@ -823,6 +825,7 @@ export function App() {
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
         onOpenCopilot={() => setIsCopilotOpen(true)}
+        onOpenNyzaHub={() => setIsNyzaHubOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenOfflineModal={() => setIsOfflineModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
@@ -1085,19 +1088,29 @@ export function App() {
         tenant={tenant}
       />
 
-      {/* Floating Saborai Copilot IA Button */}
-      <div className="fixed bottom-6 right-6 z-40">
+      {/* Floating Saborai Copilot IA & Nyza Global Intelligence Buttons */}
+      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
         {!isCopilotOpen && (
-          <button
-            onClick={() => setIsCopilotOpen(true)}
-            className="group flex items-center justify-center p-3 bg-stone-900 text-white rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-300 border border-stone-800"
-            title="Abrir Asistente Copilot IA"
-          >
-            <Sparkles className="w-5 h-5 text-[#a9b994] shrink-0" />
-            <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 ease-in-out">
-              Copilot IA
-            </span>
-          </button>
+          <>
+            <button
+              onClick={() => setIsNyzaHubOpen(true)}
+              className="group flex items-center gap-1.5 px-3 py-2.5 bg-stone-900 text-[#a9b994] rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-200 border border-stone-800 text-xs font-bold cursor-pointer"
+              title="Abrir Centro de Inteligencia y Aprendizaje de Nyza"
+            >
+              <BrainCircuit className="w-4 h-4 text-[#a9b994] animate-pulse shrink-0" />
+              <span>Nyza IA Global</span>
+            </button>
+            <button
+              onClick={() => setIsCopilotOpen(true)}
+              className="group flex items-center justify-center p-3 bg-stone-900 text-white rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-300 border border-stone-800 cursor-pointer"
+              title="Abrir Asistente Copilot IA"
+            >
+              <Sparkles className="w-5 h-5 text-[#a9b994] shrink-0" />
+              <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 ease-in-out">
+                Copilot IA
+              </span>
+            </button>
+          </>
         )}
       </div>
 
@@ -1108,10 +1121,13 @@ export function App() {
         currentUser={currentUser}
         menuItems={menuItems}
         selectedTable={selectedTableForOrder}
+        onOpenLearningHub={() => setIsNyzaHubOpen(true)}
         onQuickAction={(action) => {
           try {
             const cmd = JSON.parse(action);
-            if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {
+            if (cmd.type === 'OPEN_LEARNING_HUB' || cmd.type === 'NYZA_HUB') {
+               setIsNyzaHubOpen(true);
+            } else if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {
                // Find item
                const item = menuItems.find(m => m.name.toLowerCase().includes((cmd.product || '').toLowerCase()));
                if (item) {
@@ -1220,6 +1236,18 @@ export function App() {
                }, 8000);
             }
           } catch(e) { console.error(e); }
+        }}
+      />
+
+      {/* Nyza Autonomous Continuous Learning & Global Intelligence Hub */}
+      <NyzaLearningHub
+        isOpen={isNyzaHubOpen}
+        onClose={() => setIsNyzaHubOpen(false)}
+        tenant={tenant}
+        currentUser={currentUser || undefined}
+        onOpenCopilot={() => {
+          setIsNyzaHubOpen(false);
+          setIsCopilotOpen(true);
         }}
       />
 

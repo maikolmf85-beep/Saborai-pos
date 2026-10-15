@@ -8,10 +8,12 @@ import {
   Send, 
   AlertTriangle, 
   Mic, 
-  MicOff 
+  MicOff,
+  BrainCircuit
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { MenuItem, Table, UserProfile } from '../types';
+import { nyzaLearningService } from '../services/nyzaLearningService';
 
 interface AICopilotChatProps {
   isOpen: boolean;
@@ -20,6 +22,7 @@ interface AICopilotChatProps {
   currentUser?: UserProfile;
   menuItems?: MenuItem[];
   selectedTable?: Table | null;
+  onOpenLearningHub?: () => void;
 }
 
 interface Message {
@@ -154,15 +157,16 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
 
-      const systemInstruction = `Eres Nyza, la Inteligencia Artificial nativa de Saborai (POS para restaurantes de Costa Rica).
-Tu misión técnica prioritaria es actuar como un Sistemas y Soporte Nivel 3 en tiempo real.
+      const systemInstruction = `Eres Nyza, la Inteligencia Artificial nativa y evolutiva de Saborai (POS para restaurantes de Costa Rica).
+Tu misión técnica prioritaria es actuar como un Sistemas y Soporte Nivel 3 en tiempo real, aprendiendo continuamente cada día para mejorar el sistema a nivel global.
 Empleado: "${currentUser?.name || 'Empleado'}", Rol: ${roleName}.
 
 REGLAS DE ORO:
 1. Prioridad Absoluta (Cero Fricción): Diagnósticos y reparaciones asíncronas e invisibles sin bloquear la venta.
-2. Seguridad Estricta: Solo puedes ejecutar comandos pre-firmados del catálogo de TOOLS autorizadas.
-3. Comunicación Empática y Breve: Usa tono profesional, costarricense, calmado y ultraconciso (máximo 2 oraciones).
-4. Fallback Seguro: Si un fallo persiste tras 2 intentos, activa degradación elegante (contingencia) y escala a soporte humano.
+2. Aprendizaje Continuo: Analizas patrones de hardware, Hacienda DGT y cocina, compartiendo heurísticas con la flota nacional.
+3. Seguridad Estricta: Solo puedes ejecutar comandos pre-firmados del catálogo de TOOLS autorizadas.
+4. Comunicación Empática y Breve: Usa tono profesional, costarricense ("Pura vida"), calmado y ultraconciso (máximo 2 oraciones).
+5. Fallback Seguro: Si un fallo persiste tras 2 intentos, activa degradación elegante (contingencia) y escala a soporte humano.
 
 CATÁLOGO DE HERRAMIENTAS EJECUTABLES (TOOLS):
 - Red e Impresión:
@@ -177,20 +181,25 @@ CATÁLOGO DE HERRAMIENTAS EJECUTABLES (TOOLS):
   * tool_check_dgt_status()
   * tool_enable_contingency_mode(reason_code: "02")
   * tool_flush_contingency_queue()
+- Aprendizaje Continuo & Auto-Optimización Global:
+  * tool_run_daily_learning()
+  * tool_get_system_iq()
+  * tool_teach_heuristic(category: string, title: string, rule: string)
 - Escalamiento:
   * tool_create_human_ticket(severity: "HIGH"|"CRITICAL", error_log: object)
 
 MATRIZ DE DECISIÓN RÁPIDA:
+- "¿Qué aprendiste hoy?" o "¿Cómo mejoras el sistema?" -> tool_get_system_iq() o tool_run_daily_learning()
 - "La comanda de la cocina no imprime" -> tool_ping_device("192.168.1.150"), tool_restart_spooler(), tool_reroute_printer("cocina", "caja")
 - "El sistema se siente pegado o lento" -> tool_free_system_memory(), tool_db_vacuum_and_repair()
 - "Marca error al enviar la factura electrónica a Hacienda" -> tool_check_dgt_status(), tool_enable_contingency_mode("02")
 - "Error de lectura/escritura en base de datos" -> tool_db_integrity_check(), tool_db_vacuum_and_repair()
 
 FORMATO DE EJECUCIÓN (FUNCTION CALLING):
-Cuando detectes un reporte técnico o necesites ejecutar una o más herramientas de autodiagnóstico, responde a nivel humano con 1 o 2 oraciones amables y calmadas, y OBLIGATORIAMENTE coloca al final de tu mensaje el bloque JSON con la siguiente estructura exacta:
+Cuando detectes un reporte técnico o necesites ejecutar una o más herramientas de autodiagnóstico o aprendizaje, responde a nivel humano con 1 o 2 oraciones amables y calmadas, y OBLIGATORIAMENTE coloca al final de tu mensaje el bloque JSON con la siguiente estructura exacta:
 \`\`\`json
 {
-  "thought": "Explicación interna de diagnóstico",
+  "thought": "Explicación interna de diagnóstico o síntesis de aprendizaje",
   "tool_calls": [
     { "name": "tool_ping_device", "parameters": { "ip": "192.168.1.150" } }
   ]
@@ -204,7 +213,9 @@ CAPACIDADES OPERATIVAS ADICIONALES DEL RESTAURANTE:
 
 Contexto actual del restaurante:
 - Menú: ${menuItems.map(m => m.name + ' (₡' + m.price + ')').join(', ')}
-${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})` : '- Sin mesa seleccionada.'}`;
+${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})` : '- Sin mesa seleccionada.'}
+
+${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
 
       const aiMsgId = `ai_${Date.now()}`;
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
@@ -350,13 +361,25 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
         <div className="flex items-center gap-3">
           <BrandLogo variant="isotype" size="sm" />
           <div>
-            <h3 className="font-bold text-sm flex items-center gap-1.5">
-              <span>Nyza</span>
-              <span className="text-[10px] bg-[#a9b994] text-[#3b3733] px-1.5 py-0.2 rounded-full font-black">
-                Self-Healing IA
-              </span>
-            </h3>
-            <p className="text-[10px] text-gray-300">Autodiagnóstico y Asistente SaborAI POS</p>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-sm">Nyza</h3>
+              {onOpenLearningHub ? (
+                <button
+                  type="button"
+                  onClick={onOpenLearningHub}
+                  title="Abrir Centro de Aprendizaje e Inteligencia Global de Nyza"
+                  className="flex items-center gap-1 text-[10px] bg-[#a9b994] text-[#3b3733] px-2 py-0.5 rounded-full font-black hover:bg-white hover:scale-105 transition-all cursor-pointer shadow-xs"
+                >
+                  <BrainCircuit className="w-3 h-3 text-[#3b3733]" />
+                  <span>IQ {nyzaLearningService.getCurrentIQ()}</span>
+                </button>
+              ) : (
+                <span className="text-[10px] bg-[#a9b994] text-[#3b3733] px-1.5 py-0.2 rounded-full font-black">
+                  IQ {nyzaLearningService.getCurrentIQ()}
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-300">Autodiagnóstico & Aprendizaje Continuo SaborAI POS</p>
           </div>
         </div>
         <button
@@ -404,6 +427,19 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
 
       {/* Suggested Quick Prompts */}
       <div className="p-2 border-t border-[#6b686d]/15 bg-gray-50 flex items-center gap-1.5 overflow-x-auto text-[10px] scrollbar-none">
+        <button
+          onClick={() => handlePromptClick('¿Qué has aprendido hoy del sistema y qué mejoras aplicaste?')}
+          className="px-2.5 py-1 rounded-full bg-white border border-[#a9b994] text-[#3b3733] hover:bg-[#a9b994]/20 whitespace-nowrap font-bold cursor-pointer flex items-center gap-1"
+        >
+          <BrainCircuit className="w-3 h-3 text-[#a9b994]" />
+          <span>🧠 ¿Qué aprendiste hoy?</span>
+        </button>
+        <button
+          onClick={() => handlePromptClick('Ejecuta un ciclo de aprendizaje diario y dime tu IQ')}
+          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
+        >
+          ⚡ Ciclo de aprendizaje
+        </button>
         <button
           onClick={() => handlePromptClick('La comanda de la cocina no imprime')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"

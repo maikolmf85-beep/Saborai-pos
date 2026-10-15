@@ -15,7 +15,8 @@ import {
   UserPlus,
   LockKeyhole,
   Landmark,
-  BarChart3
+  BarChart3,
+  BrainCircuit
 } from 'lucide-react';
 import { CashRegister } from './CashRegisterIcon';
 import { TenantInfo, UserProfile } from '../types';
@@ -33,6 +34,7 @@ interface NavbarProps {
   isMuted: boolean;
   onToggleMute: () => void;
   onOpenCopilot: () => void;
+  onOpenNyzaHub?: () => void;
   onOpenSettings: () => void;
   onOpenOfflineModal: () => void;
   onOpenStaffModal?: () => void;
@@ -124,6 +126,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isMuted,
   onToggleMute,
   onOpenCopilot,
+  onOpenNyzaHub,
   onOpenSettings,
   onOpenOfflineModal,
   onOpenStaffModal,
@@ -324,6 +327,19 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* Bottom Group: Tools, AI, Status & Logout */}
       <div className="hidden sm:flex w-full flex-col items-start gap-0.5 mt-auto">
         
+        {/* Nyza IA Global - Aprendizaje Continuo */}
+        <NavVerticalItem
+          id="nav-nyza-hub-btn"
+          onClick={onOpenNyzaHub || onOpenCopilot}
+          icon={<BrainCircuit className="w-5 h-5 text-[#a9b994]" />}
+          label="Nyza IA Global"
+          sublabel="Aprendizaje continuo & red colectiva"
+          variant="accent"
+          badge={
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-stone-950 shadow-sm" />
+          }
+        />
+
         {/* Copilot IA */}
         <NavVerticalItem
           id="nav-copilot-btn"
