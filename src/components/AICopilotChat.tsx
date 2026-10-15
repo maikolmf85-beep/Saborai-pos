@@ -1,15 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
 import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
 import { 
   Sparkles, 
   X, 
-  Send,
-  AlertTriangle,
-  Mic,
-  MicOff
+  Send, 
+  AlertTriangle, 
+  Mic, 
+  MicOff 
 } from 'lucide-react';
-
 import ReactMarkdown from 'react-markdown';
 import { MenuItem, Table, UserProfile } from '../types';
 
@@ -29,12 +29,34 @@ interface Message {
   isError?: boolean;
 }
 
-// La API Key de Claude se lee de la variable de entorno VITE_ANTHROPIC_API_KEY
-// Agrégala en Vercel: Settings → Environment Variables → VITE_ANTHROPIC_API_KEY
-const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined;
+// 1. Claves de Google Gemini (prioridad primaria de Saborai POS)
+const GEMINI_API_KEY = (
+  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
+  (import.meta.env.GEMINI_API_KEY as string | undefined) ||
+  ''
+).trim();
 
-function getNysaClient(): Anthropic | null {
-  if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === 'tu_api_key_aqui' || ANTHROPIC_API_KEY.trim() === '') {
+const GEMINI_MODEL = (
+  (import.meta.env.VITE_GEMINI_MODEL as string | undefined) ||
+  (import.meta.env.GEMINI_MODEL as string | undefined) ||
+  'gemini-3.8-flash'
+).trim();
+
+// 2. Clave de Anthropic Claude (fallback)
+const ANTHROPIC_API_KEY = (
+  (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined) ||
+  ''
+).trim();
+
+function getGeminiClient(): GoogleGenAI | null {
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'tu_gemini_api_key' || GEMINI_API_KEY === 'tu_api_key_aqui') {
+    return null;
+  }
+  return new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+}
+
+function getAnthropicClient(): Anthropic | null {
+  if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === 'tu_api_key_aqui') {
     return null;
   }
   return new Anthropic({
@@ -61,12 +83,12 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     // @ts-ignore
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Tu navegador no soporta comandos de voz.');
+      alert('Tu navegador no soporta entrada por voz. Te sugerimos usar Google Chrome.');
       return;
     }
+
     const recognition = new SpeechRecognition();
-    recognition.lang = 'es-ES';
-    recognition.interimResults = true;
+    recognition.lang = 'es-CR';
     recognition.continuous = false;
 
     recognition.onstart = () => setIsListening(true);
@@ -82,21 +104,20 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     recognition.start();
   };
 
-  // messages debe declararse ANTES del useEffect que lo referencia
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'msg_1',
       sender: 'ai',
-      text: '¡Hola! Soy Nysa, tu asistente personal de Saborai. Estoy aquí para guiarte y hacer que la gestión de tu restaurante sea un éxito. ¿En qué te puedo ayudar hoy?'
+      text: '¡Pura vida! Soy **Nyza**, tu especialista de autodiagnóstico y soporte inteligente en **Saborai POS**. ¿Qué puedo revisar o resolver por vos hoy?'
     }
   ]);
 
-  // Auto-scroll al último mensaje cada vez que cambian los mensajes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const apiReady = !!ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui' && ANTHROPIC_API_KEY.trim() !== '';
+  const hasAnyKey = (!!GEMINI_API_KEY && GEMINI_API_KEY !== 'tu_gemini_api_key') || 
+                     (!!ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui');
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +135,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     setInputMessage('');
     setIsTyping(true);
 
-    if (!apiReady) {
+    if (!hasAnyKey) {
       setIsTyping(false);
       setMessages(prev => [
         ...prev,
@@ -122,25 +143,16 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           id: `ai_${Date.now()}`,
           sender: 'ai',
           isError: true,
-          text: '⚠️ La API Key de Claude no está configurada. Para activarme, añade la variable VITE_ANTHROPIC_API_KEY en los ajustes de Vercel (Settings → Environment Variables) y haz un Redeploy.'
+          text: '⚠️ No se encontró una clave de IA configurada. Añade `VITE_GEMINI_API_KEY` o `GEMINI_API_KEY` en tus variables de entorno de Vercel.'
         }
       ]);
       return;
     }
 
     try {
-      const client = getNysaClient();
-      if (!client) throw new Error('No se pudo inicializar el cliente de IA.');
-
       const roleName =
         currentUser?.role === 'ADMIN' ? 'Administrador' :
         currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
-
-      // Usar modelos estables y ultrarrápidos para reducir latencia
-      const MODELS_TO_TRY = [
-        'claude-haiku-4-5-20251001',
-        'claude-sonnet-5'
-      ];
 
       const systemInstruction = `Eres Nyza, la Inteligencia Artificial nativa de Saborai (POS para restaurantes de Costa Rica).
 Tu misión técnica prioritaria es actuar como un Sistemas y Soporte Nivel 3 en tiempo real.
@@ -198,58 +210,119 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
       setIsTyping(false);
 
-      let streamed = false;
-      let lastError: unknown = null;
+      let fullResponseText = '';
+      let executedSuccessfully = false;
 
-      for (const modelName of MODELS_TO_TRY) {
-        try {
-          const streamResult = await client.messages.stream({
-            model: modelName,
-            max_tokens: 1024,
-            system: systemInstruction,
-            messages: [{ role: 'user', content: userText }]
-          });
+      // ==========================================
+      // MOTOR 1: Google Gemini (Motor Principal)
+      // ==========================================
+      const geminiClient = getGeminiClient();
+      if (geminiClient) {
+        const geminiModelsToTry = [
+          GEMINI_MODEL,
+          'gemini-3.8-flash',
+          'gemini-2.5-flash',
+          'gemini-1.5-flash'
+        ];
 
-          let fullResponseText = '';
-          for await (const chunk of streamResult) {
-            if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-              streamed = true;
-              fullResponseText += chunk.delta.text;
-              
-              // Ocultamos el bloque JSON de la vista del usuario
-              const displayContent = fullResponseText.replace(/\`\`\`json\n\{.*\}\n\`\`\`/gs, '');
-              
+        for (const modelCandidate of geminiModelsToTry) {
+          try {
+            const stream = await geminiClient.models.generateContentStream({
+              model: modelCandidate,
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    {
+                      text: `${systemInstruction}\n\n[Mensaje del usuario]: ${userText}`
+                    }
+                  ]
+                }
+              ]
+            });
+
+            for await (const chunk of stream) {
+              const piece = chunk.text || '';
+              fullResponseText += piece;
+              const displayContent = fullResponseText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
+
               setMessages(prev =>
                 prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
               );
             }
+
+            executedSuccessfully = true;
+            break; // Exitoso con Gemini
+          } catch (geminiError: any) {
+            console.warn(`Gemini modelo ${modelCandidate} no disponible:`, geminiError?.message || geminiError);
+            // Intentar con el siguiente modelo de Gemini
           }
-          
-          // Ejecutar comandos detectados
-          if (onQuickAction) {
-             const match = fullResponseText.match(/\`\`\`json\n(\{.*?\})\n\`\`\`/s);
-             if (match && match[1]) {
-                onQuickAction(match[1]);
-             }
-          }
-          break; // OK
-        } catch (modelError: unknown) {
-          lastError = modelError;
-          const msg = modelError instanceof Error ? modelError.message : String(modelError);
-          // Reintenta con el siguiente modelo ante cualquier error de servidor (4xx, 5xx)
-          if (/\[4\d\d\s*\]|\[5\d\d\s*\]|404|overloaded|not found|not_found|no longer available|unavailable|quota/i.test(msg)) {
-            console.warn(`Modelo ${modelName} falló (${msg.substring(0, 80)}), intentando siguiente...`);
-            continue;
-          }
-          throw modelError; // Error de API key u otro crítico — no reintentamos
         }
       }
 
-      if (!streamed && lastError) throw lastError;
+      // ==========================================
+      // MOTOR 2: Anthropic Claude (Fallback)
+      // ==========================================
+      if (!executedSuccessfully) {
+        const anthropicClient = getAnthropicClient();
+        if (anthropicClient) {
+          const claudeModels = [
+            'claude-haiku-4-5-20251001',
+            'claude-sonnet-5'
+          ];
+
+          for (const modelName of claudeModels) {
+            try {
+              const streamResult = await anthropicClient.messages.stream({
+                model: modelName,
+                max_tokens: 1024,
+                system: systemInstruction,
+                messages: [{ role: 'user', content: userText }]
+              });
+
+              fullResponseText = '';
+              for await (const chunk of streamResult) {
+                if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+                  fullResponseText += chunk.delta.text;
+                  const displayContent = fullResponseText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
+
+                  setMessages(prev =>
+                    prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
+                  );
+                }
+              }
+
+              executedSuccessfully = true;
+              break;
+            } catch (claudeError: any) {
+              const msg = claudeError?.message || String(claudeError);
+              console.warn(`Claude falló (${msg.substring(0, 80)})`);
+              if (/credit balance is too low|billing|credit/i.test(msg)) {
+                // Sin créditos en Claude, no reintentar Claude
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (!executedSuccessfully) {
+        throw new Error(
+          'No se pudo conectar con ningún motor de IA disponible (Google Gemini o Claude). Verifica que tu clave GEMINI_API_KEY o VITE_GEMINI_API_KEY esté activa.'
+        );
+      }
+
+      // Ejecutar comandos detectados en el bloque JSON
+      if (onQuickAction && fullResponseText) {
+        const match = fullResponseText.match(/```json\n(\{.*?\})\n```/s);
+        if (match && match[1]) {
+          onQuickAction(match[1]);
+        }
+      }
 
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      console.error('Nysa AI Error:', errMsg);
+      console.error('Nyza AI Error:', errMsg);
       setIsTyping(false);
       setMessages(prev => [
         ...prev,
@@ -257,7 +330,7 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
           id: `ai_${Date.now()}`,
           sender: 'ai',
           isError: true,
-          text: `Lo siento, hubo un error al conectarme con mi cerebro de IA. Detalle: ${errMsg}`
+          text: `Lo siento, hubo un inconveniente al conectarme: ${errMsg}`
         }
       ]);
     }
@@ -278,22 +351,19 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
           <BrandLogo variant="isotype" size="sm" />
           <div>
             <h3 className="font-bold text-sm flex items-center gap-1.5">
-              <span>Nysa AI</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${apiReady ? 'bg-[#a9b994] text-[#3b3733]' : 'bg-red-400 text-white'}`}>
-                {apiReady ? 'Asistente Personal' : 'Sin Configurar'}
+              <span>Nyza</span>
+              <span className="text-[10px] bg-[#a9b994] text-[#3b3733] px-1.5 py-0.2 rounded-full font-black">
+                Self-Healing IA
               </span>
             </h3>
-            <p className="text-[11px] text-[#a9b994]">
-              {apiReady ? 'Siempre a tu lado' : 'Configura VITE_ANTHROPIC_API_KEY en Vercel'}
-            </p>
+            <p className="text-[10px] text-gray-300">Autodiagnóstico y Asistente SaborAI POS</p>
           </div>
         </div>
-
         <button
           onClick={onClose}
-          className="text-gray-300 hover:text-white p-1 rounded-xl transition-colors"
+          className="p-1.5 rounded-full hover:bg-white/10 text-gray-300 hover:text-white transition-colors cursor-pointer"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 
@@ -326,32 +396,31 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
         {isTyping && (
           <div className="flex items-center gap-2 text-xs text-[#6b686d] italic p-2">
             <Sparkles className="w-3.5 h-3.5 animate-spin text-[#a9b994]" />
-            <span>Nysa está pensando...</span>
+            <span>Nyza está pensando y diagnosticando...</span>
           </div>
         )}
-        {/* Ancla invisible al final del chat para el auto-scroll */}
         <div ref={messagesEndRef} />
       </div>
 
       {/* Suggested Quick Prompts */}
       <div className="p-2 border-t border-[#6b686d]/15 bg-gray-50 flex items-center gap-1.5 overflow-x-auto text-[10px] scrollbar-none">
         <button
-          onClick={() => handlePromptClick('¿Cómo agrego un producto al menú?')}
-          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium"
+          onClick={() => handlePromptClick('La comanda de la cocina no imprime')}
+          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          🍽️ Agregar producto
+          🖨️ Falla impresora cocina
         </button>
         <button
-          onClick={() => handlePromptClick('Recomendar maridaje para Ribeye')}
-          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium"
+          onClick={() => handlePromptClick('El sistema se siente pegado o lento')}
+          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          🍷 Sugerir Maridaje
+          ⚡ Liberar memoria
         </button>
         <button
-          onClick={() => handlePromptClick('¿Cómo cierro el turno correctamente?')}
-          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium"
+          onClick={() => handlePromptClick('Marca error al enviar factura a Hacienda')}
+          className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          🔄 Cerrar turno
+          🇨🇷 Estado Hacienda DGT
         </button>
       </div>
 
@@ -360,16 +429,16 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
         <button
           type="button"
           onClick={isListening ? () => {} : startListening}
-          className={`p-2.5 rounded-xl transition-colors ${
+          className={`p-2.5 rounded-xl transition-colors cursor-pointer ${
             isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
           }`}
-          title="Hablar con Nysa"
+          title="Hablar con Nyza"
         >
           {isListening ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
         </button>
         <input
           type="text"
-          placeholder={apiReady ? "Pregúntale a Nysa lo que necesites..." : "Configura la API Key para activar Nysa..."}
+          placeholder={hasAnyKey ? "Escribe a Nyza tu consulta o reporte..." : "Configura GEMINI_API_KEY para activar a Nyza..."}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#6b686d]/30 text-xs text-[#3b3733] focus:border-[#a9b994] focus:outline-none"
@@ -377,7 +446,7 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
         <button
           type="submit"
           disabled={!inputMessage.trim()}
-          className="p-2.5 bg-[#3b3733] text-[#fcfeff] disabled:opacity-40 rounded-xl hover:bg-[#25221f] transition-colors"
+          className="p-2.5 bg-[#3b3733] text-[#fcfeff] disabled:opacity-40 rounded-xl hover:bg-[#25221f] transition-colors cursor-pointer"
         >
           <Send className="w-4 h-4 text-[#a9b994]" />
         </button>
@@ -386,3 +455,5 @@ ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable
     </div>
   );
 };
+
+export default AICopilotChat;
