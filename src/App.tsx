@@ -30,6 +30,7 @@ import { localDB } from './services/db';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
+import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { Sparkles, WifiOff, Lock, Eye } from 'lucide-react';
 
 export function App() {
@@ -1179,6 +1180,19 @@ export function App() {
             } else if (cmd.type === 'OPEN_SHIFT') {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
+            } else if (cmd.tool_calls && Array.isArray(cmd.tool_calls)) {
+               (async () => {
+                 for (const tool of cmd.tool_calls) {
+                   const res = await nyzaSelfHealing.executeTool(tool.name, tool.parameters);
+                   addNotification({
+                     id: 'nyza_' + Date.now() + '_' + Math.random(),
+                     type: res.status === 'OK' ? 'ORDER_READY' : 'NEW_ORDER',
+                     title: 'Nyza: ' + tool.name,
+                     message: res.message,
+                     timestamp: new Date()
+                   });
+                 }
+               })();
             } else if (cmd.type === 'AUTO_REPAIR') {
                if (tenant.plan === 'express') {
                  addNotification({
