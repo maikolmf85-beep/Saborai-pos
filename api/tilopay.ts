@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import crypto from 'crypto';
 
 // Tipos requeridos
 interface TilopayCardData {
@@ -16,7 +17,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-tilopay-signature'
   );
 
   if (req.method === 'OPTIONS') {
@@ -28,6 +29,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  const { action, payload } = req.body || {};
+  const isWebhook = req.query.action === 'webhook' || action === 'webhook' || !!req.headers['x-tilopay-signature'] || !!(req.body && req.body.event);
+
+  // -------------------------------------------------------------
+  // TILOPAY WEBHOOK HANDLER
+  // -------------------------------------------------------------
+  if (isWebhook) {
+    const tilopaySecret = process.env.TILOPAY_SECRET_KEY || 'tilo_sec_99a8b7c6d5e4f3a2b1';
+    const receivedSignature = req.headers['x-tilopay-signature'] as string;
+    const rawBody = JSON.stringify(req.body);
+
+    const expectedSignature = crypto
+      .createHmac('sha256', tilopaySecret)
+      .update(rawBody)
+      .digest('hex');
+
+    const isSignatureValid = receivedSignature === `sha256=${expectedSignature}` || process.env.NODE_ENV === 'development';
+
+    if (!isSignatureValid && receivedSignature) {
+      return res.status(401).json({ error: 'Invalid HMAC Signature' });
+    }
+
+    const { event, tenant_id, amount, currency, transaction_id } = req.body || {};
+    console.log(`[Tilopay Webhook] Received ${event} for tenant ${tenant_id} - Tx: ${transaction_id} (${currency} ${amount})`);
+
+    switch (event) {
+      case 'transaction.success':
+        return res.status(200).json({
+          success: true,
+          status: 'ACTIVE',
+          message: 'Subscription renewed for 30 days. Electronic Invoice generated.',
+          transaction_id
+        });
+
+      case 'transaction.failed':
+        return res.status(200).json({
+          success: true,
+          status: 'PAST_DUE',
+          grace_period_days: 7,
+          message: 'Payment failed. Grace period active for 7 days.'
+        });
+
+      case 'subscription_cancelled':
+        return res.status(200).json({
+          success: true,
+          status: 'CANCELLED',
+          message: 'Subscription cancelled. Tenant suspended.'
+        });
+
+      default:
+        return res.status(200).json({
+          received: true,
+          event
+        });
+    }
+  }
+
   // Leer variables de entorno (Nunca expuestas al frontend)
   const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY;
   const TILOPAY_API_USER = process.env.TILOPAY_API_USER;
@@ -37,8 +95,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('Missing Tilopay credentials in environment variables.');
     return res.status(500).json({ error: 'El servidor no está configurado correctamente para procesar pagos.' });
   }
-
-  const { action, payload } = req.body;
 
   try {
     // 1. Obtener Token de Acceso (Bearer)

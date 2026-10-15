@@ -6,12 +6,20 @@
   "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/auth/reset-password",
-      "destination": "/api/auth/password"
+      "source": "/api/auth/:action",
+      "destination": "/api/auth?action=:action"
     },
     {
-      "source": "/api/auth/update-password",
-      "destination": "/api/auth/password"
+      "source": "/api/demo/register",
+      "destination": "/api/auth?action=demo"
+    },
+    {
+      "source": "/api/v1/webhooks/tilopay",
+      "destination": "/api/tilopay?action=webhook"
+    },
+    {
+      "source": "/api/webhooks/tilopay",
+      "destination": "/api/tilopay?action=webhook"
     },
     {
       "source": "/((?!api/).*)",
