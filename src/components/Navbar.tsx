@@ -13,7 +13,7 @@ import {
   Volume2, 
   VolumeX, 
   UserPlus,
-  Vault,
+  LockKeyhole,
   Landmark,
   BarChart3
 } from 'lucide-react';
@@ -257,7 +257,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-close-shift-btn"
               onClick={() => onOpenCashShift('close')}
-              icon={<Vault className="w-5 h-5 text-amber-300" />}
+              icon={<LockKeyhole className="w-5 h-5 text-amber-300" />}
               label="Cerrar Turno & Caja"
               sublabel="Realizar arqueo ciego y reporte Z"
               variant="warning"

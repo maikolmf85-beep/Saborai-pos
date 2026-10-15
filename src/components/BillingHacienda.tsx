@@ -14,7 +14,7 @@ import {
   Plus,
   X,
   Receipt,
-  Lock,
+  LockKeyhole,
   Search,
   Save,
   ChevronLeft
@@ -595,7 +595,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                   className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer animate-in fade-in"
                   title="Cerrar turno de caja y realizar arqueo"
                 >
-                  <Lock className="w-3.5 h-3.5 text-stone-950" />
+                  <LockKeyhole className="w-3.5 h-3.5 text-stone-950" />
                   <span>Cerrar Turno</span>
                 </button>
               )}

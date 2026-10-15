@@ -29,7 +29,7 @@ import {
   Plus,
   Check,
   Trash2,
-  Lock
+  LockKeyhole
 } from 'lucide-react';
 import { 
   CashShift, 
@@ -539,7 +539,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 : 'text-stone-300 border border-transparent cursor-not-allowed opacity-50'
             }`}
           >
-            <Lock className="w-3.5 h-3.5" />
+            <LockKeyhole className="w-3.5 h-3.5" />
             <span>Cerrar Turno & Caja</span>
           </button>
 
@@ -740,7 +740,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     onClick={() => setActiveTab('close')}
                     className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ring-2 ring-amber-300/80"
                   >
-                    <Lock className="w-3.5 h-3.5 text-stone-950" />
+                    <LockKeyhole className="w-3.5 h-3.5 text-stone-950" />
                     <span>Cerrar Turno y Caja</span>
                   </button>
                 </div>
@@ -860,7 +860,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               <div className="p-4 rounded-2xl bg-gradient-to-r from-stone-900 via-stone-850 to-stone-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg border border-stone-700/80">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shrink-0">
-                    <Lock className="w-5 h-5" />
+                    <LockKeyhole className="w-5 h-5" />
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-white flex items-center gap-2">
@@ -893,7 +893,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     onClick={() => setActiveTab('close')}
                     className="w-full sm:w-auto px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer ring-2 ring-amber-300/60"
                   >
-                    <Lock className="w-4 h-4" />
+                    <LockKeyhole className="w-4 h-4" />
                     <span>Realizar Cierre de Caja</span>
                   </button>
                 </div>
@@ -1674,7 +1674,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                             className="py-2 px-3 bg-amber-500 hover:bg-amber-400 text-stone-950 rounded-xl text-xs font-black transition-all flex items-center gap-1 shadow-xs cursor-pointer shrink-0"
                             title="Cerrar turno de esta caja y realizar arqueo"
                           >
-                            <Lock className="w-3.5 h-3.5" />
+                            <LockKeyhole className="w-3.5 h-3.5" />
                             <span>Cerrar</span>
                           </button>
                         )}
