@@ -306,6 +306,20 @@ export function App() {
     } catch {}
   };
 
+  // Keep menuItems reactively synchronized with inventory stock deductions
+  useEffect(() => {
+    const handleInventoryChange = () => {
+      try {
+        const saved = localStorage.getItem('saborai_menu');
+        if (saved) {
+          setMenuItems(JSON.parse(saved));
+        }
+      } catch {}
+    };
+    window.addEventListener('saborai_inventory_updated', handleInventoryChange);
+    return () => window.removeEventListener('saborai_inventory_updated', handleInventoryChange);
+  }, []);
+
   const [tables, setTables] = useState<Table[]>(() => {
     try {
       const saved = localStorage.getItem('saborai_tables');
@@ -658,11 +672,19 @@ export function App() {
     }
 
     // 2. Save table state
-    handleUpdateTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));
-    if (updatedTable.status === 'AVAILABLE') {
-      setSelectedTableForOrder(null);
+    if (updatedTable.id.startsWith('takeaway_')) {
+      if (updatedTable.status === 'AVAILABLE') {
+        setSelectedTableForOrder(null);
+      } else {
+        setSelectedTableForOrder(updatedTable);
+      }
     } else {
-      setSelectedTableForOrder(updatedTable);
+      handleUpdateTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));
+      if (updatedTable.status === 'AVAILABLE') {
+        setSelectedTableForOrder(null);
+      } else {
+        setSelectedTableForOrder(updatedTable);
+      }
     }
 
     // Save locally in IndexedDB

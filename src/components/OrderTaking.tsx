@@ -20,6 +20,8 @@ import {
 import { QuickPaymentModal } from './QuickPaymentModal';
 import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
+import { printerService } from '../services/printerService';
+import { inventoryService } from '../services/inventoryService';
 
 interface OrderTakingProps {
   table: Table;
@@ -132,7 +134,41 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     setEditingDinerName('');
   };
 
+  const handleToggleQuickModifier = (itemId: string, modifierText: string) => {
+    setCurrentOrderItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      const currentNotes = item.notes || '';
+      let newNotes = '';
+      if (currentNotes.includes(modifierText)) {
+        newNotes = currentNotes
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s && s !== modifierText)
+          .join(', ');
+      } else {
+        newNotes = currentNotes ? `${currentNotes}, ${modifierText}` : modifierText;
+      }
+      return { ...item, notes: newNotes };
+    }));
+  };
+
   const handleAddItem = (product: MenuItem) => {
+    const isOutOfStock = product.available === false || (product.ingredients && product.ingredients.length > 0 && product.ingredients.some(ing => ing.currentStock <= 0));
+    if (isOutOfStock) {
+      if (onNotify) {
+        onNotify({
+          id: `stock_${Date.now()}`,
+          type: 'INVENTORY_LOW',
+          title: 'Platillo Agotado',
+          message: `${product.name} no se puede ordenar porque sus insumos están agotados.`,
+          timestamp: new Date()
+        });
+      } else {
+        alert(`El platillo "${product.name}" está agotado por falta de insumos.`);
+      }
+      return;
+    }
+
     if (product.modifiers && product.modifiers.length > 0) {
       setSelectedProductForMods(product);
       setCurrentModSelections([]);
@@ -274,6 +310,24 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       }
     };
     onSaveOrder(updatedTable);
+
+    // Thermal printing (80mm/58mm) to kitchen and bar printers
+    try {
+      printerService.printKitchenBarOrder({
+        tableName: table.name,
+        orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
+        server: updatedTable.activeOrder?.server,
+        items: currentOrderItems.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          notes: i.notes,
+          modifiers: i.selectedModifiers?.map(m => m.choiceName),
+          category: i.category
+        }))
+      });
+    } catch (e) {
+      console.warn('Error al imprimir comanda térmica:', e);
+    }
 
     // Play chime sound for kitchen & bar arrival
     const hasBar = currentOrderItems.some(i => i.category === 'Bar');
@@ -576,40 +630,61 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 </p>
               </div>
             ) : (
-              filteredMenuItems.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleAddItem(item)}
-                  className="group p-4 bg-white border border-stone-200 hover:border-[#588157] rounded-2xl text-left transition-all duration-150 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
-                >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
-                        {item.imageIcon}
-                      </span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">
-                        {item.station}
-                      </span>
+              filteredMenuItems.map((item) => {
+                const isOutOfStock = item.available === false || (item.ingredients && item.ingredients.length > 0 && item.ingredients.some(ing => ing.currentStock <= 0));
+
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleAddItem(item)}
+                    disabled={isOutOfStock}
+                    className={`group p-4 bg-white border rounded-2xl text-left transition-all duration-150 flex flex-col justify-between ${
+                      isOutOfStock
+                        ? 'opacity-60 bg-stone-50 border-dashed border-red-200 cursor-not-allowed'
+                        : 'border-stone-200 hover:border-[#588157] hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 cursor-pointer'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
+                          {item.imageIcon}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {isOutOfStock ? (
+                            <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+                              Agotado
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">
+                              {item.station}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className={`text-sm font-bold mt-2 line-clamp-1 ${isOutOfStock ? 'text-stone-400 line-through' : 'text-stone-900 group-hover:text-[#588157]'}`}>
+                        {item.name}
+                      </h4>
+                      <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
+                        {isOutOfStock ? 'Insumos agotados en cocina/bar' : item.description}
+                      </p>
                     </div>
 
-                    <h4 className="text-sm font-bold text-stone-900 mt-2 line-clamp-1 group-hover:text-[#588157]">
-                      {item.name}
-                    </h4>
-                    <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
-                      {item.description}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-3 mt-2 border-t border-stone-100">
-                    <span className="text-sm font-black text-stone-900">
-                      ₡{item.price.toLocaleString()}
-                    </span>
-                    <span className="w-7 h-7 rounded-xl bg-stone-100 group-hover:bg-[#588157] group-hover:text-white text-stone-600 flex items-center justify-center transition-colors">
-                      <Plus className="w-4 h-4" />
-                    </span>
-                  </div>
-                </button>
-              ))
+                    <div className="flex items-center justify-between pt-3 mt-2 border-t border-stone-100">
+                      <span className={`text-sm font-black ${isOutOfStock ? 'text-stone-400' : 'text-stone-900'}`}>
+                        ₡{item.price.toLocaleString()}
+                      </span>
+                      <span className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                        isOutOfStock 
+                          ? 'bg-stone-200 text-stone-400' 
+                          : 'bg-stone-100 group-hover:bg-[#588157] group-hover:text-white text-stone-600'
+                      }`}>
+                        <Plus className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
 
@@ -692,6 +767,28 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                           <ArrowRightLeft className="w-2.5 h-2.5" />
                           <span>Mover</span>
                         </button>
+                      </div>
+
+                      {/* One-touch Quick Modifier Chips */}
+                      <div className="flex flex-wrap gap-1 mt-1.5">
+                        {["Sin cebolla", "Término 3/4", "Salsa aparte", "Urgente", "Alérgico"].map((mod) => {
+                          const isApplied = (item.notes || '').includes(mod);
+                          return (
+                            <button
+                              key={mod}
+                              type="button"
+                              onClick={() => handleToggleQuickModifier(item.id, mod)}
+                              className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border transition-all cursor-pointer ${
+                                isApplied
+                                  ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-2xs'
+                                  : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+                              }`}
+                              title={`Tocar para ${isApplied ? 'remover' : 'agregar'} "${mod}"`}
+                            >
+                              {mod}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -826,6 +923,35 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-stone-200 space-y-4">
             <h3 className="text-sm font-bold text-stone-900">Agregar Nota para Cocina / Bar</h3>
+
+            {/* Quick chips inside note modal */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Modificadores de un solo toque:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {["Sin cebolla", "Término 3/4", "Salsa aparte", "Urgente", "Alérgico"].map((chip) => (
+                  <button
+                    key={chip}
+                    type="button"
+                    onClick={() => {
+                      setItemNoteText(prev => {
+                        if (prev.includes(chip)) {
+                          return prev.split(',').map(s => s.trim()).filter(s => s && s !== chip).join(', ');
+                        }
+                        return prev ? `${prev}, ${chip}` : chip;
+                      });
+                    }}
+                    className={`px-2 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                      itemNoteText.includes(chip)
+                        ? 'bg-amber-100 border-amber-300 text-amber-900'
+                        : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
+                    }`}
+                  >
+                    {chip}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <textarea
               placeholder="Ej. Término 3/4, sin cebolla, aderezo aparte..."
               value={itemNoteText}

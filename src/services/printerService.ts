@@ -716,6 +716,79 @@ export class PrinterService {
     }
     return results;
   }
+
+  /**
+   * Pulso de apertura de cajón de dinero (Cash Drawer Kick - ESC p 0 25 250)
+   */
+  public async openCashDrawer(): Promise<PrintResult> {
+    const cashPrinters = this.getPrintersByRole('cashier');
+    const targetPrinters = cashPrinters.length > 0 ? cashPrinters : this.printers.filter(p => p.enabled);
+
+    if (targetPrinters.length === 0) {
+      return { success: false, error: 'No hay impresoras de caja configuradas.' };
+    }
+
+    const builder = new EscPosBuilder();
+    builder.openCashDrawer();
+    const rawBytes = builder.build();
+
+    let anySuccess = false;
+    for (const printer of targetPrinters) {
+      try {
+        if (printer.connectionType === 'usb') {
+          await this.printUsb(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = true;
+        } else if (printer.connectionType === 'bluetooth') {
+          await this.printBluetooth(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = true;
+        } else if (printer.connectionType === 'network') {
+          await this.printNetwork(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = true;
+        }
+      } catch (err) {
+        console.warn(`Error al abrir gaveta en "${printer.name}":`, err);
+      }
+    }
+
+    return { success: anySuccess };
+  }
+
+  /**
+   * Envío térmico formateado de comanda a Cocina y Bar
+   */
+  public async printKitchenBarOrder(order: {
+    orderNumber: string;
+    tableName: string;
+    server: string;
+    date?: string;
+    items: Array<{ name: string; quantity: number; notes?: string; modifiers?: string[]; station?: string }>;
+  }): Promise<void> {
+    const kitchenItems = order.items.filter(i => i.station === 'Cocina' || !i.station);
+    const barItems = order.items.filter(i => i.station === 'Bar');
+    const nowTime = order.date || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (kitchenItems.length > 0) {
+      await this.printToRole('kitchen', {
+        title: '*** COMANDA COCINA ***',
+        orderNumber: order.orderNumber,
+        tableName: order.tableName,
+        waiterName: order.server,
+        date: nowTime,
+        items: kitchenItems
+      }).catch(err => console.warn('Error imprimiendo comanda de cocina:', err));
+    }
+
+    if (barItems.length > 0) {
+      await this.printToRole('bar', {
+        title: '*** COMANDA BAR ***',
+        orderNumber: order.orderNumber,
+        tableName: order.tableName,
+        waiterName: order.server,
+        date: nowTime,
+        items: barItems
+      }).catch(err => console.warn('Error imprimiendo comanda de bar:', err));
+    }
+  }
 }
 
 export const printerService = new PrinterService();

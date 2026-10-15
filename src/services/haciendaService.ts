@@ -337,6 +337,36 @@ class HaciendaService {
       return inv;
     });
     this.persist();
+
+    // Envío automático del comprobante y XML al correo del cliente mediante Resend
+    if (status === 'ACEPTADO') {
+      this.sendEmailNotification(clave).catch(() => {});
+    }
+  }
+
+  private async sendEmailNotification(clave: string): Promise<void> {
+    const inv = this.invoices.find(i => i.clave50Digitos === clave);
+    if (!inv || !inv.receptor?.correo) return;
+
+    try {
+      await fetch('/api/email/send-invoice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: inv.receptor.correo,
+          customerName: inv.receptor.nombre,
+          restaurantName: inv.emisor.nombre,
+          clave: inv.clave50Digitos,
+          consecutivo: inv.consecutivo,
+          total: inv.totalComprobante,
+          docType: inv.tipoDocumento,
+          xmlContent: inv.signedXmlContent || inv.xmlContent
+        })
+      });
+      console.log(`[HaciendaService] Comprobante enviado por correo a ${inv.receptor.correo} con éxito.`);
+    } catch (e) {
+      console.warn('[HaciendaService] Error al enviar comprobante por correo:', e);
+    }
   }
 }
 

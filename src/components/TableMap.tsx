@@ -317,6 +317,27 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   };
 
+  const handleQuickTakeaway = () => {
+    const takeawayTable: Table = {
+      id: `takeaway_${Date.now()}`,
+      number: `LLEVAR-${Math.floor(100 + Math.random() * 900)}`,
+      name: '🛍️ Para Llevar / Mostrador',
+      seats: 1,
+      status: 'OCCUPIED',
+      zone: 'Para Llevar',
+      x: 0,
+      y: 0,
+      activeOrder: {
+        orderNumber: `LLE-${Math.floor(1000 + Math.random() * 9000)}`,
+        server: staffList[0]?.name || 'Mostrador',
+        openedAt: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
+        subAccounts: [{ id: 1, name: 'Para Llevar' }],
+        items: []
+      }
+    };
+    onOpenOrder(takeawayTable);
+  };
+
   const handlePinValidated = (staff: UserProfile) => {
     if (!tableForPinAuth) return;
 
@@ -481,6 +502,17 @@ export const TableMap: React.FC<TableMapProps> = ({
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-amber-300" /> : <Maximize2 className="w-3.5 h-3.5 text-[#a9b994]" />}
             <span className="hidden sm:inline">{isFullscreen ? "Salir Completa" : "Pantalla Completa"}</span>
+          </button>
+
+          {/* Botón de Venta Rápida / Para Llevar */}
+          <button
+            type="button"
+            onClick={handleQuickTakeaway}
+            className="h-8 px-3 flex items-center gap-1.5 rounded-xl text-xs font-bold bg-[#588157] hover:bg-[#476c46] text-white transition-all shadow-xs cursor-pointer ring-2 ring-[#588157]/20"
+            title="Emitir pedido para llevar o venta rápida sin ocupar mesa física del salón"
+          >
+            <span>🛍️</span>
+            <span>Para Llevar</span>
           </button>
 
           {/* Admin Editing & Add Buttons */}

@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { BrandLogo } from './BrandLogos';
-import Anthropic from '@anthropic-ai/sdk';
-import { GoogleGenAI } from '@google/genai';
 import { 
   Sparkles, 
   X, 
@@ -30,42 +28,6 @@ interface Message {
   sender: 'ai' | 'user';
   text: string;
   isError?: boolean;
-}
-
-// 1. Claves de Google Gemini (prioridad primaria de Saborai POS)
-const GEMINI_API_KEY = (
-  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
-  (import.meta.env.GEMINI_API_KEY as string | undefined) ||
-  ''
-).trim();
-
-const GEMINI_MODEL = (
-  (import.meta.env.VITE_GEMINI_MODEL as string | undefined) ||
-  (import.meta.env.GEMINI_MODEL as string | undefined) ||
-  'gemini-3.8-flash'
-).trim();
-
-// 2. Clave de Anthropic Claude (fallback)
-const ANTHROPIC_API_KEY = (
-  (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined) ||
-  ''
-).trim();
-
-function getGeminiClient(): GoogleGenAI | null {
-  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'tu_gemini_api_key' || GEMINI_API_KEY === 'tu_api_key_aqui') {
-    return null;
-  }
-  return new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-}
-
-function getAnthropicClient(): Anthropic | null {
-  if (!ANTHROPIC_API_KEY || ANTHROPIC_API_KEY === 'tu_api_key_aqui') {
-    return null;
-  }
-  return new Anthropic({
-    apiKey: ANTHROPIC_API_KEY,
-    dangerouslyAllowBrowser: true
-  });
 }
 
 export const AICopilotChat: React.FC<AICopilotChatProps> = ({
@@ -219,115 +181,51 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
 
       const aiMsgId = `ai_${Date.now()}`;
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
+      setIsTyping(true);
+
+      const token = localStorage.getItem('saborai_token');
+      const apiRes = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          userText,
+          messages: messages.slice(-6),
+          context: {
+            menuItems,
+            selectedTable,
+            currentUser,
+            knowledgeContext: nyzaLearningService.getSystemPromptKnowledgeContext()
+          }
+        })
+      });
+
       setIsTyping(false);
 
-      let fullResponseText = '';
-      let executedSuccessfully = false;
+      if (!apiRes.ok) {
+        const errJson = await apiRes.json().catch(() => ({}));
+        throw new Error(errJson.error || 'No se pudo comunicar con el servicio de IA.');
+      }
 
-      // ==========================================
-      // MOTOR 1: Google Gemini (Motor Principal)
-      // ==========================================
-      const geminiClient = getGeminiClient();
-      if (geminiClient) {
-        const geminiModelsToTry = [
-          GEMINI_MODEL,
-          'gemini-3.8-flash',
-          'gemini-2.5-flash',
-          'gemini-1.5-flash'
-        ];
+      const data = await apiRes.json();
+      const displayContent = data.response || 'Sin respuesta';
+      const rawText = data.rawResponse || displayContent;
 
-        for (const modelCandidate of geminiModelsToTry) {
-          try {
-            const stream = await geminiClient.models.generateContentStream({
-              model: modelCandidate,
-              contents: [
-                {
-                  role: 'user',
-                  parts: [
-                    {
-                      text: `${systemInstruction}\n\n[Mensaje del usuario]: ${userText}`
-                    }
-                  ]
-                }
-              ]
-            });
+      setMessages(prev =>
+        prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
+      );
 
-            for await (const chunk of stream) {
-              const piece = chunk.text || '';
-              fullResponseText += piece;
-              const displayContent = fullResponseText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
-
-              setMessages(prev =>
-                prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
-              );
-            }
-
-            executedSuccessfully = true;
-            break; // Exitoso con Gemini
-          } catch (geminiError: any) {
-            console.warn(`Gemini modelo ${modelCandidate} no disponible:`, geminiError?.message || geminiError);
-            // Intentar con el siguiente modelo de Gemini
+      // Ejecutar comandos detectados en el bloque JSON o devueltos por el backend
+      if (onQuickAction) {
+        if (data.action) {
+          onQuickAction(JSON.stringify(data.action));
+        } else if (rawText) {
+          const match = rawText.match(/```json\n(\{.*?\})\n```/s);
+          if (match && match[1]) {
+            onQuickAction(match[1]);
           }
-        }
-      }
-
-      // ==========================================
-      // MOTOR 2: Anthropic Claude (Fallback)
-      // ==========================================
-      if (!executedSuccessfully) {
-        const anthropicClient = getAnthropicClient();
-        if (anthropicClient) {
-          const claudeModels = [
-            'claude-haiku-4-5-20251001',
-            'claude-sonnet-5'
-          ];
-
-          for (const modelName of claudeModels) {
-            try {
-              const streamResult = await anthropicClient.messages.stream({
-                model: modelName,
-                max_tokens: 1024,
-                system: systemInstruction,
-                messages: [{ role: 'user', content: userText }]
-              });
-
-              fullResponseText = '';
-              for await (const chunk of streamResult) {
-                if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-                  fullResponseText += chunk.delta.text;
-                  const displayContent = fullResponseText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
-
-                  setMessages(prev =>
-                    prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
-                  );
-                }
-              }
-
-              executedSuccessfully = true;
-              break;
-            } catch (claudeError: any) {
-              const msg = claudeError?.message || String(claudeError);
-              console.warn(`Claude falló (${msg.substring(0, 80)})`);
-              if (/credit balance is too low|billing|credit/i.test(msg)) {
-                // Sin créditos en Claude, no reintentar Claude
-                break;
-              }
-            }
-          }
-        }
-      }
-
-      if (!executedSuccessfully) {
-        throw new Error(
-          'No se pudo conectar con ningún motor de IA disponible (Google Gemini o Claude). Verifica que tu clave GEMINI_API_KEY o VITE_GEMINI_API_KEY esté activa.'
-        );
-      }
-
-      // Ejecutar comandos detectados en el bloque JSON
-      if (onQuickAction && fullResponseText) {
-        const match = fullResponseText.match(/```json\n(\{.*?\})\n```/s);
-        if (match && match[1]) {
-          onQuickAction(match[1]);
         }
       }
 

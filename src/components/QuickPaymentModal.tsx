@@ -16,6 +16,8 @@ import { Table, TableItem, TenantInfo, UserProfile } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, reserveConsecutivoNumber } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
+import { inventoryService } from '../services/inventoryService';
+import { printerService } from '../services/printerService';
 import { PosNotification } from './NotificationToast';
 
 interface QuickPaymentModalProps {
@@ -322,6 +324,25 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       });
     } else {
       setGeneratedXml('');
+    }
+
+    // Deduct ingredients from inventory
+    try {
+      inventoryService.deductItemsStock(
+        items.map(it => ({ name: it.name, quantity: it.quantity })),
+        `VENTA-${generatedConsecutivo || 'POS'}`
+      );
+    } catch (e) {
+      console.warn('Error al descontar inventario en pago rápido:', e);
+    }
+
+    // Cash drawer kick if cash was part of payment
+    if (cashAmt > 0) {
+      try {
+        printerService.openCashDrawer();
+      } catch (e) {
+        console.warn('Error al abrir cajón de dinero:', e);
+      }
     }
 
     setTimeout(() => {

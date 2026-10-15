@@ -181,7 +181,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                     >
                       <Printer className="w-3.5 h-3.5" />
                     </button>
-                    {inv.estadoHacienda !== 'ANULADO' && (
+                    {inv.tipoDocumento !== 'NC' && inv.estadoHacienda !== 'ANULADO' && (
                       <button
                         onClick={() => handleAnular(inv.clave50Digitos)}
                         className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold"

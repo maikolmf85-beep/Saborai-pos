@@ -23,6 +23,8 @@ import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '.
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
+import { inventoryService } from '../services/inventoryService';
+import { printerService } from '../services/printerService';
 import { PosNotification } from './NotificationToast';
 
 interface BillingHaciendaProps {
@@ -380,6 +382,24 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       service10: servicio10,
       registerId: currentRegister.id
     });
+
+    // Deducción automática de insumos e ingredientes del inventario (escandallo)
+    const itemsToDeduct = activeItems.map(it => ({ name: it.name, quantity: it.quantity }));
+    const deductionResult = inventoryService.deductItemsStock(itemsToDeduct, 'SALE_DEDUCTION');
+    if (deductionResult.depletedItems.length > 0 && onNotify) {
+      onNotify({
+        id: `depleted_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: '⚠️ Insumos agotados en cocina',
+        message: `Los siguientes platillos quedaron agotados: ${deductionResult.depletedItems.join(', ')}`,
+        timestamp: new Date()
+      });
+    }
+
+    // Apertura automática del cajón de dinero (Cash drawer kick ESC p 0 25 250)
+    if (paymentMethod === '01-Efectivo') {
+      printerService.openCashDrawer().catch(() => {});
+    }
 
     // Reservar consecutivo real y construir el comprobante definitivo
     const emissionDate = new Date();
