@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { MenuItem, TaxRegime } from '../types';
 import { soundService } from '../services/soundEffects';
+import { resolveRestaurantCabys, isValidCabys } from '../services/cabysService';
 
 export interface ExtractedProduct {
   id: string;
@@ -403,7 +404,9 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
     // Build MenuItem objects
     const newMenuItems: MenuItem[] = approvedProducts.map((p, index) => {
       const station = guessStation(p.categoria, p.nombre, p.tipo_producto);
-      const validCabys = p.cabys && /^\d{13}$/.test(p.cabys) ? p.cabys : '0000000000000';
+      const validCabys = isValidCabys(p.cabys) 
+        ? p.cabys! 
+        : resolveRestaurantCabys(p.nombre, p.categoria, undefined, station).codigo;
       return {
         id: `item_ai_${Date.now()}_${index}`,
         name: p.nombre.trim(),

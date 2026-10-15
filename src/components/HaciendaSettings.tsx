@@ -417,7 +417,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     name: 'Almuerzo Ejecutivo Restaurante',
                     price: 5000,
                     quantity: 1,
-                    cabysCode: '6311000000000',
+                    cabysCode: '6331000000000',
                     taxRate: 0.13,
                     category: 'Cocina'
                   }

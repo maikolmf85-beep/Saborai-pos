@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TenantInfo, UserProfile, MenuItem, TaxRegime } from '../types';
 import { Sparkles, ArrowRight, CheckCircle2, Store, FileText, LayoutGrid, Users, UtensilsCrossed } from 'lucide-react';
+import { resolveRestaurantCabys } from '../services/cabysService';
 
 interface NysaOnboardingProps {
   tenant: TenantInfo;
@@ -132,7 +133,7 @@ export const NysaOnboarding: React.FC<NysaOnboardingProps> = ({ tenant, currentU
         price: m.price || 0,
         category: m.category || 'General',
         station: 'Cocina',
-        cabysCode: '0000000000000',
+        cabysCode: resolveRestaurantCabys(m.name!, m.category || 'General').codigo,
         taxRate: 0.13,
         available: true,
         imageIcon: '🍽️',

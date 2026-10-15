@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TenantInfo, MenuItem, TaxRegime, SubscriptionPlan } from '../types';
 import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
-import { CabysResult, searchCabys, suggestCabys, isValidCabys } from '../services/cabysService';
+import { CabysResult, searchCabys, suggestCabys, isValidCabys, RESTAURANT_CABYS_PRESETS, resolveRestaurantCabys } from '../services/cabysService';
 import { MenuUploaderModal } from './MenuUploaderModal';
 
 interface MenuEditorProps {
@@ -73,15 +73,15 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
   const missingCabysCount = menuItems.filter(m => !isValidCabys(m.cabysCode)).length;
 
-  /** Asigna CABYS a todos los productos que no lo tienen, usando el catálogo oficial de Hacienda. */
+  /** Asigna CABYS a todos los productos que no lo tienen, usando el catálogo oficial de Hacienda y presets de restaurante. */
   const autoAssignMissing = async (items: MenuItem[]): Promise<{ items: MenuItem[]; assigned: number; failed: string[] }> => {
     const updated: MenuItem[] = [];
     const failed: string[] = [];
     let assigned = 0;
     for (const item of items) {
       if (isValidCabys(item.cabysCode)) { updated.push(item); continue; }
-      const s = await suggestCabys(item.name, item.category);
-      if (s) {
+      const s = (await suggestCabys(item.name, item.category)) || resolveRestaurantCabys(item.name, item.category, undefined, item.station);
+      if (s && isValidCabys(s.codigo)) {
         const rate = s.impuesto / 100;
         updated.push({
           ...item,
@@ -142,7 +142,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
       price: item.price,
       category: item.category,
       station: item.station,
-      cabysCode: '0000000000000',
+      cabysCode: resolveRestaurantCabys(item.name, item.category, undefined, item.station).codigo,
       taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
       available: true,
       imageIcon: '🍽️',
@@ -199,14 +199,15 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
     if (item) {
       setEditingItem(item);
     } else {
+      const defaultCat = categories.length > 1 ? categories[1] : 'Platos Fuertes';
       setEditingItem({
         id: `item_${Date.now()}`,
         name: '',
         description: '',
         price: 0,
-        category: categories.length > 1 ? categories[1] : 'Platos Fuertes',
+        category: defaultCat,
         station: 'Cocina',
-        cabysCode: '0000000000000',
+        cabysCode: resolveRestaurantCabys('Plato', defaultCat).codigo,
         taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
         available: true,
         imageIcon: '🍽️',
@@ -228,7 +229,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
     // Si aún no tiene CABYS válido, intentar asignarlo automáticamente antes de guardar
     let itemToSave = editingItem as MenuItem;
     if (!isValidCabys(itemToSave.cabysCode)) {
-      const s = await suggestCabys(itemToSave.name, itemToSave.category);
+      const s = (await suggestCabys(itemToSave.name, itemToSave.category)) || resolveRestaurantCabys(itemToSave.name, itemToSave.category, undefined, itemToSave.station);
       if (s) {
         const rate = s.impuesto / 100;
         itemToSave = {
@@ -583,6 +584,32 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                     className="w-full px-3 py-2 text-sm font-mono border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                   />
                   {cabysAutoNote && <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1">{cabysAutoNote}</p>}
+
+                  {/* Atajos Rápidos Oficiales para Restaurantes de Costa Rica */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-stone-600">Atajos rápidos de Restaurante (1 clic):</span>
+                      <span className="text-[9px] text-stone-600">Catálogo oficial BCCR / Hacienda</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-1.5 bg-stone-50 rounded-xl border border-stone-200">
+                      {RESTAURANT_CABYS_PRESETS.map(p => (
+                        <button
+                          type="button"
+                          key={p.id}
+                          onClick={() => pickCabys(p)}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
+                            editingItem.cabysCode === p.codigo
+                              ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs'
+                              : 'bg-white text-stone-700 border-stone-200 hover:border-emerald-500 hover:bg-emerald-50/50'
+                          }`}
+                          title={`${p.descripcion} (${p.codigo})`}
+                        >
+                          <span>{p.icon}</span>
+                          <span>{p.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
 
                   <div className="flex gap-2">
                     <input

@@ -32,6 +32,17 @@ const HACIENDA_ENV = {
   }
 };
 
+function getCostaRicaIsoDate(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Costa_Rica',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(d);
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}-06:00`;
+}
+
 // Función auxiliar para parsear y validar llave criptográfica .p12
 function parseAndVerifyP12(p12Base64: string, pin: string) {
   // Limpiar prefijo data URL y espacios en blanco
@@ -321,7 +332,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const payload: any = {
       clave: clave,
-      fecha: fecha || new Date().toISOString(),
+      fecha: fecha || getCostaRicaIsoDate(),
       emisor: {
         tipoIdentificacion: String(emisor.tipoIdentificacion || '02').substring(0, 2),
         numeroIdentificacion: (() => { const d = String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, ''); return d.length === 10 && d.startsWith('0') ? d.slice(1) : d; })()

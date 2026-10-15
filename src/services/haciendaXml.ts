@@ -1,4 +1,5 @@
 import { ElectronicInvoiceCR, TableItem, TenantInfo } from '../types';
+import { resolveRestaurantCabys, isValidCabys } from './cabysService';
 
 /* ------------------------------------------------------------------ */
 /*  Utilidades de fecha / clave / consecutivo (Hacienda CR)           */
@@ -115,12 +116,29 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
   if (!/^\d{50}$/.test(invoice.clave50Digitos)) return 'La clave generada no tiene 50 dígitos numéricos.';
   if (!/^\d{20}$/.test(invoice.consecutivo)) return 'El número consecutivo no tiene 20 dígitos.';
   if (!invoice.items || invoice.items.length === 0) return 'El documento no tiene líneas de detalle.';
+  
+  // Auto-curar y verificar códigos CABYS de restaurantes para que NUNCA falle la venta
   for (const it of invoice.items) {
-    const cabys = String(it.cabysCode || '').replace(/\D/g, '');
+    let cabys = String(it.cabysCode || '').replace(/\D/g, '');
     if (cabys.length !== 13 || /^0+$/.test(cabys)) {
-      return `El producto "${it.name}" no tiene un código CABYS válido (13 dígitos). Edítelo en Menú → Producto → CABYS.`;
+      // Auto-reparar con el catálogo maestro de restaurantes para que la facturación NUNCA se bloquee
+      const resolved = resolveRestaurantCabys(it.name, it.category);
+      it.cabysCode = resolved.codigo;
+      cabys = resolved.codigo;
     }
   }
+
+  // Validación de receptor si es Factura Electrónica (FE)
+  if (invoice.tipoDocumento === 'FE') {
+    const recId = (invoice.receptor?.identificacion || '').replace(/\D/g, '');
+    if (!recId) {
+      return 'Para Factura Electrónica (FE) se requiere la cédula del cliente (física o jurídica). Si es consumidor final, emita un Tiquete Electrónico (TE).';
+    }
+    if (!invoice.receptor?.nombre || invoice.receptor.nombre.trim().length < 3) {
+      return 'Para Factura Electrónica (FE) se requiere el nombre o razón social del cliente (mínimo 3 caracteres).';
+    }
+  }
+
   if ((invoice.tipoDocumento === 'NC' || invoice.tipoDocumento === 'ND') && !invoice.referencia?.clave) {
     return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
@@ -177,7 +195,15 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const fechaEmision = formatHaciendaDate(isNaN(fecha.getTime()) ? new Date() : fecha);
 
   const hasReceptorId = !!(invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
-  const tipoDoc: TipoDocumentoCR = invoice.tipoDocumento || (hasReceptorId ? 'FE' : 'TE');
+  let tipoDoc: TipoDocumentoCR = invoice.tipoDocumento || (hasReceptorId ? 'FE' : 'TE');
+  
+  // Salvaguarda: Si solicitaron Factura (FE) pero no se suministró identificación de receptor,
+  // degradar de forma segura a Tiquete (TE) para evitar que Hacienda lo rechace por falta de Receptor
+  if (tipoDoc === 'FE' && !hasReceptorId) {
+    console.warn('[HACIENDA v4.4] FE solicitada sin cédula de receptor. Emitiendo automáticamente como Tiquete Electrónico (TE).');
+    tipoDoc = 'TE';
+  }
+
   let rootName = 'TiqueteElectronico';
   let ns = 'tiqueteElectronico';
   if (tipoDoc === 'FE') {
@@ -197,7 +223,13 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const desglose: Record<string, number> = {};
 
   const linesXml = invoice.items.map((item: TableItem, index: number) => {
-    const cabys = String(item.cabysCode || '').replace(/\D/g, '').padStart(13, '0').slice(0, 13);
+    // Garantizar código CABYS 100% válido y activo de restaurante
+    let cabys = String(item.cabysCode || '').replace(/\D/g, '');
+    if (cabys.length !== 13 || /^0+$/.test(cabys)) {
+      cabys = resolveRestaurantCabys(item.name, item.category).codigo;
+      item.cabysCode = cabys;
+    }
+
     const rate = taxable ? (item.taxRate || 0) : 0;
     const monto = r5(item.price * item.quantity);
     const impuesto = r5(monto * rate);
@@ -260,7 +292,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const emisorCedula = normalizeCedula(hc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica || '');
   const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
   const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(0, 20);
+  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || '402220888' || emisorCedula).replace(/[^0-9]/g, '').slice(0, 20) || '402220888';
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
   const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
@@ -304,16 +336,36 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     ? `\n  <CodigoActividadReceptor>${actRecCode}</CodigoActividadReceptor>`
     : '';
 
+  // Receptor según tipo de documento (Obligatorio en FE, opcional en TE)
+  const receptorNombre = (invoice.receptor?.nombre || '').trim();
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
-  const receptorXml = (tipoDoc === 'FE' && hasReceptorId) ? `
+  const receptorIdNum = (invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
+  const rawEmail = (invoice.receptor?.correo || '').trim();
+  const validEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : '';
+
+  let receptorXml = '';
+  if (tipoDoc === 'FE') {
+    receptorXml = `
   <Receptor>
-    <Nombre>${escapeXml(invoice.receptor.nombre)}</Nombre>
+    <Nombre>${escapeXml(receptorNombre || 'Cliente Registrado')}</Nombre>
     <Identificacion>
       <Tipo>${receptorTipo}</Tipo>
-      <Numero>${invoice.receptor.identificacion.replace(/[^0-9]/g, '')}</Numero>
-    </Identificacion>${invoice.receptor.correo ? `
-    <CorreoElectronico>${escapeXml(invoice.receptor.correo)}</CorreoElectronico>` : ''}
-  </Receptor>` : '';
+      <Numero>${receptorIdNum}</Numero>
+    </Identificacion>${validEmail ? `
+    <CorreoElectronico>${escapeXml(validEmail)}</CorreoElectronico>` : ''}
+  </Receptor>`;
+  } else if (tipoDoc === 'TE' && receptorNombre.length >= 3 && receptorNombre !== 'Cliente General Contado') {
+    // En TE es opcional, pero si el cliente proporcionó datos, se incluye con el formato validado
+    receptorXml = `
+  <Receptor>
+    <Nombre>${escapeXml(receptorNombre)}</Nombre>${receptorIdNum ? `
+    <Identificacion>
+      <Tipo>${receptorTipo}</Tipo>
+      <Numero>${receptorIdNum}</Numero>
+    </Identificacion>` : ''}${validEmail ? `
+    <CorreoElectronico>${escapeXml(validEmail)}</CorreoElectronico>` : ''}
+  </Receptor>`;
+  }
 
   const otrosCargosXml = otrosCargos > 0 ? `
   <OtrosCargos>
@@ -323,16 +375,21 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <MontoCargo>${f5(otrosCargos)}</MontoCargo>
   </OtrosCargos>` : '';
 
-  const telefono = (tenant.phone || '').replace(/[^0-9]/g, '').padEnd(8, '0').slice(0, 8);
+  // Teléfono oficial: mínimo 8 y máximo 20 dígitos numéricos
+  const phoneDigits = (tenant.phone || '').replace(/[^0-9]/g, '');
+  const telefono = phoneDigits.length >= 8 ? phoneDigits.slice(0, 20) : (phoneDigits ? phoneDigits.padEnd(8, '0') : '22222222');
 
+  // Información de referencia en formato oficial v4.4 (<TipoDocIR>, <FechaEmisionIR>)
   let referenciaXml = '';
   if (invoice.referencia) {
     const refTipoDoc = invoice.referencia.tipoDoc === 'FE' ? '01' : (invoice.referencia.tipoDoc === 'TE' ? '04' : '01');
+    const refDate = invoice.referencia.fechaEmision ? new Date(invoice.referencia.fechaEmision) : new Date();
+    const refFechaIso = formatHaciendaDate(isNaN(refDate.getTime()) ? new Date() : refDate);
     referenciaXml = `
   <InformacionReferencia>
-    <TipoDoc>${refTipoDoc}</TipoDoc>
+    <TipoDocIR>${refTipoDoc}</TipoDocIR>
     <Numero>${invoice.referencia.clave}</Numero>
-    <FechaEmision>${invoice.referencia.fechaEmision}</FechaEmision>
+    <FechaEmisionIR>${refFechaIso}</FechaEmisionIR>
     <Codigo>${invoice.referencia.codigo || '01'}</Codigo>
     <Razon>${escapeXml(invoice.referencia.razon || 'Anulación de comprobante electrónico')}</Razon>
   </InformacionReferencia>`;

@@ -92,7 +92,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       quantity: 2,
       subAccountId: 1,
       dinerName: 'Comensal 1',
-      cabysCode: '2411000000400',
+      cabysCode: '2413000000100',
       taxRate: 0.13,
       category: 'Bar'
     }
