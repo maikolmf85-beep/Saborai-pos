@@ -21,7 +21,8 @@ import {
   PanelRightClose,
   PanelRight,
   RefreshCw,
-  LayoutGrid
+  LayoutGrid,
+  ShoppingBag
 } from 'lucide-react';
 
 interface TableMapProps {
@@ -34,6 +35,7 @@ interface TableMapProps {
   tenant: import('../types').TenantInfo;
   onUpdateTenant: (tenant: import('../types').TenantInfo) => void;
   onUpdateTables?: (tables: Table[]) => void;
+  onQuickTakeaway?: () => void;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -45,7 +47,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   staffList = [],
   tenant,
   onUpdateTenant,
-  onUpdateTables
+  onUpdateTables,
+  onQuickTakeaway: onQuickTakeawayProp
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -318,6 +321,11 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   const handleQuickTakeaway = () => {
+    if (onQuickTakeawayProp) {
+      onQuickTakeawayProp();
+      return;
+    }
+
     const takeawayTable: Table = {
       id: `takeaway_${Date.now()}`,
       number: `LLEVAR-${Math.floor(100 + Math.random() * 900)}`,
@@ -418,13 +426,24 @@ export const TableMap: React.FC<TableMapProps> = ({
       
       {/* Top Header & Compact Live Control Bar */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-stone-200/80 shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
             <span>Plano del Salón</span>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
               {filteredTables.length} mesas
             </span>
           </h1>
+
+          {/* Botón de Venta Rápida / Para Llevar Destacado */}
+          <button
+            type="button"
+            onClick={handleQuickTakeaway}
+            className="h-8 sm:h-9 px-3 sm:px-4 flex items-center gap-2 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white transition-all shadow-sm hover:shadow-md active:scale-95 cursor-pointer shrink-0 border border-amber-400/40"
+            title="Emitir pedido para llevar o venta rápida sin ocupar mesa física del salón"
+          >
+            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0 animate-pulse" />
+            <span>Venta Rápida / Para Llevar</span>
+          </button>
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
@@ -504,17 +523,6 @@ export const TableMap: React.FC<TableMapProps> = ({
             <span className="hidden sm:inline">{isFullscreen ? "Salir Completa" : "Pantalla Completa"}</span>
           </button>
 
-          {/* Botón de Venta Rápida / Para Llevar */}
-          <button
-            type="button"
-            onClick={handleQuickTakeaway}
-            className="h-8 px-3 flex items-center gap-1.5 rounded-xl text-xs font-bold bg-[#588157] hover:bg-[#476c46] text-white transition-all shadow-xs cursor-pointer ring-2 ring-[#588157]/20"
-            title="Emitir pedido para llevar o venta rápida sin ocupar mesa física del salón"
-          >
-            <span>🛍️</span>
-            <span>Para Llevar</span>
-          </button>
-
           {/* Admin Editing & Add Buttons */}
           {isAdmin && (
             <>
@@ -583,6 +591,29 @@ export const TableMap: React.FC<TableMapProps> = ({
               backgroundSize: '22px 22px',
             }}
           >
+            {/* Estación de Venta Rápida / Mostrador en el Plano */}
+            {!isEditMode && (
+              <div className="absolute top-3 left-3 z-10">
+                <button
+                  type="button"
+                  onClick={handleQuickTakeaway}
+                  className="flex items-center gap-2.5 px-3 py-2 bg-stone-900/90 hover:bg-stone-900 text-white rounded-2xl shadow-md border border-amber-500/40 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer group"
+                  title="Abrir orden para llevar o venta rápida en mostrador"
+                >
+                  <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                    <ShoppingBag className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="text-left">
+                    <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
+                      <span>Venta Rápida</span>
+                      <span className="text-[9px] uppercase px-1.5 py-0.5 bg-amber-400 text-stone-950 rounded-full font-black">Mostrador</span>
+                    </div>
+                    <div className="text-[10px] text-stone-300">Para llevar sin mesa física</div>
+                  </div>
+                </button>
+              </div>
+            )}
+
             {/* Zone Watermark Tag */}
             <div className="absolute bottom-4 left-4 text-[11px] font-black uppercase tracking-widest text-stone-300 pointer-events-none">
               {tenantZones.length === 0 ? 'Sin Salones Creados' : selectedZone === 'Todas' ? 'Plano General del Restaurante' : `Zona: ${selectedZone}`}

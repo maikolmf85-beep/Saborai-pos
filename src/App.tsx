@@ -610,6 +610,38 @@ export function App() {
     setSelectedTableForOrder(table);
   };
 
+  const handleQuickTakeaway = () => {
+    if (!cashShiftService.getActiveShift()) {
+      setCashShiftInitialTab('open');
+      setIsCashShiftModalOpen(true);
+      addNotification({
+        type: 'warning',
+        message: 'Debes abrir un turno de caja para emitir ventas rápidas o pedidos para llevar'
+      });
+      return;
+    }
+
+    const takeawayTable: Table = {
+      id: `takeaway_${Date.now()}`,
+      number: `LLEVAR-${Math.floor(100 + Math.random() * 900)}`,
+      name: '🛍️ Para Llevar / Mostrador',
+      seats: 1,
+      status: 'OCCUPIED',
+      zone: 'Para Llevar',
+      x: 0,
+      y: 0,
+      activeOrder: {
+        orderNumber: `LLE-${Math.floor(1000 + Math.random() * 9000)}`,
+        server: currentUser?.name || staffList[0]?.name || 'Mostrador',
+        openedAt: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
+        subAccounts: [{ id: 1, name: 'Para Llevar' }],
+        items: []
+      }
+    };
+    setSelectedTableForOrder(takeawayTable);
+    setActiveTab('pos');
+  };
+
   const handleSplitBill = (table: Table) => {
     setSelectedTableForOrder(table);
     setActiveTab('billing');
@@ -913,6 +945,7 @@ export function App() {
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
         onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
         onOpenCashShift={(tab) => handleOpenCashShift(tab || 'status')}
+        onQuickTakeaway={handleQuickTakeaway}
         isShiftOpen={!!cashShiftService.getActiveShift()}
         activeRegisterName={cashShiftService.getCurrentRegister().name}
       />
@@ -1019,6 +1052,7 @@ export function App() {
               tenant={tenant}
               onUpdateTenant={handleUpdateTenant}
               onUpdateTables={handleUpdateTables}
+              onQuickTakeaway={handleQuickTakeaway}
             />
           )
         )}
@@ -1169,32 +1203,6 @@ export function App() {
         onClose={() => setIsHaciendaHistoryOpen(false)}
         tenant={tenant}
       />
-
-      {/* Floating Saborai Copilot IA & Nyza Global Intelligence Buttons */}
-      <div className="fixed bottom-6 right-6 z-40 flex items-center gap-2">
-        {!isCopilotOpen && (
-          <>
-            <button
-              onClick={() => setIsNyzaHubOpen(true)}
-              className="group flex items-center gap-1.5 px-3 py-2.5 bg-stone-900 text-[#a9b994] rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-200 border border-stone-800 text-xs font-bold cursor-pointer"
-              title="Abrir Centro de Inteligencia y Aprendizaje de Nyza"
-            >
-              <BrainCircuit className="w-4 h-4 text-[#a9b994] animate-pulse shrink-0" />
-              <span>Nyza IA Global</span>
-            </button>
-            <button
-              onClick={() => setIsCopilotOpen(true)}
-              className="group flex items-center justify-center p-3 bg-stone-900 text-white rounded-full shadow-xl hover:bg-stone-800 hover:scale-105 active:scale-95 transition-all duration-300 border border-stone-800 cursor-pointer"
-              title="Abrir Asistente Copilot IA"
-            >
-              <Sparkles className="w-5 h-5 text-[#a9b994] shrink-0" />
-              <span className="max-w-0 overflow-hidden whitespace-nowrap text-xs font-bold group-hover:max-w-xs group-hover:ml-2 transition-all duration-300 ease-in-out">
-                Copilot IA
-              </span>
-            </button>
-          </>
-        )}
-      </div>
 
       {/* Copilot Chat Drawer */}
       <AICopilotChat

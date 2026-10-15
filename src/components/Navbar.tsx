@@ -16,7 +16,8 @@ import {
   LockKeyhole,
   Landmark,
   BarChart3,
-  BrainCircuit
+  BrainCircuit,
+  ShoppingBag
 } from 'lucide-react';
 import { CashRegister } from './CashRegisterIcon';
 import { TenantInfo, UserProfile } from '../types';
@@ -40,6 +41,7 @@ interface NavbarProps {
   onOpenStaffModal?: () => void;
   onOpenQuickSwitch?: () => void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
+  onQuickTakeaway?: () => void;
   isShiftOpen?: boolean;
   activeRegisterName?: string;
 }
@@ -132,6 +134,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenStaffModal,
   onOpenQuickSwitch,
   onOpenCashShift,
+  onQuickTakeaway,
   isShiftOpen,
   activeRegisterName
 }) => {
@@ -181,6 +184,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             sublabel="Plano interactivo en pantalla completa"
             isActive={activeTab === 'pos'}
           />
+
+          {/* Venta Rápida / Para Llevar (Mostrador) */}
+          {onQuickTakeaway && (
+            <NavVerticalItem
+              id="nav-tab-takeaway"
+              onClick={onQuickTakeaway}
+              icon={<ShoppingBag className="w-5 h-5 text-amber-400" />}
+              label="Para Llevar / Venta Rápida"
+              sublabel="Emitir orden rápida sin mesa"
+              variant="warning"
+            />
+          )}
 
           {/* Cocina & Bar KDS */}
           <NavVerticalItem
