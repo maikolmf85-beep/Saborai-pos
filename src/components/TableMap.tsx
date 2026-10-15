@@ -20,7 +20,8 @@ import {
   Minimize2,
   PanelRightClose,
   PanelRight,
-  RefreshCw
+  RefreshCw,
+  LayoutGrid
 } from 'lucide-react';
 
 interface TableMapProps {
@@ -89,6 +90,13 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
 
+  // Sync selectedZone when tenantZones updates
+  useEffect(() => {
+    if (tenantZones.length > 0 && !tenantZones.includes(selectedZone)) {
+      setSelectedZone(tenantZones[0]);
+    }
+  }, [tenantZones, selectedZone]);
+
   // Sync fullscreen state with browser changes
   useEffect(() => {
     const handleFsChange = () => {
@@ -137,7 +145,9 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   }, [tables, tenant.id]);
 
-  const filteredTables = tables.filter(t => t.zone === selectedZone);
+  const filteredTables = tenantZones.length === 0
+    ? tables
+    : tables.filter(t => t.zone === selectedZone || (!t.zone && selectedZone === tenantZones[0]));
 
   const calculateTableTotal = (table?: Table | null) => {
     if (!table?.activeOrder?.items) return 0;
@@ -212,6 +222,15 @@ export const TableMap: React.FC<TableMapProps> = ({
     const posX = 15 + ((tables.length * 14) % 65);
     const posY = 20 + ((tables.length * 16) % 60);
 
+    const targetZone = newTableZone.trim() || (tenantZones.length > 0 ? tenantZones[0] : 'Principal');
+    if (tenantZones.length === 0) {
+      onUpdateTenant({
+        ...tenant,
+        zones: [targetZone]
+      });
+      setSelectedZone(targetZone);
+    }
+
     const newTbl: Table = {
       id: `tbl_${Date.now()}`,
       number: nextNumber,
@@ -219,7 +238,7 @@ export const TableMap: React.FC<TableMapProps> = ({
       seats: newTableSeats,
       shape: newTableShape,
       status: 'AVAILABLE',
-      zone: newTableZone,
+      zone: targetZone,
       x: posX,
       y: posY,
     };
@@ -388,19 +407,25 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {tenantZones.map((zone) => (
-              <button
-                key={zone}
-                onClick={() => setSelectedZone(zone)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
-                  selectedZone === zone
-                    ? 'bg-stone-900 text-white shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-                }`}
-              >
-                {zone}
-              </button>
-            ))}
+            {tenantZones.length === 0 ? (
+              <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
+                Sin salones
+              </span>
+            ) : (
+              tenantZones.map((zone) => (
+                <button
+                  key={zone}
+                  onClick={() => setSelectedZone(zone)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
+                    selectedZone === zone
+                      ? 'bg-stone-900 text-white shadow-xs'
+                      : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+                  }`}
+                >
+                  {zone}
+                </button>
+              ))
+            )}
             {isAdmin && (
               <button
                 onClick={() => setIsZoneModalOpen(true)}
@@ -528,8 +553,23 @@ export const TableMap: React.FC<TableMapProps> = ({
           >
             {/* Zone Watermark Tag */}
             <div className="absolute bottom-4 left-4 text-[11px] font-black uppercase tracking-widest text-stone-300 pointer-events-none">
-              {selectedZone === 'Todas' ? 'Plano General del Restaurante' : `Zona: ${selectedZone}`}
+              {tenantZones.length === 0 ? 'Sin Salones Creados' : selectedZone === 'Todas' ? 'Plano General del Restaurante' : `Zona: ${selectedZone}`}
             </div>
+
+            {/* Empty state when no tables */}
+            {filteredTables.length === 0 && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 pointer-events-none z-0">
+                <div className="w-14 h-14 rounded-2xl bg-stone-100 border border-stone-200/80 flex items-center justify-center text-stone-400 mb-3 shadow-2xs">
+                  <LayoutGrid className="w-6 h-6 text-stone-400" />
+                </div>
+                <h3 className="text-sm font-bold text-stone-700">No hay mesas en este salón</h3>
+                <p className="text-xs text-stone-400 max-w-xs mt-1">
+                  {isAdmin 
+                    ? 'Haz clic en "+ Nueva Mesa" arriba para comenzar a diagramar el salón a tu gusto.' 
+                    : 'Aún no se han configurado mesas en este salón.'}
+                </p>
+              </div>
+            )}
 
             {/* Render Circular Tables */}
             {filteredTables.map((table) => {

@@ -14,8 +14,17 @@ import {
 } from 'lucide-react';
 
 export const InventoryRecipes: React.FC = () => {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(sampleMenuItems);
-  const [selectedProduct, setSelectedProduct] = useState<MenuItem | null>(sampleMenuItems.length > 0 ? sampleMenuItems[0] : null);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('saborai_menu');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return sampleMenuItems;
+  });
+  const [selectedProduct, setSelectedProduct] = useState<MenuItem | null>(() => (sampleMenuItems.length > 0 ? sampleMenuItems[0] : null));
   const [wasteQty, setWasteQty] = useState<number>(0);
   const [wasteReason, setWasteReason] = useState<string>('Vencimiento / Merma natural');
   const [recordedWasteSuccess, setRecordedWasteSuccess] = useState(false);

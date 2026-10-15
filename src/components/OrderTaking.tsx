@@ -567,40 +567,50 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
           {/* Clean Menu Items Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {filteredMenuItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleAddItem(item)}
-                className="group p-4 bg-white border border-stone-200 hover:border-[#588157] rounded-2xl text-left transition-all duration-150 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
-                      {item.imageIcon}
-                    </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">
-                      {item.station}
-                    </span>
+            {filteredMenuItems.length === 0 ? (
+              <div className="col-span-full py-16 text-center bg-stone-50 border border-dashed border-stone-200 rounded-3xl p-6">
+                <span className="text-3xl block mb-2">🍽️</span>
+                <p className="text-sm font-bold text-stone-700">No hay productos en esta categoría</p>
+                <p className="text-xs text-stone-400 mt-1 max-w-xs mx-auto">
+                  Agrega platillos desde el Catálogo o Menú para comenzar a tomar pedidos.
+                </p>
+              </div>
+            ) : (
+              filteredMenuItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handleAddItem(item)}
+                  className="group p-4 bg-white border border-stone-200 hover:border-[#588157] rounded-2xl text-left transition-all duration-150 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
+                        {item.imageIcon}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">
+                        {item.station}
+                      </span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-stone-900 mt-2 line-clamp-1 group-hover:text-[#588157]">
+                      {item.name}
+                    </h4>
+                    <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
+                      {item.description}
+                    </p>
                   </div>
 
-                  <h4 className="text-sm font-bold text-stone-900 mt-2 line-clamp-1 group-hover:text-[#588157]">
-                    {item.name}
-                  </h4>
-                  <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
-                    {item.description}
-                  </p>
-                </div>
-
-                <div className="flex items-center justify-between pt-3 mt-2 border-t border-stone-100">
-                  <span className="text-sm font-black text-stone-900">
-                    ₡{item.price.toLocaleString()}
-                  </span>
-                  <span className="w-7 h-7 rounded-xl bg-stone-100 group-hover:bg-[#588157] group-hover:text-white text-stone-600 flex items-center justify-center transition-colors">
-                    <Plus className="w-4 h-4" />
-                  </span>
-                </div>
-              </button>
-            ))}
+                  <div className="flex items-center justify-between pt-3 mt-2 border-t border-stone-100">
+                    <span className="text-sm font-black text-stone-900">
+                      ₡{item.price.toLocaleString()}
+                    </span>
+                    <span className="w-7 h-7 rounded-xl bg-stone-100 group-hover:bg-[#588157] group-hover:text-white text-stone-600 flex items-center justify-center transition-colors">
+                      <Plus className="w-4 h-4" />
+                    </span>
+                  </div>
+                </button>
+              ))
+            )}
           </div>
 
         </div>

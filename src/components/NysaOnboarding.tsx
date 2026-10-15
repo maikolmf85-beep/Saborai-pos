@@ -23,7 +23,7 @@ export const NysaOnboarding: React.FC<NysaOnboardingProps> = ({ tenant, currentU
   const [currency, setCurrency] = useState<'CRC' | 'USD'>(tenant.currency || 'CRC');
   const [taxRegime, setTaxRegime] = useState<TaxRegime>(tenant.taxRegime || 'TRADITIONAL');
   
-  const [zones, setZones] = useState<string[]>(['Principal', 'Terraza']);
+  const [zones, setZones] = useState<string[]>([]);
   const [newZoneName, setNewZoneName] = useState('');
   
   const [staff, setStaff] = useState<Partial<UserProfile>[]>([
@@ -107,7 +107,7 @@ export const NysaOnboarding: React.FC<NysaOnboardingProps> = ({ tenant, currentU
       name: restaurantName,
       currency,
       taxRegime,
-      zones: zones.length > 0 ? zones : ['Principal'],
+      zones: zones,
       onboardingCompleted: true
     };
 

@@ -67,36 +67,7 @@ class NotionService {
       if (savedRecords) {
         this.records = JSON.parse(savedRecords);
       } else {
-        // Initial sample record if none exists
-        this.records = [
-          {
-            id: 'rec_demo_01',
-            user: {
-              id: 'usr_demo_01',
-              name: 'Administrador Demo (Fuego & Palmera)',
-              email: 'gerencia@fuegoypalmera.cr',
-              phone: '+506 2289-4500',
-              restaurantName: 'Restaurante Fuego & Palmera',
-              role: 'ADMIN'
-            },
-            tenant: {
-              id: 'tenant_demo_01',
-              name: 'Restaurante Fuego & Palmera S.A.',
-              cedulaJuridica: '3-101-789456',
-              email: 'gerencia@fuegoypalmera.cr',
-              phone: '+506 2289-4500',
-              location: 'Escazú Village, San José',
-              plan: 'pro',
-              status: 'ACTIVE',
-              currency: 'CRC',
-              monthlyFee: 45000
-            },
-            synced: true,
-            notionPageId: 'page_demo_101',
-            notionPageUrl: 'https://notion.so',
-            timestamp: new Date().toISOString()
-          }
-        ];
+        this.records = [];
         this.saveRecordsToStorage();
       }
     } catch (e) {

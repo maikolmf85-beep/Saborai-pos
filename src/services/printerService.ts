@@ -140,46 +140,7 @@ export class PrinterService {
       if (stored) {
         this.printers = JSON.parse(stored);
       } else {
-        // Semillas por defecto iniciales
-        this.printers = [
-          {
-            id: 'prn_caja_default',
-            name: 'Impresora Caja Principal',
-            role: 'caja',
-            connectionType: 'network',
-            ipAddress: '192.168.1.200',
-            port: 9100,
-            paperWidth: '80mm',
-            enabled: true,
-            autoCutter: true,
-            openDrawer: true,
-            beepOnPrint: false
-          },
-          {
-            id: 'prn_cocina_default',
-            name: 'Comandera Cocina Caliente',
-            role: 'cocina',
-            connectionType: 'network',
-            ipAddress: '192.168.1.201',
-            port: 9100,
-            paperWidth: '80mm',
-            enabled: true,
-            autoCutter: true,
-            openDrawer: false,
-            beepOnPrint: true
-          },
-          {
-            id: 'prn_bar_default',
-            name: 'Comandera Bar & Bebidas',
-            role: 'bar',
-            connectionType: 'bluetooth',
-            paperWidth: '58mm',
-            enabled: true,
-            autoCutter: true,
-            openDrawer: false,
-            beepOnPrint: true
-          }
-        ];
+        this.printers = [];
         this.savePrinters();
       }
     } catch {

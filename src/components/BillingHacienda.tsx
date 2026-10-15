@@ -51,52 +51,17 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [showXmlModal, setShowXmlModal] = useState(false);
   const [transferToast, setTransferToast] = useState<string | null>(null);
 
-  // Subaccounts list state (defaults to 2 subaccounts if none exist)
+  // Subaccounts list state
   const defaultSubs: SubAccount[] = selectedTable?.activeOrder?.subAccounts?.length
     ? selectedTable.activeOrder.subAccounts
     : [
-        { id: 1, name: 'Cuenta 1 (Comensal 1)' },
-        { id: 2, name: 'Cuenta 2 (Comensal 2)' }
+        { id: 1, name: 'Cuenta 1' }
       ];
   const [subAccounts, setSubAccounts] = useState<SubAccount[]>(defaultSubs);
   const [selectedSubAccount, setSelectedSubAccount] = useState<number | 'ALL'>('ALL');
 
-  // Items state
-  const fallbackItems: TableItem[] = [
-    {
-      id: 'it_default_1',
-      name: 'Ceviche Tico Clásico de Corvina',
-      price: 6800,
-      quantity: 2,
-      subAccountId: 1,
-      dinerName: 'Comensal 1',
-      cabysCode: '2121100000100',
-      taxRate: 0.13,
-      category: 'Cocina'
-    },
-    {
-      id: 'it_default_2',
-      name: 'Corte Ribeye Angus 350g a la Leña',
-      price: 18500,
-      quantity: 1,
-      subAccountId: 2,
-      dinerName: 'Comensal 2',
-      cabysCode: '2111100000200',
-      taxRate: 0.13,
-      category: 'Cocina'
-    },
-    {
-      id: 'it_default_3',
-      name: 'Cóctel Pasión Tica (Guaro Cacique)',
-      price: 4900,
-      quantity: 2,
-      subAccountId: 1,
-      dinerName: 'Comensal 1',
-      cabysCode: '2413000000100',
-      taxRate: 0.13,
-      category: 'Bar'
-    }
-  ];
+  // Items state (empty by default, no mock dishes)
+  const fallbackItems: TableItem[] = [];
 
   const [orderItems, setOrderItems] = useState<TableItem[]>(
     selectedTable?.activeOrder?.items?.length ? selectedTable.activeOrder.items : fallbackItems

@@ -458,14 +458,18 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 onChange={(e) => handleSelectRegister(e.target.value)}
                 className="px-2.5 py-1 bg-white border border-stone-300 rounded-xl font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 shadow-2xs text-xs"
               >
-                {registers.map(r => {
-                  const regShift = cashShiftService.getActiveShift(r.id);
-                  return (
-                    <option key={r.id} value={r.id}>
-                      {r.name} (DGT: {r.terminalCode}) — {regShift ? `🟢 Turno #${regShift.shiftNumber}` : '⚪ Cerrada'}
-                    </option>
-                  );
-                })}
+                {registers.length === 0 ? (
+                  <option value="">Sin Cajas Creadas</option>
+                ) : (
+                  registers.map(r => {
+                    const regShift = cashShiftService.getActiveShift(r.id);
+                    return (
+                      <option key={r.id} value={r.id}>
+                        {r.name} (DGT: {r.terminalCode}) — {regShift ? `🟢 Turno #${regShift.shiftNumber}` : '⚪ Cerrada'}
+                      </option>
+                    );
+                  })
+                )}
               </select>
               <button
                 type="button"
@@ -605,16 +609,24 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   <select
                     value={openingCashier?.id || ''}
                     onChange={(e) => {
-                      const found = staffList.find(s => s.id === e.target.value);
+                      const found = staffList.find(s => s.id === e.target.value) || (currentUser?.id === e.target.value ? currentUser : null);
                       setOpeningCashier(found || null);
                     }}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                   >
-                    {staffList.map((staff) => (
-                      <option key={staff.id} value={staff.id}>
-                        {staff.name} — ({staff.role})
-                      </option>
-                    ))}
+                    {staffList.length === 0 ? (
+                      currentUser ? (
+                        <option value={currentUser.id}>{currentUser.name} — ({currentUser.role})</option>
+                      ) : (
+                        <option value="">Sin colaboradores registrados</option>
+                      )
+                    ) : (
+                      staffList.map((staff) => (
+                        <option key={staff.id} value={staff.id}>
+                          {staff.name} — ({staff.role})
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -1496,11 +1508,28 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {registers.map((reg) => {
+                {registers.length === 0 ? (
+                  <div className="col-span-full py-12 text-center bg-stone-50 border border-dashed border-stone-200 rounded-3xl p-6">
+                    <Layers className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+                    <h4 className="font-bold text-stone-700 text-sm">No tienes terminales ni cajas registradas</h4>
+                    <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
+                      Configura tus cajas de cobro (por ejemplo: Barra Principal, Caja Mostrador o Salón 1) con su código de terminal Hacienda.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddRegister(true)}
+                      className="mt-4 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl transition-all cursor-pointer inline-flex items-center gap-1.5"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Registrar Primera Caja</span>
+                    </button>
+                  </div>
+                ) : (
+                  registers.map((reg) => {
                   const regShift = cashShiftService.getActiveShift(reg.id);
                   const isCurrentPcRegister = reg.id === selectedRegisterId;
                   const isEditing = editingRegisterId === reg.id;
-                  const canDelete = !reg.isDefault && !regShift && registers.length > 1;
+                  const canDelete = !regShift;
 
                   return (
                     <div 
@@ -1681,7 +1710,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                       </div>
                     </div>
                   );
-                })}
+                }))}
               </div>
             </div>
           )}

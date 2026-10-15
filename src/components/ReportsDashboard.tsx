@@ -20,44 +20,30 @@ interface ReportsDashboardProps {
 export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) => {
   const [dateRange, setDateRange] = useState<'today' | 'week' | 'month'>('today');
 
-  // Simulated metrics
-  const metrics = {
-    today: {
-      sales: 458900,
-      tips: 45890,
-      transactions: 142,
-      avgTicket: 3231,
-      cash: 120000,
-      card: 280500,
-      sinpe: 58400
-    },
-    week: {
-      sales: 3254000,
-      tips: 325400,
-      transactions: 954,
-      avgTicket: 3410,
-      cash: 850000,
-      card: 1954000,
-      sinpe: 450000
-    },
-    month: {
-      sales: 14580000,
-      tips: 1458000,
-      transactions: 4250,
-      avgTicket: 3430,
-      cash: 3800000,
-      card: 8900000,
-      sinpe: 1880000
-    }
-  }[dateRange];
+  // Real metrics calculated from active and closed shifts
+  const activeShift = cashShiftService.getActiveShift();
+  const history = cashShiftService.getShiftsHistory();
+  const allShifts = [...(activeShift ? [activeShift] : []), ...history];
 
-  const recentTransactions = [
-    { id: 'TRX-1029', time: '14:23', amount: 15400, method: 'Tarjeta', server: 'Carlos G.' },
-    { id: 'TRX-1028', time: '14:15', amount: 8500, method: 'Efectivo', server: 'María P.' },
-    { id: 'TRX-1027', time: '13:58', amount: 24300, method: 'SINPE Móvil', server: 'Carlos G.' },
-    { id: 'TRX-1026', time: '13:45', amount: 4500, method: 'Efectivo', server: 'Juan L.' },
-    { id: 'TRX-1025', time: '13:30', amount: 32000, method: 'Tarjeta', server: 'María P.' },
-  ];
+  const totalSales = allShifts.reduce((sum, s) => sum + (s.systemSummary?.totalSales || 0), 0);
+  const totalTips = allShifts.reduce((sum, s) => sum + (s.systemSummary?.serviceTax10 || 0), 0);
+  const totalTrx = allShifts.reduce((sum, s) => sum + (s.systemSummary?.invoicesCount || 0), 0);
+  const cashSales = allShifts.reduce((sum, s) => sum + (s.systemSummary?.cashSales || 0), 0);
+  const cardSales = allShifts.reduce((sum, s) => sum + (s.systemSummary?.cardSales || 0), 0);
+  const sinpeSales = allShifts.reduce((sum, s) => sum + (s.systemSummary?.sinpeSales || 0), 0);
+  const avgTicket = totalTrx > 0 ? Math.round(totalSales / totalTrx) : 0;
+
+  const metrics = {
+    sales: totalSales,
+    tips: totalTips,
+    transactions: totalTrx,
+    avgTicket,
+    cash: cashSales,
+    card: cardSales,
+    sinpe: sinpeSales
+  };
+
+  const recentTransactions: { id: string; time: string; amount: number; method: string; server: string }[] = [];
 
   return (
     <div className="w-full h-full flex flex-col bg-stone-50 overflow-hidden relative">
@@ -217,52 +203,53 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) =>
               </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-stone-100 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-                    <th className="pb-3 px-2">ID</th>
-                    <th className="pb-3 px-2">Hora</th>
-                    <th className="pb-3 px-2">Mesero/a</th>
-                    <th className="pb-3 px-2">Método</th>
-                    <th className="pb-3 px-2 text-right">Monto</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-medium text-stone-700 divide-y divide-stone-50">
-                  {recentTransactions.map((trx) => (
-                    <tr key={trx.id} className="hover:bg-stone-50/50 transition-colors">
-                      <td className="py-3 px-2 font-mono text-stone-500">{trx.id}</td>
-                      <td className="py-3 px-2">{trx.time}</td>
-                      <td className="py-3 px-2">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-5 h-5 rounded-full bg-stone-200 flex items-center justify-center text-[9px] font-black text-stone-600">
-                            {trx.server.charAt(0)}
-                          </div>
-                          {trx.server}
-                        </div>
-                      </td>
-                      <td className="py-3 px-2">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          trx.method === 'Tarjeta' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                          trx.method === 'Efectivo' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
-                          'bg-amber-50 text-amber-700 border border-amber-100'
-                        }`}>
-                          {trx.method}
-                        </span>
-                      </td>
-                      <td className="py-3 px-2 text-right font-black text-stone-900">
-                        ₡{trx.amount.toLocaleString()}
-                      </td>
+            {recentTransactions.length === 0 ? (
+              <div className="py-12 text-center text-stone-400 text-xs">
+                No hay transacciones registradas todavía. Las ventas aparecerán aquí conforme se cobren comandas y se cierren turnos.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-stone-100 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                      <th className="pb-3 px-2">ID</th>
+                      <th className="pb-3 px-2">Hora</th>
+                      <th className="pb-3 px-2">Mesero/a</th>
+                      <th className="pb-3 px-2">Método</th>
+                      <th className="pb-3 px-2 text-right">Monto</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Disclaimer for mockup */}
-            <div className="mt-4 text-center">
-               <p className="text-[10px] text-stone-400 italic">Datos de demostración. En la versión final se conectarán con el cierre de caja real.</p>
-            </div>
+                  </thead>
+                  <tbody className="text-xs font-medium text-stone-700 divide-y divide-stone-50">
+                    {recentTransactions.map((trx) => (
+                      <tr key={trx.id} className="hover:bg-stone-50/50 transition-colors">
+                        <td className="py-3 px-2 font-mono text-stone-500">{trx.id}</td>
+                        <td className="py-3 px-2">{trx.time}</td>
+                        <td className="py-3 px-2">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 rounded-full bg-stone-200 flex items-center justify-center text-[9px] font-black text-stone-600">
+                              {trx.server.charAt(0)}
+                            </div>
+                            {trx.server}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                            trx.method === 'Tarjeta' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                            trx.method === 'Efectivo' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                            'bg-amber-50 text-amber-700 border border-amber-100'
+                          }`}>
+                            {trx.method}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-right font-black text-stone-900">
+                          ₡{trx.amount.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       </div>

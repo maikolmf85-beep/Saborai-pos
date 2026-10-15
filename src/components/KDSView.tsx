@@ -283,8 +283,17 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        {filteredOrders.map((order) => {
-          const mins = getElapsedTimeInMinutes(order.timestamp);
+        {filteredOrders.length === 0 ? (
+          <div className="col-span-full py-20 text-center bg-white border border-dashed border-stone-200 rounded-3xl p-8">
+            <ChefHat className="w-12 h-12 text-stone-300 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-stone-700">Sin comandas activas</h3>
+            <p className="text-xs text-stone-400 mt-1 max-w-sm mx-auto">
+              Los pedidos enviados a cocina o bar desde las mesas aparecerán aquí en tiempo real con su tiempo de preparación.
+            </p>
+          </div>
+        ) : (
+          filteredOrders.map((order) => {
+            const mins = getElapsedTimeInMinutes(order.timestamp);
           
           // Calculate max prep time
           let maxPrepTime = 15; // default 15 mins if no items have prepTime
@@ -442,7 +451,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
               </div>
             </div>
           );
-        })}
+        }))}
       </div>
       )}
 

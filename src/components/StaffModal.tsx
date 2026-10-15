@@ -298,7 +298,14 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100 bg-white">
-                    {staffList.map((member) => {
+                    {staffList.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-stone-400">
+                          No hay colaboradores registrados todavía. Agrega tu primer colaborador con el formulario superior.
+                        </td>
+                      </tr>
+                    ) : (
+                      staffList.map((member) => {
                       const isCurrent = currentUser?.id === member.id;
                       const roleDef = roleDefinitions.find(r => r.id === member.role) || roleDefinitions[1];
                       const Icon = roleDef.icon;
@@ -364,7 +371,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                           </td>
                         </tr>
                       );
-                    })}
+                    }))}
                   </tbody>
                 </table>
               </div>

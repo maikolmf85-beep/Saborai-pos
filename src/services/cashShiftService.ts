@@ -18,45 +18,11 @@ const STORAGE_KEY_CASH_REGISTERS = 'saborai_cash_registers';
 const STORAGE_KEY_SHIFTS_HISTORY = 'saborai_shifts_history';
 const STORAGE_KEY_ACTIVE_SHIFT_LEGACY = 'saborai_active_shift';
 
-const DEFAULT_REGISTERS: CashRegister[] = [
-  {
-    id: 'caja-01',
-    name: 'Caja 1 - Barra Principal',
-    terminalCode: '00001',
-    branchCode: '001',
-    isDefault: true,
-    allowsBilling: true,
-    allowsOrdering: true,
-    isActive: true,
-    notes: 'Terminal de cobro principal en barra'
-  },
-  {
-    id: 'caja-02',
-    name: 'Caja 2 - Salón Principal',
-    terminalCode: '00002',
-    branchCode: '001',
-    isDefault: false,
-    allowsBilling: true,
-    allowsOrdering: true,
-    isActive: true,
-    notes: 'Terminal secundaria de cobro y comandas en salón'
-  },
-  {
-    id: 'caja-03',
-    name: 'Caja 3 - Terraza / Delivery',
-    terminalCode: '00003',
-    branchCode: '001',
-    isDefault: false,
-    allowsBilling: true,
-    allowsOrdering: true,
-    isActive: true,
-    notes: 'Punto de cobro para pedidos de terraza y despacho'
-  }
-];
+const DEFAULT_REGISTERS: CashRegister[] = [];
 
 class CashShiftService {
   private registers: CashRegister[] = [];
-  private currentTerminalId: string = 'caja-01';
+  private currentTerminalId: string = '';
   private activeShiftsMap: Record<string, CashShift> = {}; // key: registerId (e.g. 'caja-01')
   private shiftsHistory: CashShift[] = [];
 
@@ -71,7 +37,7 @@ class CashShiftService {
       if (savedRegisters) {
         this.registers = JSON.parse(savedRegisters);
       } else {
-        this.registers = [...DEFAULT_REGISTERS];
+        this.registers = [];
         localStorage.setItem(STORAGE_KEY_CASH_REGISTERS, JSON.stringify(this.registers));
       }
 
@@ -81,8 +47,10 @@ class CashShiftService {
         this.currentTerminalId = savedTerminalId;
       } else {
         const defaultReg = this.registers.find(r => r.isDefault) || this.registers[0];
-        this.currentTerminalId = defaultReg ? defaultReg.id : 'caja-01';
-        localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
+        this.currentTerminalId = defaultReg ? defaultReg.id : '';
+        if (this.currentTerminalId) {
+          localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
+        }
       }
 
       // 3. Load active shifts map
@@ -90,15 +58,7 @@ class CashShiftService {
       if (savedShiftsMap) {
         this.activeShiftsMap = JSON.parse(savedShiftsMap);
       } else {
-        // Check legacy single active shift for migration
-        const legacyActive = localStorage.getItem(STORAGE_KEY_ACTIVE_SHIFT_LEGACY);
-        if (legacyActive) {
-          const parsedLegacy: CashShift = JSON.parse(legacyActive);
-          parsedLegacy.cashRegisterId = parsedLegacy.cashRegisterId || 'caja-01';
-          parsedLegacy.cashRegisterName = parsedLegacy.cashRegisterName || 'Caja 1 - Barra Principal';
-          parsedLegacy.terminalCode = parsedLegacy.terminalCode || '00001';
-          this.activeShiftsMap['caja-01'] = parsedLegacy;
-        }
+        this.activeShiftsMap = {};
       }
 
       // 4. Load shifts history
@@ -106,9 +66,7 @@ class CashShiftService {
       if (savedHistory) {
         this.shiftsHistory = JSON.parse(savedHistory);
       } else {
-        this.shiftsHistory = [
-          this.createMockHistoricalShift()
-        ];
+        this.shiftsHistory = [];
       }
     } catch (e) {
       console.warn('Error loading shifts from storage:', e);
@@ -157,7 +115,18 @@ class CashShiftService {
   getCurrentRegister(): CashRegister {
     const reg = this.registers.find(r => r.id === this.currentTerminalId);
     if (reg) return reg;
-    return this.registers[0] || DEFAULT_REGISTERS[0];
+    if (this.registers.length > 0) return this.registers[0];
+    return {
+      id: 'caja-sin-asignar',
+      name: 'Sin Caja Asignada',
+      terminalCode: '00001',
+      branchCode: '001',
+      isDefault: true,
+      allowsBilling: true,
+      allowsOrdering: true,
+      isActive: true,
+      notes: 'No hay cajas configuradas aún'
+    };
   }
 
   createCashRegister(data: {
@@ -230,16 +199,13 @@ class CashShiftService {
   }
 
   deleteCashRegister(id: string): boolean {
-    if (this.registers.length <= 1) {
-      throw new Error('El restaurante debe contar con al menos una caja activa.');
-    }
     if (this.activeShiftsMap[id]) {
       throw new Error('No se puede eliminar una caja con un turno abierto. Primero debe cerrarse el turno.');
     }
 
     this.registers = this.registers.filter(r => r.id !== id);
     if (this.currentTerminalId === id) {
-      this.currentTerminalId = this.registers[0].id;
+      this.currentTerminalId = this.registers[0]?.id || '';
     }
     this.saveToStorage();
     return true;
@@ -501,9 +467,9 @@ class CashShiftService {
 
     return {
       shiftNumber: shift.shiftNumber || 1,
-      tenantName: tenant?.name || 'Restaurante Fuego & Palmera S.A.',
-      cedulaJuridica: tenant?.cedulaJuridica || '3-101-884920',
-      location: tenant?.location || 'San José, Escazú',
+      tenantName: tenant?.name || 'Mi Restaurante',
+      cedulaJuridica: tenant?.cedulaJuridica || '',
+      location: tenant?.location || '',
       terminalId: shift.terminalCode || register?.terminalCode || '00001',
       cashRegisterName: shift.cashRegisterName || register?.name || 'Caja Principal',
       openedAt: shift.openedAt || new Date().toISOString(),
@@ -644,70 +610,14 @@ class CashShiftService {
 
     return {
       reportDate: todayStr,
-      tenantName: tenant?.name || 'Restaurante Fuego & Palmera S.A.',
-      cedulaJuridica: tenant?.cedulaJuridica || '3-101-884920',
-      location: tenant?.location || 'San José, Escazú',
+      tenantName: tenant?.name || 'Mi Restaurante',
+      cedulaJuridica: tenant?.cedulaJuridica || '',
+      location: tenant?.location || '',
       branchCode: '001',
       generatedAt: new Date().toISOString(),
       generatedBy: 'Administración SaborAI',
       registersSummary,
       totals
-    };
-  }
-
-  private createMockHistoricalShift(): CashShift {
-    const yesterday = new Date(Date.now() - 86400000);
-    return {
-      id: 'shift_mock_yesterday',
-      shiftNumber: 1,
-      tenantId: 'tenant_mock_01',
-      terminalId: '00001',
-      cashRegisterId: 'caja-01',
-      cashRegisterName: 'Caja 1 - Barra Principal',
-      terminalCode: '00001',
-      openedBy: {
-        userId: 'usr_cajero_01',
-        userName: 'Laura Mora (Cajera)',
-        userRole: 'CAJERO'
-      },
-      openedAt: new Date(yesterday.setHours(11, 0, 0)).toISOString(),
-      closedBy: {
-        userId: 'usr_admin_01',
-        userName: 'Carlos Administrador'
-      },
-      closedAt: new Date(yesterday.setHours(23, 15, 0)).toISOString(),
-      initialCashFloat: 50000,
-      status: 'CLOSED',
-      movements: [
-        {
-          id: 'mov_mock_1',
-          shiftId: 'shift_mock_yesterday',
-          timestamp: new Date(yesterday.setHours(16, 30, 0)).toISOString(),
-          type: 'OUTFLOW',
-          amount: 15000,
-          reason: 'Pago de emergencia de cilindro de gas cocina',
-          authorizedBy: 'Carlos Administrador',
-          performedBy: 'Laura Mora (Cajera)'
-        }
-      ],
-      systemSummary: {
-        cashSales: 185000,
-        cardSales: 340000,
-        sinpeSales: 89000,
-        totalSales: 614000,
-        subtotal: 499187,
-        totalTax: 64894,
-        serviceTax10: 49919,
-        totalInflows: 0,
-        totalOutflows: 15000,
-        expectedCashInDrawer: 220000,
-        invoicesCount: 28
-      },
-      countedCash: 220000,
-      countedCards: 340000,
-      countedSinpe: 89000,
-      cashDifference: 0,
-      zReportGenerated: true
     };
   }
 }

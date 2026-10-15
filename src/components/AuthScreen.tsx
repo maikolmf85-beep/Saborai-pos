@@ -70,14 +70,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
       const newTenant: TenantInfo = {
         id: `tenant_${Date.now()}`,
         name: restaurantName.trim(),
-        cedulaJuridica: '3-101-998877',
+        cedulaJuridica: '',
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
-        location: 'San José, Costa Rica',
+        location: '',
         plan: 'pro',
         status: 'ACTIVE',
         currency: 'CRC',
-        monthlyFee: 45000
+        monthlyFee: 45000,
+        zones: [],
+        menuCategories: []
       };
 
       // Save credentials in local storage
@@ -110,25 +112,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
     setTimeout(() => {
       // Check if user exists in local storage
       let user: UserProfile = {
-        id: 'usr_demo_01',
-        name: 'Administrador General',
+        id: 'usr_owner',
+        name: email.split('@')[0] || 'Administrador',
         email: email.trim().toLowerCase(),
-        phone: '+506 8888-4500',
-        restaurantName: 'Restaurante Fuego & Palmera',
+        phone: '',
+        restaurantName: 'Mi Restaurante',
         role: 'ADMIN'
       };
 
       let tenant: TenantInfo = {
-        id: 'tenant_saborai_cr_001',
-        name: 'Restaurante Fuego & Palmera S.A.',
-        cedulaJuridica: '3-101-789456',
+        id: `tenant_${Date.now()}`,
+        name: 'Mi Restaurante',
+        cedulaJuridica: '',
         email: email.trim().toLowerCase(),
-        phone: '+506 2289-4500',
-        location: 'Escazú Village, San José, Costa Rica',
+        phone: '',
+        location: '',
         plan: 'pro',
         status: 'ACTIVE',
         currency: 'CRC',
-        monthlyFee: 45000
+        monthlyFee: 45000,
+        zones: [],
+        menuCategories: []
       };
 
       try {
@@ -147,25 +151,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
 
   const handleQuickDemoAccess = () => {
     const demoUser: UserProfile = {
-      id: 'usr_demo_fuego',
-      name: 'Kevin Murillo',
-      email: 'administracion@fuegopalmera.cr',
-      phone: '+506 2289-4500',
-      restaurantName: 'Restaurante Fuego & Palmera S.A.',
+      id: 'usr_demo_admin',
+      name: 'Administrador Demo',
+      email: 'admin@saborai.site',
+      phone: '',
+      restaurantName: 'Mi Restaurante',
       role: 'ADMIN'
     };
 
     const demoTenant: TenantInfo = {
-      id: 'tenant_saborai_cr_001',
-      name: 'Restaurante Fuego & Palmera S.A.',
-      cedulaJuridica: '3-101-789456',
-      email: 'administracion@fuegopalmera.cr',
-      phone: '+506 2289-4500',
-      location: 'Escazú Village, San José, Costa Rica',
+      id: 'tenant_demo',
+      name: 'Mi Restaurante',
+      cedulaJuridica: '',
+      email: 'admin@saborai.site',
+      phone: '',
+      location: '',
       plan: 'pro',
       status: 'ACTIVE',
       currency: 'CRC',
-      monthlyFee: 45000
+      monthlyFee: 45000,
+      zones: [],
+      menuCategories: []
     };
 
     try {
@@ -254,7 +260,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
                 <User className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
                 <input
                   type="text"
-                  placeholder="Ej. Kevin Murillo"
+                  placeholder="Ej. Juan Pérez"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full pl-10 pr-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-stone-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
@@ -455,10 +461,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
             {[
-              { id: 'ADMIN' as UserRole, label: 'Admin', name: 'Carlos Admin', icon: ShieldCheck, bg: 'hover:bg-blue-50 hover:text-blue-900' },
-              { id: 'SALONERO' as UserRole, label: 'Salonero', name: 'Kevin Murillo', icon: ChefHat, bg: 'hover:bg-emerald-50 hover:text-emerald-900' },
-              { id: 'CAJERO' as UserRole, label: 'Cajero', name: 'Laura Caja', icon: Receipt, bg: 'hover:bg-amber-50 hover:text-amber-900' },
-              { id: 'SALONERO_CAJA' as UserRole, label: 'Salonero c/ Caja', name: 'Esteban Dual', icon: Zap, bg: 'hover:bg-purple-50 hover:text-purple-900' },
+              { id: 'ADMIN' as UserRole, label: 'Admin', name: 'Administrador', icon: ShieldCheck, bg: 'hover:bg-blue-50 hover:text-blue-900' },
+              { id: 'SALONERO' as UserRole, label: 'Salonero', name: 'Salonero', icon: ChefHat, bg: 'hover:bg-emerald-50 hover:text-emerald-900' },
+              { id: 'CAJERO' as UserRole, label: 'Cajero', name: 'Cajero', icon: Receipt, bg: 'hover:bg-amber-50 hover:text-amber-900' },
+              { id: 'SALONERO_CAJA' as UserRole, label: 'Salonero c/ Caja', name: 'Salonero Caja', icon: Zap, bg: 'hover:bg-purple-50 hover:text-purple-900' },
             ].map((d) => {
               const Icon = d.icon;
               return (
@@ -469,23 +475,25 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
                     const demoUser: UserProfile = {
                       id: `usr_demo_${d.id.toLowerCase()}`,
                       name: d.name,
-                      email: `${d.id.toLowerCase()}@fuegopalmera.cr`,
-                      phone: '+506 2289-4500',
-                      restaurantName: 'Restaurante Fuego & Palmera S.A.',
+                      email: `${d.id.toLowerCase()}@saborai.site`,
+                      phone: '',
+                      restaurantName: 'Mi Restaurante',
                       role: d.id,
                       active: true
                     };
                     const demoTenant: TenantInfo = {
-                      id: 'tenant_saborai_cr_001',
-                      name: 'Restaurante Fuego & Palmera S.A.',
-                      cedulaJuridica: '3-101-789456',
-                      email: 'administracion@fuegopalmera.cr',
-                      phone: '+506 2289-4500',
-                      location: 'Escazú Village, San José, Costa Rica',
+                      id: 'tenant_demo',
+                      name: 'Mi Restaurante',
+                      cedulaJuridica: '',
+                      email: 'demo@saborai.site',
+                      phone: '',
+                      location: '',
                       plan: 'pro',
                       status: 'ACTIVE',
                       currency: 'CRC',
-                      monthlyFee: 45000
+                      monthlyFee: 45000,
+                      zones: [],
+                      menuCategories: []
                     };
                     try {
                       localStorage.setItem('saborai_user', JSON.stringify(demoUser));

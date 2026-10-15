@@ -34,6 +34,44 @@ import { NotificationToastContainer, PosNotification } from './components/Notifi
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit } from 'lucide-react';
 
+// Limpieza automática preventiva de datos de ejemplo previos en el navegador
+try {
+  const CLEAN_KEY = 'saborai_clean_slate_fresh_v1';
+  if (typeof window !== 'undefined' && !localStorage.getItem(CLEAN_KEY)) {
+    const tenantRaw = localStorage.getItem('saborai_tenant') || '';
+    const registersRaw = localStorage.getItem('saborai_cash_registers') || '';
+    const staffRaw = localStorage.getItem('saborai_staff') || '';
+    const tablesRaw = localStorage.getItem('saborai_tables') || '';
+    const shiftsRaw = localStorage.getItem('saborai_shifts_history') || '';
+    const printersRaw = localStorage.getItem('saborai_printers_config_v2') || '';
+
+    const isLegacyDemo =
+      tenantRaw.includes('Fuego & Palmera') ||
+      tenantRaw.includes('tenant_saborai_cr_001') ||
+      tenantRaw.includes('Escazú') ||
+      registersRaw.includes('caja-01') ||
+      staffRaw.includes('Carlos Admin') ||
+      staffRaw.includes('Kevin Murillo') ||
+      shiftsRaw.includes('Fuego & Palmera') ||
+      printersRaw.includes('prn_caja_default') ||
+      tablesRaw.includes('Terraza VIP');
+
+    if (isLegacyDemo) {
+      localStorage.removeItem('saborai_tables');
+      localStorage.removeItem('saborai_cash_registers');
+      localStorage.removeItem('saborai_staff');
+      localStorage.removeItem('saborai_shifts_history');
+      localStorage.removeItem('saborai_shifts_map');
+      localStorage.removeItem('saborai_printers_config_v2');
+      localStorage.removeItem('saborai_notion_records');
+      if (tenantRaw.includes('Fuego & Palmera') || tenantRaw.includes('tenant_saborai_cr_001')) {
+        localStorage.removeItem('saborai_tenant');
+      }
+    }
+    localStorage.setItem(CLEAN_KEY, 'true');
+  }
+} catch {}
+
 export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => 
     new URLSearchParams(window.location.search).get('resetToken')
@@ -205,8 +243,8 @@ export function App() {
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
             haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
-            zones: savedTenant?.zones || ['Terraza', 'Principal'],
-            menuCategories: savedTenant?.menuCategories || ['Entradas', 'Platos Fuertes', 'Bebidas', 'Cafetería', 'Postres']
+            zones: savedTenant?.zones || [],
+            menuCategories: savedTenant?.menuCategories || []
           };
           const sub: SaboraiSubscription = { 
             mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
