@@ -12,7 +12,7 @@ import {
 
 export interface PosNotification {
   id: string;
-  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'HACIENDA_UPDATE';
+  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'HACIENDA_UPDATE' | 'INVENTORY_LOW';
   title: string;
   message: string;
   station?: 'Cocina' | 'Bar' | 'General';

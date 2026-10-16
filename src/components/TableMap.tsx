@@ -328,9 +328,10 @@ export const TableMap: React.FC<TableMapProps> = ({
 
     const takeawayTable: Table = {
       id: `takeaway_${Date.now()}`,
-      number: `LLEVAR-${Math.floor(100 + Math.random() * 900)}`,
+      number: Math.floor(900 + Math.random() * 99),
       name: '🛍️ Para Llevar / Mostrador',
       seats: 1,
+      shape: 'square',
       status: 'OCCUPIED',
       zone: 'Para Llevar',
       x: 0,

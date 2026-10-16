@@ -316,7 +316,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       printerService.printKitchenBarOrder({
         tableName: table.name,
         orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
-        server: updatedTable.activeOrder?.server,
+        server: updatedTable.activeOrder?.server || 'Mesero General',
         items: currentOrderItems.map(i => ({
           name: i.name,
           quantity: i.quantity,

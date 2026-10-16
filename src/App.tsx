@@ -411,6 +411,7 @@ export function App() {
       id: 'usr_matamoros_admin',
       name: 'Maikol Matamoros',
       email: 'matamoros.maikol85@gmail.com',
+      phone: '8888-8888',
       role: 'ADMIN',
       restaurantName: 'SaborAI POS',
       active: true,
@@ -612,20 +613,24 @@ export function App() {
 
   const handleQuickTakeaway = () => {
     if (!cashShiftService.getActiveShift()) {
-      setCashShiftInitialTab('open');
+      setCashShiftInitialTab('status');
       setIsCashShiftModalOpen(true);
       addNotification({
-        type: 'warning',
-        message: 'Debes abrir un turno de caja para emitir ventas rápidas o pedidos para llevar'
+        id: `takeaway_shift_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Turno de Caja Requerido',
+        message: 'Debes abrir un turno de caja para emitir ventas rápidas o pedidos para llevar',
+        timestamp: new Date()
       });
       return;
     }
 
     const takeawayTable: Table = {
       id: `takeaway_${Date.now()}`,
-      number: `LLEVAR-${Math.floor(100 + Math.random() * 900)}`,
+      number: Math.floor(900 + Math.random() * 99),
       name: '🛍️ Para Llevar / Mostrador',
       seats: 1,
+      shape: 'square',
       status: 'OCCUPIED',
       zone: 'Para Llevar',
       x: 0,

@@ -36,7 +36,8 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   onQuickAction,
   currentUser,
   menuItems = [],
-  selectedTable = null
+  selectedTable = null,
+  onOpenLearningHub
 }) => {
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -188,7 +189,8 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
             menuItems,
             selectedTable,
             currentUser,
-            knowledgeContext: nyzaLearningService.getSystemPromptKnowledgeContext()
+            knowledgeContext: nyzaLearningService.getSystemPromptKnowledgeContext(),
+            systemInstruction
           }
         })
       });

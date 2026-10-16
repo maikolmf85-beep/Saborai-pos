@@ -1,5 +1,5 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig, Plugin } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 
 function apiDevPlugin(): Plugin {
   return {
@@ -7,11 +7,24 @@ function apiDevPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = req.url || '';
+        const cleanPath = url.split('?')[0];
         let targetModule = '';
-        if (url === '/api/hacienda' || url.startsWith('/api/hacienda?')) {
+        if (cleanPath === '/api/hacienda') {
           targetModule = '/api/hacienda.ts';
-        } else if (url === '/api/parse-menu' || url.startsWith('/api/parse-menu?')) {
+        } else if (cleanPath === '/api/parse-menu') {
           targetModule = '/api/parse-menu.ts';
+        } else if (cleanPath === '/api/ai/chat') {
+          targetModule = '/api/ai/chat.ts';
+        } else if (cleanPath === '/api/email/send-invoice') {
+          targetModule = '/api/email/send-invoice.ts';
+        } else if (cleanPath === '/api/auth' || cleanPath.startsWith('/api/auth/') || cleanPath === '/api/demo/register') {
+          targetModule = '/api/auth.ts';
+        } else if (cleanPath === '/api/tilopay' || cleanPath.includes('/webhooks/tilopay')) {
+          targetModule = '/api/tilopay.ts';
+        } else if (cleanPath === '/api/tenant/onboarding') {
+          targetModule = '/api/tenant/onboarding.ts';
+        } else if (cleanPath === '/api/admin/metrics') {
+          targetModule = '/api/admin/metrics.ts';
         }
 
         if (targetModule) {

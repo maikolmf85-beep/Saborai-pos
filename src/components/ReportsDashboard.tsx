@@ -138,14 +138,14 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) =>
     // From Shift Movements if invoices are empty
     if (list.length === 0) {
       allShifts.forEach(s => {
-        (s.transactions || []).forEach(t => {
-          if (t.type === 'SALE' || t.amount > 0) {
+        (s.movements || []).forEach(t => {
+          if (t.type === 'INFLOW' || t.amount > 0) {
             list.push({
               id: `#${t.id.slice(-6)}`,
               time: new Date(t.timestamp).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
               amount: t.amount,
-              method: t.paymentMethod || 'Efectivo',
-              server: t.user || 'Cajero',
+              method: t.reason || 'Efectivo',
+              server: t.performedBy || 'Cajero',
               rawDate: new Date(t.timestamp)
             });
           }

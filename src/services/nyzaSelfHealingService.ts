@@ -177,7 +177,7 @@ export class NyzaSelfHealingService {
     const timestamp = new Date().toISOString();
     try {
       await localDB.init();
-      const queue = await localDB.getPendingSyncQueue();
+      const queue = await localDB.getPendingItems();
       const ok = indexedDB !== undefined;
 
       return {
@@ -324,12 +324,12 @@ export class NyzaSelfHealingService {
     const timestamp = new Date().toISOString();
     try {
       const config = haciendaService.getConfig() || {
-        ambiente: 'staging',
-        usuarioAtv: '',
-        passwordAtv: '',
+        environment: 'sandbox' as const,
+        atvUsername: '',
+        atvPassword: '',
         pinP12: '',
-        llaveP12Base64: '',
-        actividadEconomica: '561001',
+        p12Base64: '',
+        codigoActividad: '561001',
         sucursal: '001',
         terminal: '00001'
       };
@@ -363,7 +363,9 @@ export class NyzaSelfHealingService {
     const timestamp = new Date().toISOString();
     try {
       const invoices = haciendaService.getInvoices();
-      const pendingContingency = invoices.filter(inv => inv.estado === 'PENDIENTE_ENVIO' || (inv as any).situacion === '02');
+      const pendingContingency = invoices.filter(
+        inv => (inv.estadoHacienda as string) === 'PENDIENTE_ENVIO' || inv.estadoHacienda === 'PROCESANDO' || (inv as any).situacion === '02'
+      );
 
       for (const inv of pendingContingency) {
         haciendaService.emitInvoice(inv);

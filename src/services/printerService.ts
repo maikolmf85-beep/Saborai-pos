@@ -120,6 +120,55 @@ export class EscPosBuilder {
   }
 }
 
+interface USBEndpoint {
+  direction: 'in' | 'out';
+  endpointNumber: number;
+}
+
+interface USBDevice {
+  vendorId: number;
+  productId: number;
+  productName?: string;
+  manufacturerName?: string;
+  opened: boolean;
+  configuration: {
+    interfaces: Array<{
+      alternate?: {
+        endpoints: USBEndpoint[];
+      };
+    }>;
+  } | null;
+  open(): Promise<void>;
+  selectConfiguration(configurationValue: number): Promise<void>;
+  claimInterface(interfaceNumber: number): Promise<void>;
+  transferOut(endpointNumber: number, data: BufferSource): Promise<unknown>;
+}
+
+interface BluetoothRemoteGATTCharacteristic {
+  properties: {
+    write?: boolean;
+    writeWithoutResponse?: boolean;
+  };
+  writeValueWithoutResponse(value: BufferSource): Promise<void>;
+  writeValue(value: BufferSource): Promise<void>;
+}
+
+interface BluetoothDevice {
+  id?: string;
+  name?: string;
+  gatt?: {
+    connected: boolean;
+    connect(): Promise<{
+      getPrimaryServices(): Promise<Array<{
+        getCharacteristics(): Promise<BluetoothRemoteGATTCharacteristic[]>;
+      }>>;
+    }>;
+    getPrimaryServices(): Promise<Array<{
+      getCharacteristics(): Promise<BluetoothRemoteGATTCharacteristic[]>;
+    }>>;
+  };
+}
+
 export class PrinterService {
   private printers: PrinterConfig[] = [];
   // Conexiones activas WebUSB
@@ -721,7 +770,7 @@ export class PrinterService {
    * Pulso de apertura de cajón de dinero (Cash Drawer Kick - ESC p 0 25 250)
    */
   public async openCashDrawer(): Promise<PrintResult> {
-    const cashPrinters = this.getPrintersByRole('cashier');
+    const cashPrinters = this.getPrintersByRole('caja');
     const targetPrinters = cashPrinters.length > 0 ? cashPrinters : this.printers.filter(p => p.enabled);
 
     if (targetPrinters.length === 0) {
@@ -761,14 +810,14 @@ export class PrinterService {
     tableName: string;
     server: string;
     date?: string;
-    items: Array<{ name: string; quantity: number; notes?: string; modifiers?: string[]; station?: string }>;
+    items: Array<{ name: string; quantity: number; notes?: string; modifiers?: string[]; station?: string; category?: string }>;
   }): Promise<void> {
-    const kitchenItems = order.items.filter(i => i.station === 'Cocina' || !i.station);
-    const barItems = order.items.filter(i => i.station === 'Bar');
+    const kitchenItems = order.items.filter(i => i.station === 'Cocina' || i.category === 'Cocina' || (!i.station && i.category !== 'Bar'));
+    const barItems = order.items.filter(i => i.station === 'Bar' || i.category === 'Bar');
     const nowTime = order.date || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     if (kitchenItems.length > 0) {
-      await this.printToRole('kitchen', {
+      await this.printToRole('cocina', {
         title: '*** COMANDA COCINA ***',
         orderNumber: order.orderNumber,
         tableName: order.tableName,

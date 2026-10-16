@@ -41,6 +41,7 @@ interface BillingHaciendaProps {
 export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   tenant,
   selectedTable,
+  onEmitInvoice,
   onSaveTable,
   onOpenCashShift,
   onOpenHaciendaHistory,
@@ -465,6 +466,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       name: 'Venta Directa / Caja',
       zone: 'Caja',
       seats: 1,
+      shape: 'square',
       status: 'AVAILABLE',
       x: 0,
       y: 0

@@ -48,12 +48,17 @@ export class InventoryService {
    */
   public deductItemsStock(
     items: Array<{ name: string; quantity: number }>,
-    movementType: 'SALE_DEDUCTION' | 'DISPATCH_DEDUCTION' = 'SALE_DEDUCTION'
+    movementType: InventoryMovement['type'] | string = 'SALE_DEDUCTION'
   ): { updatedMenu: MenuItem[]; depletedItems: string[] } {
     const menu = this.getMenu();
     if (menu.length === 0 || items.length === 0) {
       return { updatedMenu: menu, depletedItems: [] };
     }
+
+    const normalizedType: InventoryMovement['type'] =
+      movementType === 'DISPATCH_DEDUCTION' || movementType === 'WASTE' || movementType === 'RESTOCK'
+        ? movementType
+        : 'SALE_DEDUCTION';
 
     const depletedItems: string[] = [];
     const movements: InventoryMovement[] = [];
@@ -89,7 +94,7 @@ export class InventoryService {
         movements.push({
           id: `mov_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           timestamp: now,
-          type: movementType,
+          type: normalizedType,
           productName: prod.name,
           quantity: matchQty,
           details: `Descuento de ${totalDeduction} ${ing.unit} de "${ing.name}" (Stock restante: ${newStock})`

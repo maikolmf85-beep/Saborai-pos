@@ -18,6 +18,7 @@ interface ChatRequestBody {
     currentUser?: { name?: string; role?: string };
     restaurantName?: string;
     knowledgeContext?: string;
+    systemInstruction?: string;
   };
 }
 
@@ -66,7 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ? `Mesa actual: ${context.selectedTable.name || 'Sin nombre'} (${context.selectedTable.status || 'AVAILABLE'})`
     : 'Sin mesa seleccionada.';
 
-  const systemInstruction = `Eres Saborai Copilot (desarrollado con Nyza AI), un asistente inteligente de punto de venta (POS) gastronómico para restaurantes de Costa Rica.
+  const systemInstruction = context.systemInstruction || `Eres Saborai Copilot (desarrollado con Nyza AI), un asistente inteligente de punto de venta (POS) gastronómico para restaurantes de Costa Rica.
 Tu misión es asistir ágilmente al personal (saloneros, cajeros, administradores y cocineros) en la toma de pedidos, cuadres de caja, sugerencias de maridaje, dudas de facturación electrónica Hacienda v4.4, escandallos y atajos operativos.
 
 Reglas de respuesta:
