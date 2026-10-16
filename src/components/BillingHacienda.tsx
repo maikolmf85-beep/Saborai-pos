@@ -17,7 +17,8 @@ import {
   LockKeyhole,
   Search,
   Save,
-  ChevronLeft
+  ChevronLeft,
+  Banknote
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
@@ -25,6 +26,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
+import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
 
 interface BillingHaciendaProps {
@@ -92,6 +94,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerActivityCode, setCustomerActivityCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil'>('02-Tarjeta');
+  const [cashReceived, setCashReceived] = useState<string>('');
   const [isSearchingHacienda, setIsSearchingHacienda] = useState(false);
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
 
@@ -401,6 +404,9 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     if (paymentMethod === '01-Efectivo') {
       printerService.openCashDrawer().catch(() => {});
     }
+
+    // Feedback auditivo de cobro completado
+    soundService.playSuccessChime();
 
     // Reservar consecutivo real y construir el comprobante definitivo
     const emissionDate = new Date();
@@ -804,7 +810,13 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                 <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Medio de Pago</label>
                 <select
                   value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil')}
+                  onChange={(e) => {
+                    const method = e.target.value as '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+                    setPaymentMethod(method);
+                    if (method === '01-Efectivo' && !cashReceived) {
+                      setCashReceived(total.toString());
+                    }
+                  }}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                 >
                   <option value="02-Tarjeta">02 - Tarjeta Débito/Crédito</option>
@@ -828,6 +840,78 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                 </label>
               </div>
             </div>
+
+            {/* Calculadora de Efectivo y Vuelto Rápido (Costa Rica CRC) */}
+            {paymentMethod === '01-Efectivo' && (
+              <div className="p-4 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <Banknote className="w-4 h-4 text-[#588157]" />
+                    <span>Calculadora de Cambio / Vuelto</span>
+                  </span>
+                  <span className="text-[11px] font-bold text-emerald-800">
+                    Total a Cobrar: <strong>₡{total.toLocaleString()}</strong>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                  <div>
+                    <label className="block text-[10px] font-bold text-emerald-900 uppercase mb-1">
+                      Monto Recibido del Cliente (₡)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={100}
+                      value={cashReceived}
+                      onChange={(e) => setCashReceived(e.target.value)}
+                      placeholder={`Ej. ${total}`}
+                      className="w-full px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-stone-900 font-black text-sm focus:outline-none focus:ring-2 focus:ring-[#588157]"
+                    />
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white border border-emerald-200 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase text-stone-400">
+                      {Number(cashReceived || 0) >= total ? 'Vuelto / Cambio a Devolver' : 'Monto Faltante'}
+                    </span>
+                    <span className={`text-base font-black ${
+                      Number(cashReceived || 0) >= total ? 'text-emerald-700' : 'text-amber-600'
+                    }`}>
+                      {Number(cashReceived || 0) >= total 
+                        ? `₡${Math.max(0, Number(cashReceived || 0) - total).toLocaleString()}` 
+                        : `- ₡${(total - Number(cashReceived || 0)).toLocaleString()}`
+                      }
+                    </span>
+                  </div>
+                </div>
+
+                {/* Billetes rápidos de Costa Rica */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-emerald-900 uppercase mr-1">Billetes:</span>
+                  <button
+                    type="button"
+                    onClick={() => setCashReceived(total.toString())}
+                    className="px-2.5 py-1 bg-white hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[11px] font-bold text-stone-800 transition-colors shadow-2xs"
+                  >
+                    Exacto
+                  </button>
+                  {[2000, 5000, 10000, 20000, 50000].map((bill) => (
+                    <button
+                      key={bill}
+                      type="button"
+                      onClick={() => setCashReceived(bill.toString())}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors shadow-2xs ${
+                        Number(cashReceived) === bill
+                          ? 'bg-[#588157] text-white border-[#588157]'
+                          : 'bg-white hover:bg-emerald-100 border-emerald-200 text-stone-800'
+                      }`}
+                    >
+                      ₡{bill.toLocaleString()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Datos del Receptor (Revelación Progresiva: solo cuando se solicita Factura Electrónica o en Régimen Simplificado opcional) */}
             {(isFacturaElectronica || isSimplified) ? (

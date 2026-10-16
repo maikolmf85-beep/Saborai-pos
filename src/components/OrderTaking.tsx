@@ -295,6 +295,17 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       setCurrentOrderItems([...updated, splitItem]);
     }
 
+    soundService.playSuccessChime();
+    if (onNotify) {
+      onNotify({
+        id: `move_${Date.now()}`,
+        type: 'ORDER_READY',
+        title: 'Ítem Trasladado',
+        message: `Se movió ${transferQty}x "${transferringItem.name}" a ${targetDiner.name}.`,
+        timestamp: new Date()
+      });
+    }
+
     setTransferringItem(null);
   };
 
@@ -1021,6 +1032,38 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
             <h3 className="text-sm font-bold text-stone-900">Mover ítem a otra cuenta</h3>
             <p className="text-xs text-stone-500">{transferringItem.name}</p>
 
+            {transferringItem.quantity > 1 && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Cantidad a trasladar (de {transferringItem.quantity})
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferQty(Math.max(1, transferQty - 1))}
+                    className="w-8 h-8 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer"
+                  >
+                    -
+                  </button>
+                  <span className="w-8 text-center text-sm font-black text-stone-900">{transferQty}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTransferQty(Math.min(transferringItem.quantity, transferQty + 1))}
+                    className="w-8 h-8 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold flex items-center justify-center cursor-pointer"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferQty(transferringItem.quantity)}
+                    className="ml-auto text-[11px] font-bold text-[#588157] hover:underline"
+                  >
+                    Todos ({transferringItem.quantity})
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">Cuenta destino</label>
               <select
@@ -1029,7 +1072,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none"
               >
                 {subAccounts.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
+                  <option key={s.id} value={s.id} disabled={s.id === transferringItem.subAccountId}>
+                    {s.name} {s.id === transferringItem.subAccountId ? '(Cuenta actual)' : ''}
+                  </option>
                 ))}
               </select>
             </div>
