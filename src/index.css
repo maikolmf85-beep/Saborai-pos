@@ -4,7 +4,9 @@
 
 @layer base {
   body {
-    @apply bg-main text-primary font-sans;
+    @apply bg-main text-primary font-sans antialiased selection:bg-[#a9b994]/30 selection:text-stone-900;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+    font-variant-numeric: tabular-nums;
   }
 
   button {

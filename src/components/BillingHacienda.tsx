@@ -769,12 +769,12 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
           </div>
 
-          {/* ================= SECTION 2: DATOS DEL RECEPTOR / CLIENTE ================= */}
+          {/* ================= SECTION 2: PAGO Y DATOS DEL RECEPTOR / CLIENTE ================= */}
           <div className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
               <h3 className="font-bold text-sm text-stone-900 flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[#588157]" />
-                <span>Datos del Receptor / Cliente</span>
+                <span>Medio de Pago y Datos del Cliente</span>
               </h3>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-700">
@@ -791,153 +791,178 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                       className="rounded border-stone-300 text-[#588157] focus:ring-[#588157]"
                     />
                     <span className="text-xs font-bold text-stone-800">
-                      Solicitar Factura Electrónica
+                      Solicitar Factura Electrónica (FE)
                     </span>
                   </label>
                 )}
               </div>
             </div>
 
-            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-semibold text-stone-700 transition-opacity ${!isFacturaElectronica && !isSimplified ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-              
-              <div className="sm:col-span-2 md:col-span-1">
-                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cédula / Identificación</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={customerCedula}
-                    onChange={(e) => setCustomerCedula(e.target.value)}
-                    placeholder="Ej. 101230456"
-                    className="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
-                  />
-                  <button
-                    onClick={handleSearchHacienda}
-                    disabled={isSearchingHacienda || !customerCedula}
-                    className="px-4 py-2.5 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                    title="Buscar en Padrón de Hacienda"
-                  >
-                    {isSearchingHacienda ? <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="sm:col-span-2 md:col-span-1">
-                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Nombre o Razón Social</label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Extraído de Hacienda"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
-                />
-              </div>
-
+            {/* Medio de Pago y Propina de Ley (Siempre habilitados para Tiquete o Factura) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-semibold text-stone-700">
               <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Correo Electrónico (XML & PDF)</label>
-                <input
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder="factura@cliente.cr"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cod. Actividad Económica</label>
-                <input
-                  type="text"
-                  value={customerActivityCode}
-                  onChange={(e) => setCustomerActivityCode(e.target.value)}
-                  placeholder="Ej. 722003"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
                 <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Medio de Pago</label>
                 <select
                   value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as any)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none"
+                  onChange={(e) => setPaymentMethod(e.target.value as '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil')}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                 >
                   <option value="02-Tarjeta">02 - Tarjeta Débito/Crédito</option>
                   <option value="01-Efectivo">01 - Efectivo</option>
                   <option value="03-SINPE_Movil">03 - SINPE Móvil Bancario</option>
                 </select>
               </div>
+
+              <div className="flex items-end pb-1">
+                <label htmlFor="serv10" className="flex items-center gap-2.5 px-3.5 py-2.5 w-full rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100/70 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    id="serv10"
+                    checked={includeService10}
+                    onChange={(e) => setIncludeService10(e.target.checked)}
+                    className="rounded border-stone-300 text-[#588157] focus:ring-[#588157]"
+                  />
+                  <span className="text-xs font-bold text-stone-800">
+                    Incluir 10% Servicio de Mesa (Ley CR)
+                  </span>
+                </label>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 pt-2 border-t border-stone-100">
-              <input
-                type="checkbox"
-                id="serv10"
-                checked={includeService10}
-                onChange={(e) => setIncludeService10(e.target.checked)}
-                className="rounded border-stone-300 text-stone-900 focus:ring-[#588157]"
-              />
-              <label htmlFor="serv10" className="text-xs font-semibold text-stone-700">
-                Incluir 10% de Servicio de Mesa Ley Costa Rica (Propina de ley)
-              </label>
-            </div>
-          </div>
-
-          {/* ================= SECTION 3: HACIENDA CLAVE & XML / RÉGIMEN SIMPLIFICADO ================= */}
-          <div className="bg-white border border-stone-200 rounded-3xl p-5 sm:p-6 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-stone-900 uppercase flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-[#588157]" />
-                <span>
-                  {isSimplified ? 'Régimen de Tributación Simplificada (Costa Rica)' : 'Clave Numérica de Hacienda (50 Dígitos)'}
-                </span>
-              </span>
-              {!isSimplified && (
-                <button
-                  onClick={handleCopyClave}
-                  className="text-xs font-bold text-stone-700 hover:text-stone-900 flex items-center gap-1"
-                >
-                  {copiedClave ? <Check className="w-3.5 h-3.5 text-[#588157]" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedClave ? 'Copiada' : 'Copiar Clave'}</span>
-                </button>
-              )}
-            </div>
-
-            {isSimplified ? (
-              <div className="p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-200 text-xs text-stone-700 space-y-1.5">
-                <div className="font-bold text-emerald-950 flex items-center gap-1">
-                  <span>Autorizado por la Dirección General de Tributación (DGT)</span>
+            {/* Datos del Receptor (Revelación Progresiva: solo cuando se solicita Factura Electrónica o en Régimen Simplificado opcional) */}
+            {(isFacturaElectronica || isSimplified) ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-3 border-t border-stone-100 text-xs font-semibold text-stone-700 animate-in fade-in duration-200">
+                <div className="sm:col-span-2 md:col-span-1">
+                  <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cédula / Identificación</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={customerCedula}
+                      onChange={(e) => setCustomerCedula(e.target.value)}
+                      placeholder="Ej. 101230456"
+                      className="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                    />
+                    <button
+                      onClick={handleSearchHacienda}
+                      disabled={isSearchingHacienda || !customerCedula}
+                      className="px-4 py-2.5 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      title="Buscar en Padrón de Hacienda"
+                    >
+                      {isSearchingHacienda ? <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
-                <p className="text-[11px] text-stone-600 leading-relaxed">
-                  Las ventas no generan débito fiscal del 13% de IVA al consumidor (0% IVA). Se desglosa el 10% de ventas por servicio de mesa de conformidad con la Ley N° 4946.
-                </p>
-                <div className="text-[11px] font-mono text-stone-600 pt-1">
-                  Comprobante N°: <strong>{consecutivo}</strong>
+
+                <div className="sm:col-span-2 md:col-span-1">
+                  <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Nombre o Razón Social</label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Extraído de Hacienda"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Correo Electrónico (XML & PDF)</label>
+                  <input
+                    type="email"
+                    value={customerEmail}
+                    onChange={(e) => setCustomerEmail(e.target.value)}
+                    placeholder="factura@cliente.cr"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Cod. Actividad Económica</label>
+                  <input
+                    type="text"
+                    value={customerActivityCode}
+                    onChange={(e) => setCustomerActivityCode(e.target.value)}
+                    placeholder="Ej. 722003"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                  />
                 </div>
               </div>
             ) : (
-              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 font-mono text-xs text-stone-800 break-all select-all">
-                {clave50Digitos}
+              <div className="px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-200/70 text-[11px] text-stone-500 flex items-center justify-between">
+                <span>Emitiendo <strong>Tiquete Electrónico (TE)</strong> rápido a Cliente Contado.</span>
+                <button
+                  type="button"
+                  onClick={() => setIsFacturaElectronica(true)}
+                  className="text-[#588157] font-bold hover:underline cursor-pointer"
+                >
+                  + Agregar receptor fiscal
+                </button>
               </div>
             )}
-
-            <div className="flex flex-wrap items-center gap-2.5 pt-1">
-              <button
-                onClick={() => setShowXmlModal(true)}
-                className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
-              >
-                <Code className="w-3.5 h-3.5 text-[#588157]" />
-                <span>{isSimplified ? 'Ver Documento Fiscal' : 'Ver XML v4.4'}</span>
-              </button>
-
-              <button
-                onClick={handleDownloadXml}
-                className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
-              >
-                <Download className="w-3.5 h-3.5 text-[#588157]" />
-                <span>{isSimplified ? 'Descargar Comprobante' : 'Descargar .XML'}</span>
-              </button>
-            </div>
           </div>
+
+          {/* ================= SECTION 3: DETALLES TÉCNICOS HACIENDA CLAVE & XML (COLAPSABLE) ================= */}
+          <details className="group bg-white border border-stone-200 rounded-3xl p-4 sm:px-6 shadow-xs">
+            <summary className="list-none cursor-pointer flex items-center justify-between text-xs font-bold text-stone-700 hover:text-stone-950">
+              <span className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#588157]" />
+                <span>
+                  {isSimplified ? 'Detalles de Régimen Simplificado (DGT)' : `Detalles Técnicos Hacienda (Clave 50 dígitos y XML v4.4)`}
+                </span>
+              </span>
+              <span className="text-[11px] text-stone-400 group-open:rotate-180 transition-transform">▼</span>
+            </summary>
+
+            <div className="pt-4 mt-3 border-t border-stone-100 space-y-3">
+              {!isSimplified && (
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-stone-500 uppercase">Clave Numérica Oficial</span>
+                  <button
+                    onClick={handleCopyClave}
+                    className="text-xs font-bold text-stone-700 hover:text-stone-900 flex items-center gap-1"
+                  >
+                    {copiedClave ? <Check className="w-3.5 h-3.5 text-[#588157]" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedClave ? 'Copiada' : 'Copiar Clave'}</span>
+                  </button>
+                </div>
+              )}
+
+              {isSimplified ? (
+                <div className="p-3.5 bg-emerald-50/50 rounded-2xl border border-emerald-200 text-xs text-stone-700 space-y-1.5">
+                  <div className="font-bold text-emerald-950 flex items-center gap-1">
+                    <span>Autorizado por la Dirección General de Tributación (DGT)</span>
+                  </div>
+                  <p className="text-[11px] text-stone-600 leading-relaxed">
+                    Las ventas no generan débito fiscal del 13% de IVA al consumidor (0% IVA). Se desglosa el 10% de ventas por servicio de mesa de conformidad con la Ley N° 4946.
+                  </p>
+                  <div className="text-[11px] font-mono text-stone-600 pt-1">
+                    Comprobante N°: <strong>{consecutivo}</strong>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200 font-mono text-xs text-stone-800 break-all select-all">
+                  {clave50Digitos}
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <button
+                  onClick={() => setShowXmlModal(true)}
+                  className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
+                >
+                  <Code className="w-3.5 h-3.5 text-[#588157]" />
+                  <span>{isSimplified ? 'Ver Documento Fiscal' : 'Ver XML v4.4'}</span>
+                </button>
+
+                <button
+                  onClick={handleDownloadXml}
+                  className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#588157]" />
+                  <span>{isSimplified ? 'Descargar Comprobante' : 'Descargar .XML'}</span>
+                </button>
+              </div>
+            </div>
+          </details>
 
           {/* Action Trigger */}
           <button

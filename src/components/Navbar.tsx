@@ -248,53 +248,20 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Cash Drawer & Shift Management (Mobile Hidden, Desktop Sidebar) */}
         <div className="hidden sm:flex w-full flex-col items-start gap-0.5">
-          {/* Turno & Caja Status */}
-          {/* Turno & Caja Status */}
           {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && onOpenCashShift && (
             <NavVerticalItem
               id="nav-shift-btn"
-              onClick={() => onOpenCashShift('status')}
+              onClick={() => onOpenCashShift(isShiftOpen ? 'status' : 'status')}
               icon={<CashRegister className="w-5 h-5" />}
-              label={isShiftOpen ? "Turno de Caja Activo" : "Caja Cerrada"}
-              sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Ver balance y movimientos` : `${activeRegisterName || 'Caja'} • Clic para abrir turno`}
+              label={isShiftOpen ? "Caja Activa" : "Caja Cerrada"}
+              sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Movimientos y Cierre Z` : `${activeRegisterName || 'Caja'} • Clic para abrir turno`}
+              variant={isShiftOpen ? 'default' : 'warning'}
               badge={
                 <span 
-                  className={`absolute top-2 right-2 w-2 h-2 rounded-full ${
+                  className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
                     isShiftOpen 
                       ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]' 
                       : 'bg-amber-400'
-                  }`} 
-                />
-              }
-            />
-          )}
-
-          {/* Cerrar Turno Direct Button (Visible when shift is open) */}
-          {/* Cerrar Turno Direct Button (Visible when shift is open) */}
-          {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && isShiftOpen && onOpenCashShift && (
-            <NavVerticalItem
-              id="nav-close-shift-btn"
-              onClick={() => onOpenCashShift('close')}
-              icon={<LockKeyhole className="w-5 h-5 text-amber-300" />}
-              label="Cerrar Turno & Caja"
-              sublabel="Realizar arqueo ciego y reporte Z"
-              variant="warning"
-            />
-          )}
-
-          {/* Régimen Tributario */}
-          {/* Régimen Tributario */}
-          {user?.role === 'ADMIN' && (
-            <NavVerticalItem
-              id="nav-regime-btn"
-              onClick={onOpenSettings}
-              icon={<Landmark className="w-5 h-5" />}
-              label={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado" : "Régimen Tradicional"}
-              sublabel={tenant.taxRegime === 'SIMPLIFIED' ? "0% IVA al consumidor • 10% Servicio Ley 4946" : "13% IVA • 10% Servicio Ley 4946"}
-              badge={
-                <span 
-                  className={`absolute bottom-2 right-2 w-2 h-2 rounded-full ${
-                    tenant.taxRegime === 'SIMPLIFIED' ? 'bg-emerald-400' : 'bg-stone-500'
                   }`} 
                 />
               }
@@ -308,20 +275,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* User Management & Quick Switch */}
         <div className="w-full flex flex-col items-start gap-0.5">
-          {/* Registrar Colaborador / Usuario */}
-          {/* Registrar Colaborador / Usuario */}
-          {user?.role === 'ADMIN' && onOpenStaffModal && (
-            <NavVerticalItem
-              id="nav-register-user-btn"
-              onClick={onOpenStaffModal}
-              icon={<UserPlus className="w-5 h-5 text-[#a9b994]" />}
-              label="Registrar Usuario"
-              sublabel="Dar de alta nuevo colaborador o cambiar permisos"
-              variant="accent"
-            />
-          )}
-
-          {/* Active User Switcher Pill */}
           {user && (
             <NavVerticalItem
               id="nav-quick-user-switch-btn"
@@ -332,65 +285,104 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               }
               label={user.name}
-              sublabel={`Rol: ${user.role === 'ADMIN' ? 'Administrador' : user.role === 'CAJERO' ? 'Cajero' : 'Salonero'} • Clic para cambiar rápido`}
+              sublabel={`${user.role === 'ADMIN' ? 'Administrador' : user.role === 'CAJERO' ? 'Cajero' : 'Salonero'} • Cambiar turno PIN`}
+            />
+          )}
+
+          {user?.role === 'ADMIN' && onOpenStaffModal && (
+            <NavVerticalItem
+              id="nav-register-user-btn"
+              onClick={onOpenStaffModal}
+              icon={<UserPlus className="w-5 h-5 text-stone-400" />}
+              label="Equipo y Permisos"
+              sublabel="Gestionar colaboradores y PIN"
             />
           )}
         </div>
 
       </div>
 
-      {/* Bottom Group: Tools, AI, Status & Logout */}
-      <div className="hidden sm:flex w-full flex-col items-start gap-0.5 mt-auto">
+      {/* Bottom Group: AI Copilot, Compact System Tray, Settings & Logout */}
+      <div className="hidden sm:flex w-full flex-col items-start gap-1 mt-auto pt-2">
         
-        {/* Nyza IA Global - Aprendizaje Continuo */}
-        <NavVerticalItem
-          id="nav-nyza-hub-btn"
-          onClick={onOpenNyzaHub || onOpenCopilot}
-          icon={<BrainCircuit className="w-5 h-5 text-[#a9b994]" />}
-          label="Nyza IA Global"
-          sublabel="Aprendizaje continuo & red colectiva"
-          variant="accent"
-          badge={
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-emerald-400 border-2 border-stone-950 shadow-sm" />
-          }
-        />
+        {/* Unificado: Nyza Copilot IA + Learning Hub */}
+        <div className="relative w-full px-2 flex items-center gap-1">
+          <button
+            id="nav-copilot-btn"
+            type="button"
+            onClick={onOpenCopilot}
+            className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/35 hover:bg-[#a9b994]/25 hover:text-white transition-all duration-200 cursor-pointer"
+            title="Abrir Nyza Copilot IA"
+          >
+            <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
+              <Sparkles className="w-5 h-5 text-[#a9b994]" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-stone-950" />
+            </div>
+            <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-36 transition-all duration-300 delay-75">
+              <span className="text-sm font-bold text-white">Nyza Copilot</span>
+              <span className="text-[10px] text-[#a9b994] block truncate">Asistente & Autodiagnóstico</span>
+            </div>
+          </button>
 
-        {/* Copilot IA */}
-        <NavVerticalItem
-          id="nav-copilot-btn"
-          onClick={onOpenCopilot}
-          icon={<Sparkles className="w-5 h-5 text-[#a9b994]" />}
-          label="Copilot IA"
-          sublabel="Asistente gastronómico inteligente"
-          variant="accent"
-        />
+          {onOpenNyzaHub && (
+            <button
+              id="nav-nyza-hub-btn"
+              type="button"
+              onClick={onOpenNyzaHub}
+              className="hidden group-hover/sidebar:flex shrink-0 w-9 h-11 rounded-2xl bg-stone-900 hover:bg-stone-800 border border-stone-800 text-[#a9b994] items-center justify-center transition-all cursor-pointer"
+              title="Centro de Aprendizaje Global Nyza IA"
+            >
+              <BrainCircuit className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
-        {/* Network Status & Offline queue */}
-        <NavVerticalItem
-          id="nav-network-btn"
-          onClick={onOpenOfflineModal}
-          icon={isOnline ? <Wifi className="w-5 h-5 text-emerald-400" /> : <WifiOff className="w-5 h-5 text-amber-400 animate-pulse" />}
-          label={isOnline ? "Conexión a Internet Activa" : "Modo Local Offline"}
-          sublabel={pendingCount > 0 ? `${pendingCount} transacciones en cola local` : (isOnline ? "Todo sincronizado con la nube" : "Guardando en almacenamiento local seguro")}
-          badge={
-            pendingCount > 0 ? (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-emerald-500 text-stone-950 text-[9px] font-black rounded-full flex items-center justify-center shadow-xs">
-                {pendingCount}
+        {/* Barra Compacta de Estado (Wi-Fi, Sonido y Régimen) */}
+        <div className="w-full px-2">
+          <div className="w-full rounded-2xl bg-stone-900/90 border border-stone-800/80 p-1.5 flex flex-col group-hover/sidebar:flex-row items-center justify-between gap-1">
+            <button
+              id="nav-network-btn"
+              type="button"
+              onClick={onOpenOfflineModal}
+              className="relative w-full group-hover/sidebar:flex-1 h-8 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors cursor-pointer"
+              title={isOnline ? "Conectado a la nube (Clic para ver cola)" : "Modo Local Offline"}
+            >
+              {isOnline ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" /> : <WifiOff className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />}
+              <span className="hidden group-hover/sidebar:inline text-[11px] text-stone-300 truncate">
+                {isOnline ? 'Online' : 'Offline'}
               </span>
-            ) : null
-          }
-        />
+              {pendingCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-400 text-stone-950 text-[9px] font-black rounded-full">
+                  {pendingCount}
+                </span>
+              )}
+            </button>
 
-        {/* Sound Mute / Unmute */}
-        <NavVerticalItem
-          id="nav-sound-btn"
-          onClick={onToggleMute}
-          icon={isMuted ? <VolumeX className="w-5 h-5 text-stone-500" /> : <Volume2 className="w-5 h-5 text-emerald-400" />}
-          label={isMuted ? "Sonidos Silenciados" : "Sonidos Activos"}
-          sublabel={isMuted ? "Clic para activar timbres y campana" : "Clic para silenciar avisos sonoros"}
-        />
+            <button
+              id="nav-sound-btn"
+              type="button"
+              onClick={onToggleMute}
+              className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-xs transition-colors cursor-pointer"
+              title={isMuted ? "Sonidos silenciados" : "Sonidos activos"}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+            </button>
 
-        {/* Settings */}
+            {user?.role === 'ADMIN' && (
+              <button
+                id="nav-regime-btn"
+                type="button"
+                onClick={onOpenSettings}
+                className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-[10px] font-bold text-stone-300 transition-colors cursor-pointer"
+                title={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado (0% IVA)" : "Régimen Tradicional (13% IVA)"}
+              >
+                <Landmark className="w-3.5 h-3.5 text-[#a9b994]" />
+                <span>{tenant.taxRegime === 'SIMPLIFIED' ? 'Simp.' : '13%'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Settings */}
         {user?.role === 'ADMIN' && (
           <NavVerticalItem
@@ -398,13 +390,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={onOpenSettings}
             icon={<SettingsIcon className="w-5 h-5" />}
             label="Ajustes del Sistema"
-            sublabel="Impresoras térmicas, cajas, plano y DGT"
+            sublabel="Impresoras, cajas y Hacienda DGT"
           />
         )}
-
-        <div className="w-full px-4 my-1.5 opacity-0 group-hover/sidebar:opacity-100 transition-opacity duration-300">
-          <div className="w-full h-[1px] bg-stone-800/80" />
-        </div>
 
         {/* Logout Button */}
         <NavVerticalItem
@@ -412,7 +400,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           onClick={onLogout}
           icon={<LogOut className="w-5 h-5" />}
           label="Cerrar Sesión"
-          sublabel="Salir del sistema de restaurante"
+          sublabel="Salir del punto de venta"
           variant="danger"
         />
 

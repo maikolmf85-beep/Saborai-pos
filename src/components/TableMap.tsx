@@ -148,17 +148,25 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   }, [tables, tenant.id]);
 
-  const filteredTables = tenantZones.length === 0
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'AVAILABLE' | 'OCCUPIED'>('ALL');
+
+  const zoneTables = tenantZones.length === 0
     ? tables
     : tables.filter(t => t.zone === selectedZone || (!t.zone && selectedZone === tenantZones[0]));
+
+  const filteredTables = statusFilter === 'ALL'
+    ? zoneTables
+    : statusFilter === 'AVAILABLE'
+      ? zoneTables.filter(t => t.status === 'AVAILABLE')
+      : zoneTables.filter(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK');
 
   const calculateTableTotal = (table?: Table | null) => {
     if (!table?.activeOrder?.items) return 0;
     return table.activeOrder.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   };
 
-  const occupiedCount = tables.filter(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK').length;
-  const availableCount = tables.filter(t => t.status === 'AVAILABLE').length;
+  const occupiedCount = zoneTables.filter(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK').length;
+  const availableCount = zoneTables.filter(t => t.status === 'AVAILABLE').length;
   const totalSalesInProgress = tables.reduce((acc, t) => acc + calculateTableTotal(t), 0);
 
   // Pointer drag start
@@ -482,16 +490,44 @@ export const TableMap: React.FC<TableMapProps> = ({
 
         {/* Right Action Controls & Metrics & Fullscreen */}
         <div className="flex items-center gap-2">
-          {/* Live Metrics */}
-          <div className="hidden md:flex items-center gap-2 text-xs font-bold">
-            <span className="px-2.5 py-1 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          {/* Interactive Status Filter & Live Metrics */}
+          <div className="hidden md:flex items-center gap-1.5 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
+              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
+                statusFilter === 'AVAILABLE'
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                  : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+              }`}
+              title="Filtrar solo mesas libres"
+            >
+              <span className={`w-2 h-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
               <span>{availableCount} Libres</span>
-            </span>
-            <span className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-500" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
+              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
+                statusFilter === 'OCCUPIED'
+                  ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                  : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+              }`}
+              title="Filtrar solo mesas ocupadas"
+            >
+              <span className={`w-2 h-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-amber-500'}`} />
               <span>{occupiedCount} Ocupadas</span>
-            </span>
+            </button>
+            {statusFilter !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('ALL')}
+                className="px-2 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-[11px] font-bold transition-colors cursor-pointer"
+                title="Mostrar todas las mesas"
+              >
+                Ver Todas
+              </button>
+            )}
             <span className="px-2.5 py-1 bg-stone-100 text-stone-800 border border-stone-200 rounded-lg flex items-center gap-1">
               <CreditCard className="w-3.5 h-3.5 text-[#588157]" />
               <span>₡{totalSalesInProgress.toLocaleString()}</span>
@@ -592,28 +628,6 @@ export const TableMap: React.FC<TableMapProps> = ({
               backgroundSize: '22px 22px',
             }}
           >
-            {/* Estación de Venta Rápida / Mostrador en el Plano */}
-            {!isEditMode && (
-              <div className="absolute top-3 left-3 z-10">
-                <button
-                  type="button"
-                  onClick={handleQuickTakeaway}
-                  className="flex items-center gap-2.5 px-3 py-2 bg-stone-900/90 hover:bg-stone-900 text-white rounded-2xl shadow-md border border-amber-500/40 backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer group"
-                  title="Abrir orden para llevar o venta rápida en mostrador"
-                >
-                  <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
-                    <ShoppingBag className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                  </div>
-                  <div className="text-left">
-                    <div className="text-xs font-black text-amber-400 flex items-center gap-1.5">
-                      <span>Venta Rápida</span>
-                      <span className="text-[9px] uppercase px-1.5 py-0.5 bg-amber-400 text-stone-950 rounded-full font-black">Mostrador</span>
-                    </div>
-                    <div className="text-[10px] text-stone-300">Para llevar sin mesa física</div>
-                  </div>
-                </button>
-              </div>
-            )}
 
             {/* Zone Watermark Tag */}
             <div className="absolute bottom-4 left-4 text-[11px] font-black uppercase tracking-widest text-stone-300 pointer-events-none">

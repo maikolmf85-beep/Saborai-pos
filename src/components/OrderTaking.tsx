@@ -79,6 +79,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentTargetDiner, setPaymentTargetDiner] = useState<{ id: number | 'ALL'; name?: string }>({ id: 'ALL' });
   const [orderSentBanner, setOrderSentBanner] = useState(false);
+  const [confirmClearOrder, setConfirmClearOrder] = useState(false);
 
   // Modifiers state
   const [selectedProductForMods, setSelectedProductForMods] = useState<import('../types').MenuItem | null>(null);
@@ -632,15 +633,20 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
             ) : (
               filteredMenuItems.map((item) => {
                 const isOutOfStock = item.available === false || (item.ingredients && item.ingredients.length > 0 && item.ingredients.some(ing => ing.currentStock <= 0));
+                const qtyInOrder = currentOrderItems
+                  .filter(oi => oi.name === item.name)
+                  .reduce((sum, oi) => sum + oi.quantity, 0);
 
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleAddItem(item)}
                     disabled={isOutOfStock}
-                    className={`group p-4 bg-white border rounded-2xl text-left transition-all duration-150 flex flex-col justify-between ${
+                    className={`group relative p-4 bg-white border rounded-2xl text-left transition-all duration-150 flex flex-col justify-between ${
                       isOutOfStock
                         ? 'opacity-60 bg-stone-50 border-dashed border-red-200 cursor-not-allowed'
+                        : qtyInOrder > 0
+                        ? 'border-[#588157] ring-2 ring-[#588157]/15 shadow-xs hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 cursor-pointer'
                         : 'border-stone-200 hover:border-[#588157] hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 cursor-pointer'
                     }`}
                   >
@@ -650,6 +656,11 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                           {item.imageIcon}
                         </span>
                         <div className="flex items-center gap-1.5">
+                          {qtyInOrder > 0 && (
+                            <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-[#588157] text-white shadow-xs">
+                              {qtyInOrder}x
+                            </span>
+                          )}
                           {isOutOfStock ? (
                             <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
                               Agotado
@@ -665,7 +676,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                       <h4 className={`text-sm font-bold mt-2 line-clamp-1 ${isOutOfStock ? 'text-stone-400 line-through' : 'text-stone-900 group-hover:text-[#588157]'}`}>
                         {item.name}
                       </h4>
-                      <p className="text-[11px] text-stone-500 line-clamp-2 mt-0.5">
+                      <p className="text-[11px] text-stone-500 line-clamp-1 mt-0.5">
                         {isOutOfStock ? 'Insumos agotados en cocina/bar' : item.description}
                       </p>
                     </div>
@@ -677,6 +688,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                       <span className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
                         isOutOfStock 
                           ? 'bg-stone-200 text-stone-400' 
+                          : qtyInOrder > 0
+                          ? 'bg-[#588157] text-white'
                           : 'bg-stone-100 group-hover:bg-[#588157] group-hover:text-white text-stone-600'
                       }`}>
                         <Plus className="w-4 h-4" />
@@ -705,14 +718,37 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
               <div className="flex items-center gap-1">
                 {currentOrderItems.length > 0 && (
-                  <button
-                    onClick={() => setCurrentOrderItems([])}
-                    className="p-1.5 rounded-xl text-stone-400 hover:text-red-600 hover:bg-red-50 text-xs flex items-center gap-1 font-medium transition-colors"
-                    title="Vaciar comanda"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Limpiar</span>
-                  </button>
+                  confirmClearOrder ? (
+                    <div className="flex items-center gap-1 bg-red-50 border border-red-200 px-2 py-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentOrderItems([]);
+                          setConfirmClearOrder(false);
+                        }}
+                        className="text-[11px] font-black text-red-600 hover:underline px-1 cursor-pointer"
+                      >
+                        ¿Vaciar? Sí
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmClearOrder(false)}
+                        className="text-[11px] font-bold text-stone-500 hover:text-stone-800 px-1 cursor-pointer"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmClearOrder(true)}
+                      className="p-1.5 rounded-xl text-stone-400 hover:text-red-600 hover:bg-red-50 text-xs flex items-center gap-1 font-medium transition-colors cursor-pointer"
+                      title="Vaciar comanda"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Limpiar</span>
+                    </button>
+                  )
                 )}
               </div>
             </div>
