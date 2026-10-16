@@ -51,7 +51,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const { userText, messages = [], context = {} } = (req.body || {}) as ChatRequestBody;
+  const { userText, messages = [], context = {}, customApiKey } = (req.body || {}) as ChatRequestBody & { customApiKey?: string };
 
   if (!userText || typeof userText !== 'string' || !userText.trim()) {
     return res.status(400).json({ error: 'El campo userText es requerido.' });
@@ -104,7 +104,9 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
   const fullPrompt = `${recentHistory ? `${recentHistory}\n` : ''}[Usuario]: ${cleanUserText}`;
 
   // 1. Motor Primario: Google Gemini
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || '';
+  const geminiKey = (customApiKey && customApiKey.startsWith('AIza'))
+    ? customApiKey
+    : (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || (customApiKey && !customApiKey.startsWith('sk-ant') ? customApiKey : ''));
   if (geminiKey && geminiKey !== 'tu_gemini_api_key' && geminiKey !== 'tu_api_key_aqui') {
     const geminiModels = [
       process.env.GEMINI_MODEL || 'gemini-3.8-flash',
@@ -158,7 +160,9 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
   }
 
   // 2. Motor Fallback: Anthropic Claude
-  const anthropicKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '';
+  const anthropicKey = (customApiKey && customApiKey.startsWith('sk-ant'))
+    ? customApiKey
+    : (process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '');
   if (anthropicKey && anthropicKey !== 'tu_api_key_aqui') {
     const claudeModels = [
       'claude-haiku-4-5-20251001',

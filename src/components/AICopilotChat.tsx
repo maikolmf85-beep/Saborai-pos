@@ -81,8 +81,12 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const hasAnyKey = (!!GEMINI_API_KEY && GEMINI_API_KEY !== 'tu_gemini_api_key') || 
-                     (!!ANTHROPIC_API_KEY && ANTHROPIC_API_KEY !== 'tu_api_key_aqui');
+  const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
+  const envAnthropicKey = (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined)?.trim();
+  const localGeminiKey = typeof localStorage !== 'undefined'
+    ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim()
+    : '';
+  const customApiKey = localGeminiKey || envGeminiKey || envAnthropicKey;
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,20 +103,6 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     setMessages(prev => [...prev, userMsg]);
     setInputMessage('');
     setIsTyping(true);
-
-    if (!hasAnyKey) {
-      setIsTyping(false);
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `ai_${Date.now()}`,
-          sender: 'ai',
-          isError: true,
-          text: '⚠️ No se encontró una clave de IA configurada. Añade `VITE_GEMINI_API_KEY` o `GEMINI_API_KEY` en tus variables de entorno de Vercel.'
-        }
-      ]);
-      return;
-    }
 
     try {
       const roleName =
@@ -193,6 +183,7 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
         body: JSON.stringify({
           userText,
           messages: messages.slice(-6),
+          customApiKey: customApiKey || undefined,
           context: {
             menuItems,
             selectedTable,
@@ -372,7 +363,7 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
         </button>
         <input
           type="text"
-          placeholder={hasAnyKey ? "Escribe a Nyza tu consulta o reporte..." : "Configura GEMINI_API_KEY para activar a Nyza..."}
+          placeholder="Escribe a Nyza tu consulta o reporte..."
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           className="flex-1 px-3.5 py-2.5 rounded-xl border border-[#6b686d]/30 text-xs text-[#3b3733] focus:border-[#a9b994] focus:outline-none"
