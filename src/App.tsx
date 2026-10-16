@@ -1,30 +1,33 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { LandingPage } from './components/LandingPage';
 import { TableMap } from './components/TableMap';
 import { OrderTaking } from './components/OrderTaking';
 import { KDSView } from './components/KDSView';
-import { BillingHacienda } from './components/BillingHacienda';
-import { SettingsModal } from './components/SettingsModal';
-import { OfflineSyncModal } from './components/OfflineSyncModal';
-import { NotionModal } from './components/NotionModal';
-import { StaffModal } from './components/StaffModal';
-import { QuickWaiterSwitchModal } from './components/QuickWaiterSwitchModal';
-import { CashShiftModal } from './components/CashShiftModal';
-import { ZReportModal } from './components/ZReportModal';
-import { HaciendaHistoryModal } from './components/HaciendaHistoryModal';
+
+// Carga diferida (Code Splitting / Lazy Loading) de módulos grandes y modales secundarios
+const BillingHacienda = lazy(() => import('./components/BillingHacienda').then(m => ({ default: m.BillingHacienda })));
+const LandingPage = lazy(() => import('./components/LandingPage').then(m => ({ default: m.LandingPage })));
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
+const OfflineSyncModal = lazy(() => import('./components/OfflineSyncModal').then(m => ({ default: m.OfflineSyncModal })));
+const NotionModal = lazy(() => import('./components/NotionModal').then(m => ({ default: m.NotionModal })));
+const StaffModal = lazy(() => import('./components/StaffModal').then(m => ({ default: m.StaffModal })));
+const QuickWaiterSwitchModal = lazy(() => import('./components/QuickWaiterSwitchModal').then(m => ({ default: m.QuickWaiterSwitchModal })));
+const CashShiftModal = lazy(() => import('./components/CashShiftModal').then(m => ({ default: m.CashShiftModal })));
+const ZReportModal = lazy(() => import('./components/ZReportModal').then(m => ({ default: m.ZReportModal })));
+const HaciendaHistoryModal = lazy(() => import('./components/HaciendaHistoryModal').then(m => ({ default: m.HaciendaHistoryModal })));
+const AICopilotChat = lazy(() => import('./components/AICopilotChat').then(m => ({ default: m.AICopilotChat })));
+const NyzaLearningHub = lazy(() => import('./components/NyzaLearningHub').then(m => ({ default: m.NyzaLearningHub })));
+const AuthScreen = lazy(() => import('./components/AuthScreen').then(m => ({ default: m.AuthScreen })));
+const NysaOnboarding = lazy(() => import('./components/NysaOnboarding').then(m => ({ default: m.NysaOnboarding })));
+const SuperAdminBackoffice = lazy(() => import('./components/SuperAdminBackoffice').then(m => ({ default: m.SuperAdminBackoffice })));
+const MenuEditor = lazy(() => import('./components/MenuEditor').then(m => ({ default: m.MenuEditor })));
+const ReportsDashboard = lazy(() => import('./components/ReportsDashboard').then(m => ({ default: m.ReportsDashboard })));
+const WelcomeGate = lazy(() => import('./components/WelcomeGate').then(m => ({ default: m.WelcomeGate })));
+const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then(m => ({ default: m.ResetPasswordScreen })));
+const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ default: m.GuidedTour })));
 import { cashShiftService } from './services/cashShiftService';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
-import { AICopilotChat } from './components/AICopilotChat';
-import { NyzaLearningHub } from './components/NyzaLearningHub';
-import { AuthScreen } from './components/AuthScreen';
-import { NysaOnboarding } from './components/NysaOnboarding';
-import { SuperAdminBackoffice } from './components/SuperAdminBackoffice';
-import { MenuEditor } from './components/MenuEditor';
-import { ReportsDashboard } from './components/ReportsDashboard';
-import { WelcomeGate, SaboraiSubscription } from './components/WelcomeGate';
-import { ResetPasswordScreen } from './components/ResetPasswordScreen';
-import { GuidedTour } from './components/GuidedTour';
+import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
@@ -806,13 +809,19 @@ export function App() {
   // If ADMIN domain, completely bypass auth and POS UI (can add its own auth later)
   if (appDomain === 'ADMIN') {
     return (
-      <div className="h-screen w-screen overflow-y-auto">
-        <SuperAdminBackoffice 
-          currentTenant={tenant}
-          onSelectTenant={(t) => handleUpdateTenant(t)}
-          onOpenNotion={() => setIsNotionModalOpen(true)}
-        />
-      </div>
+      <Suspense fallback={
+        <div className="h-screen w-screen flex items-center justify-center bg-stone-900 text-stone-200">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <div className="h-screen w-screen overflow-y-auto">
+          <SuperAdminBackoffice 
+            currentTenant={tenant}
+            onSelectTenant={(t) => handleUpdateTenant(t)}
+            onOpenNotion={() => setIsNotionModalOpen(true)}
+          />
+        </div>
+      </Suspense>
     );
   }
 
@@ -823,13 +832,19 @@ export function App() {
 
   if (!subscription && !skipSubscriptionGate) {
     return (
-      <WelcomeGate
-        onSubscriptionActivated={(sub, user, tenant) => {
-          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
-          setSubscription(sub);
-          handleLoginSuccess(user, tenant);
-        }}
-      />
+      <Suspense fallback={
+        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <WelcomeGate
+          onSubscriptionActivated={(sub, user, tenant) => {
+            try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+            setSubscription(sub);
+            handleLoginSuccess(user, tenant);
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -859,13 +874,19 @@ export function App() {
 
   if (resetToken) {
     return (
-      <ResetPasswordScreen 
-        token={resetToken} 
-        onSuccess={() => {
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setResetToken(null);
-        }} 
-      />
+      <Suspense fallback={
+        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <ResetPasswordScreen 
+          token={resetToken} 
+          onSuccess={() => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setResetToken(null);
+          }} 
+        />
+      </Suspense>
     );
   }
 
@@ -881,44 +902,56 @@ export function App() {
   // If not authenticated, show WelcomeGate
   if (!currentUser) {
     return (
-      <WelcomeGate
-        onSubscriptionActivated={(sub, user, tenantData) => {
-          try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
-          setSubscription(sub);
-          handleLoginSuccess(user, tenantData);
-        }}
-      />
+      <Suspense fallback={
+        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <WelcomeGate
+          onSubscriptionActivated={(sub, user, tenantData) => {
+            try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+            setSubscription(sub);
+            handleLoginSuccess(user, tenantData);
+          }}
+        />
+      </Suspense>
     );
   }
 
   if (!tenant.onboardingCompleted) {
     return (
-      <NysaOnboarding
-        tenant={tenant}
-        currentUser={currentUser}
-        onComplete={async (updatedTenant, newStaff, newMenu) => {
-          handleUpdateTenant(updatedTenant);
-          if (newStaff.length > 0) {
-            newStaff.forEach(handleAddStaffMember);
-          }
-          if (newMenu.length > 0) {
-            handleUpdateMenu(newMenu);
-          }
-          
-          // Guardar en el backend para que no vuelva a salir
-          try {
-            const token = localStorage.getItem('saborai_token');
-            if (token) {
-              await fetch('/api/tenant/onboarding', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` }
-              });
+      <Suspense fallback={
+        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <NysaOnboarding
+          tenant={tenant}
+          currentUser={currentUser}
+          onComplete={async (updatedTenant, newStaff, newMenu) => {
+            handleUpdateTenant(updatedTenant);
+            if (newStaff.length > 0) {
+              newStaff.forEach(handleAddStaffMember);
             }
-          } catch (e) {
-            console.error('Error guardando onboarding', e);
-          }
-        }}
-      />
+            if (newMenu.length > 0) {
+              handleUpdateMenu(newMenu);
+            }
+            
+            // Guardar en el backend para que no vuelva a salir
+            try {
+              const token = localStorage.getItem('saborai_token');
+              if (token) {
+                await fetch('/api/tenant/onboarding', {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+              }
+            } catch (e) {
+              console.error('Error guardando onboarding', e);
+            }
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -1000,119 +1033,126 @@ export function App() {
 
         {/* Main Dynamic Operational Content */}
         <main className="flex-1 h-full min-h-0 overflow-y-auto">
-        
-        {/* Landing Page (Public / Onboarding) - Only reachable locally if forced via activeTab */}
-        {activeTab === 'landing' && (
-          <LandingPage 
-            onStartDemo={handleStartDemo} 
-            onEnterPOS={() => setActiveTab('pos')}
-          />
-        )}
-
-        {/* Punto de Venta: Mesas o Tomapedidos integrado */}
-        {activeTab === 'pos' && (
-          !cashShiftService.getActiveShift() ? (
-            <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-stone-50 animate-in fade-in duration-300">
-              <div className="w-24 h-24 bg-stone-200/50 rounded-full flex items-center justify-center mb-6">
-                <Lock className="w-12 h-12 text-stone-400" />
-              </div>
-              <h2 className="text-3xl font-black text-stone-800 mb-3 tracking-tight">Turno de Caja Cerrado</h2>
-              <p className="text-stone-500 max-w-md mx-auto mb-8 text-lg">
-                Es obligatorio abrir un turno de caja para poder comandar productos o tomar órdenes en las mesas.
-              </p>
-              {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(currentUser?.role || '') ? (
-                <button
-                  onClick={() => handleOpenCashShift('status')}
-                  className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-stone-800 transition-colors shadow-xl shadow-stone-900/20 active:scale-95"
-                >
-                  Abrir Turno Ahora
-                </button>
-              ) : (
-                <div className="px-6 py-4 bg-amber-100/50 text-amber-800 border border-amber-200 rounded-2xl font-bold text-sm shadow-sm">
-                  Solicita a un administrador o cajero que abra el turno
-                </div>
-              )}
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-full w-full">
+              <div className="w-8 h-8 border-3 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
             </div>
-          ) : selectedTableForOrder ? (
-            <OrderTaking
-              table={selectedTableForOrder}
-              tenant={tenant}
-              menuItems={menuItems}
-              onSaveOrder={handleSaveOrder}
-              onBackToTables={() => setSelectedTableForOrder(null)}
-              onDirectInvoice={() => setActiveTab('billing')}
-              onNotify={addNotification}
-              userRole={currentUser?.role || 'SALONERO'}
-              onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
-              staffList={staffList}
-            />
-          ) : (
-            <TableMap
-              tables={tables}
-              onSelectTable={handleSelectTable}
-              onOpenOrder={handleOpenOrder}
-              onSplitBill={handleSplitBill}
-              isAdmin={currentUser?.role === 'ADMIN'}
-              staffList={staffList}
-              tenant={tenant}
-              onUpdateTenant={handleUpdateTenant}
-              onUpdateTables={handleUpdateTables}
-              onQuickTakeaway={handleQuickTakeaway}
-            />
-          )
-        )}
+          }>
+            {/* Landing Page (Public / Onboarding) - Only reachable locally if forced via activeTab */}
+            {activeTab === 'landing' && (
+              <LandingPage 
+                onStartDemo={handleStartDemo} 
+                onEnterPOS={() => setActiveTab('pos')}
+              />
+            )}
 
-        {/* Cocina & Bar (KDS) */}
-        {activeTab === 'kds' && (
-          <KDSView 
-            orders={kdsOrders}
-            menuItems={menuItems}
-            onUpdateStatus={handleUpdateKdsOrder}
-            onToggleItemCompletion={handleToggleKdsItem}
-            onNotify={addNotification} 
-          />
-        )}
+            {/* Punto de Venta: Mesas o Tomapedidos integrado */}
+            {activeTab === 'pos' && (
+              !cashShiftService.getActiveShift() ? (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-stone-50 animate-in fade-in duration-300">
+                  <div className="w-24 h-24 bg-stone-200/50 rounded-full flex items-center justify-center mb-6">
+                    <Lock className="w-12 h-12 text-stone-400" />
+                  </div>
+                  <h2 className="text-3xl font-black text-stone-800 mb-3 tracking-tight">Turno de Caja Cerrado</h2>
+                  <p className="text-stone-500 max-w-md mx-auto mb-8 text-lg">
+                    Es obligatorio abrir un turno de caja para poder comandar productos o tomar órdenes en las mesas.
+                  </p>
+                  {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(currentUser?.role || '') ? (
+                    <button
+                      onClick={() => handleOpenCashShift('status')}
+                      className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-stone-800 transition-colors shadow-xl shadow-stone-900/20 active:scale-95"
+                    >
+                      Abrir Turno Ahora
+                    </button>
+                  ) : (
+                    <div className="px-6 py-4 bg-amber-100/50 text-amber-800 border border-amber-200 rounded-2xl font-bold text-sm shadow-sm">
+                      Solicita a un administrador o cajero que abra el turno
+                    </div>
+                  )}
+                </div>
+              ) : selectedTableForOrder ? (
+                <OrderTaking
+                  table={selectedTableForOrder}
+                  tenant={tenant}
+                  menuItems={menuItems}
+                  onSaveOrder={handleSaveOrder}
+                  onBackToTables={() => setSelectedTableForOrder(null)}
+                  onDirectInvoice={() => setActiveTab('billing')}
+                  onNotify={addNotification}
+                  userRole={currentUser?.role || 'SALONERO'}
+                  onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
+                  staffList={staffList}
+                />
+              ) : (
+                <TableMap
+                  tables={tables}
+                  onSelectTable={handleSelectTable}
+                  onOpenOrder={handleOpenOrder}
+                  onSplitBill={handleSplitBill}
+                  isAdmin={currentUser?.role === 'ADMIN'}
+                  staffList={staffList}
+                  tenant={tenant}
+                  onUpdateTenant={handleUpdateTenant}
+                  onUpdateTables={handleUpdateTables}
+                  onQuickTakeaway={handleQuickTakeaway}
+                />
+              )
+            )}
 
-        {/* Catálogo de Menú */}
-        {activeTab === 'menu' && currentUser.role === 'ADMIN' && (
-          <MenuEditor 
-            menuItems={menuItems} 
-            onUpdateMenu={handleUpdateMenu} 
-            taxRegime={tenant.taxRegime || 'TRADITIONAL'}
-            plan={tenant.plan}
-            tenant={tenant}
-            onUpdateTenant={handleUpdateTenant}
-          />
-        )}
+            {/* Cocina & Bar (KDS) */}
+            {activeTab === 'kds' && (
+              <KDSView 
+                orders={kdsOrders}
+                menuItems={menuItems}
+                onUpdateStatus={handleUpdateKdsOrder}
+                onToggleItemCompletion={handleToggleKdsItem}
+                onNotify={addNotification} 
+              />
+            )}
 
-        {/* Caja & Facturación Electrónica CR v4.4 */}
-        {activeTab === 'billing' && (
-          <BillingHacienda
-            tenant={tenant}
-            selectedTable={selectedTableForOrder || tables.find(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK') || tables[0] || null}
-            onSaveTable={handleSaveOrder}
-            onNotify={addNotification}
-            onOpenCashShift={(tab) => {
-              setCashShiftInitialTab(tab || 'status');
-              setIsCashShiftModalOpen(true);
-            }}
-            onOpenHaciendaHistory={() => setIsHaciendaHistoryOpen(true)}
-            onBackToTables={() => {
-              setSelectedTableForOrder(null);
-              setActiveTab('pos');
-            }}
-          />
-        )}
+            {/* Catálogo de Menú */}
+            {activeTab === 'menu' && currentUser.role === 'ADMIN' && (
+              <MenuEditor 
+                menuItems={menuItems} 
+                onUpdateMenu={handleUpdateMenu} 
+                taxRegime={tenant.taxRegime || 'TRADITIONAL'}
+                plan={tenant.plan}
+                tenant={tenant}
+                onUpdateTenant={handleUpdateTenant}
+              />
+            )}
 
-        {/* Reportes y Estadísticas */}
-        {activeTab === 'reports' && ['ADMIN', 'CAJERO'].includes(currentUser.role) && (
-          <ReportsDashboard tenant={tenant} />
-        )}
-      </main>
-    </div>
+            {/* Caja & Facturación Electrónica CR v4.4 */}
+            {activeTab === 'billing' && (
+              <BillingHacienda
+                tenant={tenant}
+                selectedTable={selectedTableForOrder || tables.find(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK') || tables[0] || null}
+                onSaveTable={handleSaveOrder}
+                onNotify={addNotification}
+                onOpenCashShift={(tab) => {
+                  setCashShiftInitialTab(tab || 'status');
+                  setIsCashShiftModalOpen(true);
+                }}
+                onOpenHaciendaHistory={() => setIsHaciendaHistoryOpen(true)}
+                onBackToTables={() => {
+                  setSelectedTableForOrder(null);
+                  setActiveTab('pos');
+                }}
+              />
+            )}
 
-      {/* Unified Settings & Tools Modal */}
-      <SettingsModal
+            {/* Reportes y Estadísticas */}
+            {activeTab === 'reports' && ['ADMIN', 'CAJERO'].includes(currentUser.role) && (
+              <ReportsDashboard tenant={tenant} />
+            )}
+          </Suspense>
+        </main>
+      </div>
+
+      {/* Unified Modals & Overlays wrapped in Suspense for Lazy Loading */}
+      <Suspense fallback={null}>
+        {/* Unified Settings & Tools Modal */}
+        <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         tenant={tenant}
@@ -1369,6 +1409,7 @@ export function App() {
           setIsCopilotOpen(true);
         }}
       />
+      </Suspense>
 
       {/* Auto-Repair Overlay */}
       {isRepairing && (

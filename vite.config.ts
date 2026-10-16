@@ -81,6 +81,29 @@ function apiDevPlugin(): Plugin {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), apiDevPlugin()],
+  build: {
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react/') || id.includes('react-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('lucide-react')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('node-forge') || id.includes('haciendacostarica-signer')) {
+              return 'vendor-crypto';
+            }
+            if (id.includes('react-markdown')) {
+              return 'vendor-markdown';
+            }
+          }
+        }
+      }
+    }
+  },
   server: {
     proxy: {
       '/api/notion': {
