@@ -35,7 +35,7 @@ import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
-import { Sparkles, WifiOff, Lock, Eye, BrainCircuit } from 'lucide-react';
+import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-react';
 
 // Limpieza automática preventiva de datos de ejemplo previos en el navegador
 try {
@@ -1101,13 +1101,34 @@ export function App() {
 
             {/* Cocina & Bar (KDS) */}
             {activeTab === 'kds' && (
-              <KDSView 
-                orders={kdsOrders}
-                menuItems={menuItems}
-                onUpdateStatus={handleUpdateKdsOrder}
-                onToggleItemCompletion={handleToggleKdsItem}
-                onNotify={addNotification} 
-              />
+              tenant.plan === 'express' ? (
+                <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-stone-900/40 backdrop-blur-md animate-in fade-in duration-300">
+                  <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/30 rounded-3xl flex items-center justify-center mb-6 shadow-xl">
+                    <ChefHat className="w-10 h-10 text-amber-400" />
+                  </div>
+                  <span className="px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-black uppercase tracking-widest mb-3 border border-amber-500/30">
+                    Función Exclusiva Plan Pro
+                  </span>
+                  <h2 className="text-3xl font-black text-white mb-3 tracking-tight">Monitor KDS para Cocina & Bar</h2>
+                  <p className="text-stone-400 max-w-md mx-auto mb-8 text-sm leading-relaxed">
+                    Tu suscripción actual es <strong>Plan Express</strong> (1 terminal). Para conectar pantallas en tiempo real en cocina, tiempos de despacho y enrutamiento automático de bebidas a barra, actualiza a <strong>Plan Pro</strong>.
+                  </p>
+                  <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="px-8 py-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-2xl font-bold text-sm tracking-wide shadow-xl shadow-emerald-900/30 active:scale-95 transition-all"
+                  >
+                    Actualizar a Plan Pro
+                  </button>
+                </div>
+              ) : (
+                <KDSView 
+                  orders={kdsOrders}
+                  menuItems={menuItems}
+                  onUpdateStatus={handleUpdateKdsOrder}
+                  onToggleItemCompletion={handleToggleKdsItem}
+                  onNotify={addNotification} 
+                />
+              )
             )}
 
             {/* Catálogo de Menú */}

@@ -22,7 +22,9 @@ import {
   Zap,
   Check,
   X,
-  Smartphone
+  Smartphone,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { TenantInfo, SubscriptionPlan, SubscriptionStatus } from '../types';
 import { notionService } from '../services/notionService';
@@ -60,9 +62,38 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
   };
 
 
-  const [tenantsList, setTenantsList] = useState<TenantInfo[]>([
-    currentTenant
-  ]);
+  const [tenantsList, setTenantsList] = useState<TenantInfo[]>(() => {
+    try {
+      const saved = localStorage.getItem('saborai_superadmin_tenants');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [currentTenant];
+  });
+
+  // Guardar en localStorage cada vez que la lista cambia
+  useEffect(() => {
+    try {
+      localStorage.setItem('saborai_superadmin_tenants', JSON.stringify(tenantsList));
+    } catch {}
+  }, [tenantsList]);
+
+  // Modal para registrar un nuevo restaurante / suscriptor
+  const [isNewTenantModalOpen, setIsNewTenantModalOpen] = useState(false);
+  const [newTenantData, setNewTenantData] = useState<Partial<TenantInfo>>({
+    name: '',
+    cedulaJuridica: '',
+    email: '',
+    phone: '',
+    location: '',
+    plan: 'pro',
+    status: 'ACTIVE',
+    currency: 'CRC',
+    monthlyFee: 45000,
+    taxRegime: 'TRADITIONAL'
+  });
 
   const [realLeadsCount, setRealLeadsCount] = useState<number>(0);
   const [realVisitsCount, setRealVisitsCount] = useState<number>(0);
@@ -220,10 +251,32 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setNewTenantData({
+                  name: '',
+                  cedulaJuridica: '',
+                  email: '',
+                  phone: '',
+                  location: 'San José, Costa Rica',
+                  plan: 'pro',
+                  status: 'ACTIVE',
+                  currency: 'CRC',
+                  monthlyFee: 45000,
+                  taxRegime: 'TRADITIONAL'
+                });
+                setIsNewTenantModalOpen(true);
+              }}
+              className="px-5 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_25px_rgba(20,184,166,0.5)] hover:-translate-y-0.5 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Nuevo Restaurante</span>
+            </button>
+
             {onOpenNotion && (
               <button
                 onClick={onOpenNotion}
-                className="px-4 py-2 bg-stone-800/50 hover:bg-stone-800 border border-stone-700/50 text-stone-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm"
+                className="px-4 py-2 bg-stone-800/50 hover:bg-stone-800 border border-stone-700/50 text-stone-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm cursor-pointer"
               >
                 <ExternalLink className="w-4 h-4" />
                 <span>Base Notion</span>
@@ -232,7 +285,7 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
 
             <button
               onClick={handleSyncNotion}
-              className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_25px_rgba(16,185,129,0.5)] hover:-translate-y-0.5"
+              className="px-5 py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-stone-700 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
             >
               <RefreshCw className="w-4 h-4" />
               <span>Sincronizar Cloud</span>
@@ -487,10 +540,25 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
 
                     <button
                       onClick={() => onSelectTenant(tenant)}
-                      className="px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all"
+                      className="px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      title="Abrir terminal con este restaurante"
                     >
                       Impersonar
                     </button>
+
+                    {tenant.id !== currentTenant.id && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`¿Estás seguro de eliminar el registro de ${tenant.name}?`)) {
+                            setTenantsList(prev => prev.filter(t => t.id !== tenant.id));
+                          }
+                        }}
+                        className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
+                        title="Eliminar restaurante"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -640,6 +708,184 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
                 Guardar y Cerrar
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: REGISTRAR NUEVO RESTAURANTE (SUPERADMIN)           */}
+      {/* ======================================================== */}
+      {isNewTenantModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/85 backdrop-blur-md animate-in fade-in">
+          <div className="bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl shadow-emerald-900/30 border border-stone-800 space-y-6 relative max-h-[90vh] overflow-y-auto">
+            
+            <div className="flex items-start justify-between pb-4 border-b border-stone-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white tracking-tight">Registrar Nuevo Restaurante</h3>
+                  <p className="text-xs text-stone-400">Crear cuenta comercial y asignar plan directamente</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsNewTenantModalOpen(false)}
+                className="p-2 text-stone-500 hover:text-white hover:bg-stone-800 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newTenantData.name?.trim()) return;
+
+                const plan = newTenantData.plan || 'pro';
+                const fee = plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000;
+                const newTenant: TenantInfo = {
+                  id: `tenant_${Date.now()}`,
+                  name: newTenantData.name.trim(),
+                  cedulaJuridica: newTenantData.cedulaJuridica?.trim() || '3-101-000000',
+                  email: newTenantData.email?.trim() || 'admin@restaurante.cr',
+                  phone: newTenantData.phone?.trim() || '+506 2222-0000',
+                  location: newTenantData.location?.trim() || 'San José, Costa Rica',
+                  plan: plan,
+                  status: newTenantData.status || 'ACTIVE',
+                  currency: newTenantData.currency || 'CRC',
+                  monthlyFee: fee,
+                  taxRegime: newTenantData.taxRegime || 'TRADITIONAL',
+                  zones: ['Salón Principal', 'Terraza'],
+                  onboardingCompleted: true
+                };
+
+                setTenantsList(prev => [newTenant, ...prev]);
+                setIsNewTenantModalOpen(false);
+                setSyncFeedback(`¡Restaurante "${newTenant.name}" creado con éxito en Plan ${newTenant.plan.toUpperCase()}!`);
+                setTimeout(() => setSyncFeedback(null), 4000);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                  Nombre Comercial del Restaurante *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej. Marisquería & Grill del Puerto"
+                  value={newTenantData.name || ''}
+                  onChange={(e) => setNewTenantData(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Cédula Jurídica / Física (DGT) *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej. 3-101-445566"
+                    value={newTenantData.cedulaJuridica || ''}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, cedulaJuridica: e.target.value }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Teléfono / WhatsApp *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="Ej. +506 8888-9999"
+                    value={newTenantData.phone || ''}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, phone: e.target.value }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Correo Electrónico *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="admin@restaurante.cr"
+                    value={newTenantData.email || ''}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, email: e.target.value }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Ubicación / Provincia
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ej. Escazú, San José"
+                    value={newTenantData.location || ''}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Plan Asignado *
+                  </label>
+                  <select
+                    value={newTenantData.plan || 'pro'}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, plan: e.target.value as SubscriptionPlan }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-bold"
+                  >
+                    <option value="express">Express (₡22,000/mes • 1 terminal)</option>
+                    <option value="pro">Pro (₡45,000/mes • Mesas, KDS, IA)</option>
+                    <option value="multibranch">Multisucursal (₡85,000/mes • Cadenas)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
+                    Régimen Tributario
+                  </label>
+                  <select
+                    value={newTenantData.taxRegime || 'TRADITIONAL'}
+                    onChange={(e) => setNewTenantData(prev => ({ ...prev, taxRegime: e.target.value as any }))}
+                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-bold"
+                  >
+                    <option value="TRADITIONAL">Tradicional (13% IVA)</option>
+                    <option value="SIMPLIFIED">Simplificado (0% IVA)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-3 border-t border-stone-800">
+                <button
+                  type="button"
+                  onClick={() => setIsNewTenantModalOpen(false)}
+                  className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-400 font-bold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-900/30 transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Crear Restaurante</span>
+                </button>
+              </div>
+            </form>
 
           </div>
         </div>

@@ -202,8 +202,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setActiveTab('kds')}
             icon={<ChefHat className="w-5 h-5 transition-transform group-hover:scale-105" />}
             label="Cocina & Bar (KDS)"
-            sublabel="Monitor de comandas en vivo"
+            sublabel={tenant.plan === 'express' ? "Requiere Plan Pro · Comandas" : "Monitor de comandas en vivo"}
             isActive={activeTab === 'kds'}
+            badge={tenant.plan === 'express' ? <span className="absolute -top-1 -right-1 text-[8px] font-black bg-stone-800 text-amber-400 px-1 rounded-sm border border-amber-400/40">PRO</span> : undefined}
           />
 
           {/* Menú y Catálogo: UtensilsCrossed representa alimentos y platillos */}
