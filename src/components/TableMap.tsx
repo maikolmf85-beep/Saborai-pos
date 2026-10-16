@@ -21,8 +21,7 @@ import {
   PanelRightClose,
   PanelRight,
   RefreshCw,
-  LayoutGrid,
-  ShoppingBag
+  LayoutGrid
 } from 'lucide-react';
 
 interface TableMapProps {
@@ -47,8 +46,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   staffList = [],
   tenant,
   onUpdateTenant,
-  onUpdateTables,
-  onQuickTakeaway: onQuickTakeawayProp
+  onUpdateTables
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -328,33 +326,6 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   };
 
-  const handleQuickTakeaway = () => {
-    if (onQuickTakeawayProp) {
-      onQuickTakeawayProp();
-      return;
-    }
-
-    const takeawayTable: Table = {
-      id: `takeaway_${Date.now()}`,
-      number: Math.floor(900 + Math.random() * 99),
-      name: '🛍️ Para Llevar / Mostrador',
-      seats: 1,
-      shape: 'square',
-      status: 'OCCUPIED',
-      zone: 'Para Llevar',
-      x: 0,
-      y: 0,
-      activeOrder: {
-        orderNumber: `LLE-${Math.floor(1000 + Math.random() * 9000)}`,
-        server: staffList[0]?.name || 'Mostrador',
-        openedAt: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
-        subAccounts: [{ id: 1, name: 'Para Llevar' }],
-        items: []
-      }
-    };
-    onOpenOrder(takeawayTable);
-  };
-
   const handlePinValidated = (staff: UserProfile) => {
     if (!tableForPinAuth) return;
 
@@ -442,17 +413,6 @@ export const TableMap: React.FC<TableMapProps> = ({
               {filteredTables.length} mesas
             </span>
           </h1>
-
-          {/* Botón de Venta Rápida / Para Llevar Destacado */}
-          <button
-            type="button"
-            onClick={handleQuickTakeaway}
-            className="h-8 sm:h-9 px-3 sm:px-4 flex items-center gap-2 rounded-xl text-xs font-black bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white transition-all shadow-sm hover:shadow-md active:scale-95 cursor-pointer shrink-0 border border-amber-400/40"
-            title="Emitir pedido para llevar o venta rápida sin ocupar mesa física del salón"
-          >
-            <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white shrink-0 animate-pulse" />
-            <span>Venta Rápida / Para Llevar</span>
-          </button>
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
