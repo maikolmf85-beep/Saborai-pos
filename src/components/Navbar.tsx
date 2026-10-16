@@ -1,10 +1,10 @@
 import React from 'react';
 import { BrandLogo } from './BrandLogos';
 import { 
-  UtensilsCrossed, 
+  LayoutGrid, 
   ChefHat, 
-  CreditCard,
-  BookOpen, 
+  Receipt,
+  UtensilsCrossed, 
   Settings as SettingsIcon, 
   Sparkles, 
   Wifi, 
@@ -12,14 +12,13 @@ import {
   LogOut, 
   Volume2, 
   VolumeX, 
-  UserPlus,
-  LockKeyhole,
-  Landmark,
-  BarChart3,
+  Users,
+  Building2,
+  TrendingUp,
   BrainCircuit,
-  ShoppingBag
+  ShoppingBag,
+  CircleDollarSign
 } from 'lucide-react';
-import { CashRegister } from './CashRegisterIcon';
 import { TenantInfo, UserProfile } from '../types';
 
 export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu' | 'reports';
@@ -175,13 +174,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Operational Modules Navigation */}
         <div className="w-full flex flex-row sm:flex-col justify-around sm:justify-start items-center sm:items-start gap-2 sm:gap-0.5">
-          {/* Mesas y Salones */}
+          {/* Mesas y Salones: LayoutGrid representa claramente el plano/distribución de mesas */}
           <NavVerticalItem
             id="nav-tab-pos"
             onClick={() => setActiveTab('pos')}
-            icon={<UtensilsCrossed className="w-5 h-5" />}
-            label="Mesa y Salones"
-            sublabel="Plano interactivo en pantalla completa"
+            icon={<LayoutGrid className="w-5 h-5 transition-transform group-hover:scale-105" />}
+            label="Mesas y Salones"
+            sublabel="Mapa y distribución interactiva"
             isActive={activeTab === 'pos'}
           />
 
@@ -191,8 +190,8 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="nav-tab-takeaway"
               onClick={onQuickTakeaway}
               icon={<ShoppingBag className="w-5 h-5 text-amber-400" />}
-              label="Para Llevar / Venta Rápida"
-              sublabel="Emitir orden rápida sin mesa"
+              label="Para Llevar"
+              sublabel="Venta rápida directa de mostrador"
               variant="warning"
             />
           )}
@@ -201,42 +200,42 @@ export const Navbar: React.FC<NavbarProps> = ({
           <NavVerticalItem
             id="nav-tab-kds"
             onClick={() => setActiveTab('kds')}
-            icon={<ChefHat className="w-5 h-5" />}
-            label="Cocina & Bar KDS"
-            sublabel="Monitor de órdenes y comandas"
+            icon={<ChefHat className="w-5 h-5 transition-transform group-hover:scale-105" />}
+            label="Cocina & Bar (KDS)"
+            sublabel="Monitor de comandas en vivo"
             isActive={activeTab === 'kds'}
           />
 
-          {/* Menú y Catálogo */}
+          {/* Menú y Catálogo: UtensilsCrossed representa alimentos y platillos */}
           {user?.role === 'ADMIN' && (
             <NavVerticalItem
               id="nav-tab-menu"
               onClick={() => setActiveTab('menu')}
-              icon={<BookOpen className="w-5 h-5" />}
-              label="Menú y Catálogo"
-              sublabel="Administra platillos y precios"
+              icon={<UtensilsCrossed className="w-5 h-5 transition-transform group-hover:scale-105" />}
+              label="Platillos & Menú"
+              sublabel="Catálogo, recetas y precios"
               isActive={activeTab === 'menu'}
             />
           )}
 
-          {/* Caja & Facturación */}
+          {/* Caja & Facturación: Receipt representa el ticket / factura digital DGT */}
           <NavVerticalItem
             id="nav-tab-billing"
             onClick={() => setActiveTab('billing')}
-            icon={<CreditCard className="w-5 h-5" />}
+            icon={<Receipt className="w-5 h-5 transition-transform group-hover:scale-105" />}
             label="Caja y Facturación"
-            sublabel="Cobro rápido y Hacienda DGT v4.4"
+            sublabel="Cobro y Hacienda Electrónica v4.4"
             isActive={activeTab === 'billing'}
           />
 
-          {/* Reportes */}
+          {/* Reportes: TrendingUp representa métricas de negocio y crecimiento */}
           {['ADMIN', 'CAJERO'].includes(user?.role || '') && (
             <NavVerticalItem
               id="nav-tab-reports"
               onClick={() => setActiveTab('reports')}
-              icon={<BarChart3 className="w-5 h-5" />}
-              label="Reportes y Estadísticas"
-              sublabel="Ventas, propinas y cierres"
+              icon={<TrendingUp className="w-5 h-5 transition-transform group-hover:scale-105" />}
+              label="Métricas & Reportes"
+              sublabel="Ventas, propinas y rendimiento"
               isActive={activeTab === 'reports'}
             />
           )}
@@ -252,9 +251,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-shift-btn"
               onClick={() => onOpenCashShift(isShiftOpen ? 'status' : 'status')}
-              icon={<CashRegister className="w-5 h-5" />}
-              label={isShiftOpen ? "Caja Activa" : "Caja Cerrada"}
-              sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Movimientos y Cierre Z` : `${activeRegisterName || 'Caja'} • Clic para abrir turno`}
+              icon={<CircleDollarSign className="w-5 h-5" />}
+              label={isShiftOpen ? "Turno de Caja Abierto" : "Turno Cerrado"}
+              sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Cierre Z y arqueo` : `${activeRegisterName || 'Caja'} • Clic para iniciar turno`}
               variant={isShiftOpen ? 'default' : 'warning'}
               badge={
                 <span 
@@ -293,9 +292,9 @@ export const Navbar: React.FC<NavbarProps> = ({
             <NavVerticalItem
               id="nav-register-user-btn"
               onClick={onOpenStaffModal}
-              icon={<UserPlus className="w-5 h-5 text-stone-400" />}
-              label="Equipo y Permisos"
-              sublabel="Gestionar colaboradores y PIN"
+              icon={<Users className="w-5 h-5 text-stone-400" />}
+              label="Equipo y Personal"
+              sublabel="Gestionar colaboradores y roles"
             />
           )}
         </div>
@@ -376,7 +375,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-[10px] font-bold text-stone-300 transition-colors cursor-pointer"
                 title={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado (0% IVA)" : "Régimen Tradicional (13% IVA)"}
               >
-                <Landmark className="w-3.5 h-3.5 text-[#a9b994]" />
+                <Building2 className="w-3.5 h-3.5 text-[#a9b994]" />
                 <span>{tenant.taxRegime === 'SIMPLIFIED' ? 'Simp.' : '13%'}</span>
               </button>
             )}
