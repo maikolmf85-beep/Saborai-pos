@@ -14,6 +14,16 @@ import {
   X,
   Menu,
   Star,
+  Mic,
+  BrainCircuit,
+  Wand2,
+  MessageSquare,
+  Zap,
+  Terminal,
+  ChefHat,
+  Receipt,
+  Layers,
+  ArrowUpRight
 } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { tilopayService } from '../services/tilopayService';
@@ -527,44 +537,156 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
       <main>
         {/* HERO */}
-        <section className="lp-hero-bg relative pt-20 pb-32 lg:pt-32 lg:pb-40 text-center px-4 sm:px-6 lg:px-8">
-          <div className="max-w-4xl mx-auto relative z-10">
-            <div className="lp-slide-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-8 bg-white border border-[#a9b994]/50 text-[#588157] shadow-sm">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="text-xs font-bold uppercase tracking-widest">Minimalismo e Inteligencia</span>
+        <section className="lp-hero-bg relative pt-16 pb-24 lg:pt-24 lg:pb-32 text-center px-4 sm:px-6 lg:px-8">
+          <div className="max-w-5xl mx-auto relative z-10">
+            <div className="lp-slide-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 bg-white border border-[#a9b994]/50 text-[#588157] shadow-sm">
+              <Sparkles className="w-3.5 h-3.5 text-[#588157] animate-pulse" />
+              <span className="text-xs font-black uppercase tracking-widest">SaborAI POS • Inteligencia Artificial Gastronómica</span>
             </div>
 
-            <h1 className="lp-slide-up text-5xl sm:text-7xl font-black tracking-tight leading-tight mb-6 text-[#3b3733]" style={{ animationDelay: '.1s' }}>
-              El POS para restaurantes que <br className="hidden sm:block" />
-              <span className="lp-grad-text">
-                {typingText}
-                <span className="lp-cursor text-[#a9b994]">|</span>
-              </span>
+            <h1 className="lp-slide-up text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] mb-6 text-[#3b3733]" style={{ animationDelay: '.1s' }}>
+              El primer POS gastronómico <br className="hidden sm:block" />
+              impulsado por <span className="lp-grad-text">Inteligencia Artificial</span>
             </h1>
 
-            <p className="lp-slide-up text-lg text-[#6b686d] mb-10 max-w-2xl mx-auto leading-relaxed" style={{ animationDelay: '.2s' }}>
-              Automatiza tu restaurante con la única plataforma en Costa Rica que combina Facturación Hacienda v4.4, KDS, y pagos Tilopay impulsados por IA nativa.
+            <p className="lp-slide-up text-lg sm:text-xl text-[#6b686d] mb-8 max-w-3xl mx-auto leading-relaxed" style={{ animationDelay: '.2s' }}>
+              Conoce a <strong>Nyza Copilot</strong>: comanda por voz, previene quiebres de inventario, audita Hacienda DGT v4.4 en tiempo real y repara fallos técnicos sin necesidad de soporte humano.
             </p>
 
-            <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4" style={{ animationDelay: '.3s' }}>
+            <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4 mb-14" style={{ animationDelay: '.3s' }}>
               <button
                 onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }}
-                className="lp-beam w-full sm:w-auto px-8 py-4 rounded-full font-black text-white hover:scale-105 transition-all shadow-lg flex items-center justify-center gap-2"
+                className="lp-beam w-full sm:w-auto px-8 py-4 rounded-full font-black text-white hover:scale-105 active:scale-95 transition-all shadow-xl shadow-[#588157]/20 flex items-center justify-center gap-2 cursor-pointer"
                 style={{ background: '#588157' }}
               >
-                Comenzar Prueba Gratis <ArrowRight className="w-4 h-4" />
+                Comenzar Prueba Gratis (14 Días) <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setDemoEmailModal(true)}
-                className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/50 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2"
+                className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/60 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Play className="w-4 h-4 text-[#588157]" /> Probar Demo
+                <Play className="w-4 h-4 text-[#588157]" /> Ver Demo Interactivo
               </button>
             </div>
-            
-            <div className="lp-slide-up mt-12 flex flex-wrap items-center justify-center gap-6 text-[11px] font-bold text-[#a9b994] uppercase tracking-wider" style={{ animationDelay: '.4s' }}>
-              {['IA Nativa', 'Hacienda v4.4', 'Tilopay', 'Modo Offline'].map((t) => (
-                <span key={t} className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> {t}</span>
+
+            {/* Interactive Live POS + Nyza AI Mockup Component */}
+            <div className="lp-slide-up max-w-4xl mx-auto text-left rounded-3xl bg-stone-900 border border-stone-800 shadow-2xl overflow-hidden ring-1 ring-white/10" style={{ animationDelay: '.4s' }}>
+              {/* Window Header */}
+              <div className="px-5 py-3.5 bg-stone-950 border-b border-stone-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-rose-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-amber-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-emerald-500/80" />
+                  <span className="text-xs font-mono text-stone-400 ml-2">saborai-pos.cr • Terminal Mesa 4</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#a9b994]/20 text-[#a9b994] border border-[#a9b994]/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    Nyza IA Activa
+                  </span>
+                </div>
+              </div>
+
+              {/* Mockup Operational Content */}
+              <div className="p-6 sm:p-8 grid grid-cols-1 md:grid-cols-12 gap-6 bg-gradient-to-b from-stone-900 to-stone-950 text-white">
+                {/* Left Column: POS Order Preview */}
+                <div className="md:col-span-7 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-stone-800">
+                    <div>
+                      <span className="text-xs font-bold text-[#a9b994] uppercase tracking-wider">Mesa 4 • Terraza</span>
+                      <h4 className="text-lg font-black text-white">Orden Actual (Comanda #1042)</h4>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-xl bg-stone-800 text-stone-300 text-xs font-bold">2 Comensales</span>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between items-center p-3 rounded-2xl bg-stone-800/60 border border-stone-700/50">
+                      <div>
+                        <div className="font-bold text-stone-100">1x Ribeye Steak 350g Angus</div>
+                        <div className="text-xs text-stone-400">Término Medio • Salsa Pimienta</div>
+                      </div>
+                      <span className="font-mono font-bold text-[#a9b994]">₡16,500</span>
+                    </div>
+
+                    <div className="flex justify-between items-center p-3 rounded-2xl bg-stone-800/60 border border-stone-700/50">
+                      <div>
+                        <div className="font-bold text-stone-100">1x Ceviche Corvina Reina</div>
+                        <div className="text-xs text-stone-400">Patacones y aguacate</div>
+                      </div>
+                      <span className="font-mono font-bold text-[#a9b994]">₡7,800</span>
+                    </div>
+
+                    {/* AI Prompted upsell chip */}
+                    <div className="p-3 rounded-2xl bg-[#588157]/15 border border-[#a9b994]/30 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <Sparkles className="w-4 h-4 text-[#a9b994] shrink-0" />
+                        <span className="text-xs text-stone-200">
+                          <strong>Sugerencia Nyza:</strong> ¿Ofrecer Maridaje Copa Malbec (+₡4,500)?
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-lg bg-[#a9b994] text-stone-900 shrink-0">
+                        Upsell +18%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-stone-800 flex items-center justify-between text-xs text-stone-400">
+                    <span>Hacienda DGT: Clave 50 dígitos lista</span>
+                    <span className="text-stone-200 font-bold">Total: <strong className="text-emerald-400 font-mono text-base">₡27,459</strong> (IVA + Serv)</span>
+                  </div>
+                </div>
+
+                {/* Right Column: Nyza AI Live Agent Insights */}
+                <div className="md:col-span-5 bg-stone-950/80 rounded-2xl p-5 border border-stone-800 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-4">
+                      <BrainCircuit className="w-5 h-5 text-[#a9b994]" />
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">Acciones Nyza IA</span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs">
+                        <div className="flex items-center gap-1.5 text-[#a9b994] font-bold mb-1">
+                          <Mic className="w-3.5 h-3.5" /> Comanda por Voz Activa
+                        </div>
+                        <p className="text-stone-300 text-[11px]">
+                          "Agrega dos cervezas Imperial y cuenta separada para el cliente 2"
+                        </p>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs">
+                        <div className="flex items-center gap-1.5 text-amber-400 font-bold mb-1">
+                          <Zap className="w-3.5 h-3.5" /> Predicción de Inventario
+                        </div>
+                        <p className="text-stone-300 text-[11px]">
+                          Quedan 4 porciones de Ribeye. Alerta emitida a cocina y barra.
+                        </p>
+                      </div>
+
+                      <div className="p-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs">
+                        <div className="flex items-center gap-1.5 text-emerald-400 font-bold mb-1">
+                          <ShieldCheck className="w-3.5 h-3.5" /> Autodiagnóstico 24/7
+                        </div>
+                        <p className="text-stone-300 text-[11px]">
+                          0 errores en red local. Base de datos sincronizada al 100%.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-stone-800/80 text-[11px] text-stone-400 flex items-center justify-between">
+                    <span>Modo Mesh Offline</span>
+                    <span className="text-emerald-400 font-bold">● En Línea</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="lp-slide-up mt-10 flex flex-wrap items-center justify-center gap-6 text-xs font-bold text-[#588157] uppercase tracking-wider" style={{ animationDelay: '.5s' }}>
+              {['Comanda por Voz con Nyza', 'Predicción de Mermas', 'Hacienda v4.4 en 1 Clic', 'Red Mesh Local Offline', 'Pagos Tilopay & WhatsApp'].map((t) => (
+                <span key={t} className="flex items-center gap-1.5 bg-white/80 px-3.5 py-1.5 rounded-full border border-[#a9b994]/30 shadow-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#588157]" /> {t}
+                </span>
               ))}
             </div>
           </div>
