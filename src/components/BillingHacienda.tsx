@@ -18,7 +18,10 @@ import {
   Search,
   Save,
   ChevronLeft,
-  Banknote
+  Banknote,
+  Share2,
+  MessageCircle,
+  WifiOff
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
@@ -97,6 +100,12 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [cashReceived, setCashReceived] = useState<string>('');
   const [isSearchingHacienda, setIsSearchingHacienda] = useState(false);
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
+  const [savedCustomers, setSavedCustomers] = useState<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>(() => {
+    try {
+      const raw = localStorage.getItem('saborai_customers');
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
 
   // Filter items based on active subaccount tab
   const activeItems: TableItem[] = selectedSubAccount === 'ALL'
@@ -169,16 +178,60 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       if (!res.ok) throw new Error('Not found');
       const data = await res.json();
       
-      setCustomerName(data.nombre || '');
-      if (data.actividades && data.actividades.length > 0) {
-        setCustomerActivityCode(data.actividades[0].codigo || '');
-      }
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón', timestamp: new Date() });
+      const fetchedName = data.nombre || '';
+      const fetchedActivity = data.actividades && data.actividades.length > 0 ? data.actividades[0].codigo || '' : '';
+      setCustomerName(fetchedName);
+      setCustomerActivityCode(fetchedActivity);
+
+      // Guardar en la caché local para modo offline resiliente
+      try {
+        const cleanCed = customerCedula.replace(/[-]/g, '');
+        const updatedList = [
+          {
+            cedula: cleanCed,
+            name: fetchedName,
+            email: customerEmail || '',
+            activityCode: fetchedActivity
+          },
+          ...savedCustomers.filter(c => c.cedula !== cleanCed)
+        ].slice(0, 30);
+        setSavedCustomers(updatedList);
+        localStorage.setItem('saborai_customers', JSON.stringify(updatedList));
+      } catch {}
+
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón y guardados localmente', timestamp: new Date() });
     } catch (err) {
       if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'No encontrado', message: 'No se encontró el contribuyente en Hacienda', timestamp: new Date() });
     } finally {
       setIsSearchingHacienda(false);
     }
+  };
+
+  const handleShareWhatsApp = () => {
+    const restaurantName = tenant.name || 'SaborAI POS';
+    const docTitle = isSimplified 
+      ? `Comprobante N° ${consecutivo}` 
+      : isFacturaElectronica 
+      ? `Factura Electrónica N° ${consecutivo}` 
+      : `Tiquete Electrónico N° ${consecutivo}`;
+
+    const itemsSummary = activeItems.map(i => `• ${i.quantity}x ${i.name} (₡${(i.price * i.quantity).toLocaleString()})`).join('\n');
+
+    const message = `🧾 *${restaurantName}*
+Hola *${customerName || 'Cliente'}*, aquí está el detalle de tu comprobante digital:
+📄 *${docTitle}*
+${!isSimplified && clave50Digitos ? `🔑 Clave DGT: \`${clave50Digitos}\`\n` : ''}
+*Detalle de Consumo:*
+${itemsSummary}
+
+Subtotal: ₡${subtotal.toLocaleString()}
+${!isSimplified ? `IVA 13%: ₡${iva13.toLocaleString()}\n` : ''}${servicio10 > 0 ? `10% Servicio de Mesa: ₡${servicio10.toLocaleString()}\n` : ''}*TOTAL PAGADO: ₡${total.toLocaleString()}*
+Medio de Pago: ${paymentMethod}
+
+¡Muchas gracias por su preferencia! Pura Vida. ✨`;
+
+    const encoded = encodeURIComponent(message);
+    window.open(`https://api.whatsapp.com/send?text=${encoded}`, '_blank');
   };
 
   // Create another subaccount (e.g. Cuenta 3)
@@ -929,7 +982,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                     <button
                       onClick={handleSearchHacienda}
                       disabled={isSearchingHacienda || !customerCedula}
-                      className="px-4 py-2.5 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      className="px-4 py-2.5 bg-stone-900 text-white rounded-xl font-bold hover:bg-stone-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center cursor-pointer"
                       title="Buscar en Padrón de Hacienda"
                     >
                       {isSearchingHacienda ? <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <Search className="w-4 h-4" />}
@@ -969,6 +1022,29 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                   />
                 </div>
+
+                {/* Clientes Frecuentes Guardados Localmente (Modo Resiliente Offline) */}
+                {savedCustomers.length > 0 && (
+                  <div className="sm:col-span-2 pt-1 border-t border-stone-100 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase text-stone-400 mr-1">Clientes en Caché:</span>
+                    {savedCustomers.slice(0, 4).map((c) => (
+                      <button
+                        key={c.cedula}
+                        type="button"
+                        onClick={() => {
+                          setCustomerCedula(c.cedula);
+                          setCustomerName(c.name);
+                          if (c.email) setCustomerEmail(c.email);
+                          if (c.activityCode) setCustomerActivityCode(c.activityCode);
+                        }}
+                        className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-[10px] font-bold text-stone-700 transition-colors border border-stone-200 cursor-pointer"
+                        title={`Cargar datos de ${c.name} (${c.cedula})`}
+                      >
+                        {c.name.split(' ')[0]} ({c.cedula})
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="px-3.5 py-2.5 rounded-xl bg-stone-50 border border-stone-200/70 text-[11px] text-stone-500 flex items-center justify-between">
@@ -1039,10 +1115,19 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
                 <button
                   onClick={handleDownloadXml}
-                  className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200"
+                  className="px-3.5 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-stone-200 cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5 text-[#588157]" />
                   <span>{isSimplified ? 'Descargar Comprobante' : 'Descargar .XML'}</span>
+                </button>
+
+                <button
+                  onClick={handleShareWhatsApp}
+                  className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-emerald-300 cursor-pointer"
+                  title="Compartir comprobante por WhatsApp"
+                >
+                  <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Enviar por WhatsApp</span>
                 </button>
               </div>
             </div>
@@ -1051,7 +1136,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
           {/* Action Trigger */}
           <button
             onClick={handleEmitToHacienda}
-            className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 transition-all flex items-center justify-center gap-2 shadow-sm"
+            className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
           >
             {isInvoiceEmitted ? (
               <>
@@ -1068,13 +1153,25 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
             )}
           </button>
 
+          {/* Botón de Envío Directo por WhatsApp tras Cobro */}
+          {isInvoiceEmitted && (
+            <button
+              type="button"
+              onClick={handleShareWhatsApp}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm animate-in fade-in cursor-pointer"
+            >
+              <MessageCircle className="w-4 h-4 text-white" />
+              <span>Compartir Comprobante Digital por WhatsApp 📱</span>
+            </button>
+          )}
+
           {isInvoiceEmitted && onBackToTables && (
             <button
               type="button"
               onClick={onBackToTables}
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm animate-in fade-in"
+              className="w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-sm animate-in fade-in cursor-pointer"
             >
-              <CheckCircle2 className="w-4 h-4 text-white" />
+              <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
               <span>Mesa Liberada ✓ Volver a Salones</span>
             </button>
           )}
@@ -1089,12 +1186,22 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
               <Printer className="w-3.5 h-3.5 text-[#588157]" />
               <span>Vista Previa Impresión ({paperWidth})</span>
             </span>
-            <button
-              onClick={() => window.print()}
-              className="text-stone-700 hover:text-stone-900 text-xs font-bold underline"
-            >
-              Imprimir Ahora
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleShareWhatsApp}
+                className="text-emerald-700 hover:text-emerald-900 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                title="Compartir texto por WhatsApp"
+              >
+                <MessageCircle className="w-3 h-3 text-emerald-600" />
+                <span>WhatsApp</span>
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="text-stone-700 hover:text-stone-900 text-xs font-bold underline cursor-pointer"
+              >
+                Imprimir
+              </button>
+            </div>
           </div>
 
           {/* Thermal Paper Container */}
