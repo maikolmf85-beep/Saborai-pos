@@ -12,7 +12,59 @@ export interface InventoryMovement {
   details: string;
 }
 
+export interface StockPrediction {
+  itemId: string;
+  itemName: string;
+  remainingPortions: number;
+  criticalIngredient?: string;
+  isCritical: boolean; // 1 to 3 portions remaining
+  isDepleted: boolean; // 0 portions remaining
+}
+
 export class InventoryService {
+  /**
+   * Predice cuántas porciones restantes pueden prepararse de cada platillo antes de agotar insumos
+   */
+  public getStockPredictions(menu?: MenuItem[]): StockPrediction[] {
+    const activeMenu = menu || this.getMenu();
+    return activeMenu.map(item => {
+      if (!item.ingredients || item.ingredients.length === 0) {
+        return {
+          itemId: item.id,
+          itemName: item.name,
+          remainingPortions: 999,
+          isCritical: false,
+          isDepleted: item.available === false
+        };
+      }
+
+      let minPortions = Infinity;
+      let bottleneckIngredient = '';
+
+      for (const ing of item.ingredients) {
+        const required = Number(ing.requiredQty) || 1;
+        const current = Number(ing.currentStock) || 0;
+        const portions = Math.max(0, Math.floor(current / required));
+        if (portions < minPortions) {
+          minPortions = portions;
+          bottleneckIngredient = ing.name;
+        }
+      }
+
+      const remainingPortions = minPortions === Infinity ? 999 : minPortions;
+      const isDepleted = remainingPortions <= 0 || item.available === false;
+      const isCritical = !isDepleted && remainingPortions <= 3;
+
+      return {
+        itemId: item.id,
+        itemName: item.name,
+        remainingPortions,
+        criticalIngredient: bottleneckIngredient,
+        isCritical,
+        isDepleted
+      };
+    });
+  }
   /**
    * Obtiene la lista actual de productos del menú y sus fichas técnicas de inventario
    */

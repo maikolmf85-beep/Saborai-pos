@@ -12,6 +12,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { MenuItem, Table, UserProfile } from '../types';
 import { nyzaLearningService } from '../services/nyzaLearningService';
+import { inventoryService } from '../services/inventoryService';
 
 interface AICopilotChatProps {
   isOpen: boolean;
@@ -161,11 +162,14 @@ Cuando detectes un reporte técnico o necesites ejecutar una o más herramientas
 
 CAPACIDADES OPERATIVAS ADICIONALES DEL RESTAURANTE:
 - Agregar producto: \`\`\`json\n{"type": "ADD_ITEM", "product": "nombre_producto", "quantity": 1}\n\`\`\`
+- Pausar o activar platillo: \`\`\`json\n{"type": "TOGGLE_DISH_AVAILABILITY", "product": "Lomo Saltado", "available": false}\n\`\`\`
 - Crear mesa: \`\`\`json\n{"type": "ADD_TABLE", "name": "Mesa 2", "zone": "Terraza"}\n\`\`\`
 - Abrir turno: \`\`\`json\n{"type": "OPEN_SHIFT"}\n\`\`\`
 
 Contexto actual del restaurante:
 - Menú: ${menuItems.map(m => m.name + ' (₡' + m.price + ')').join(', ')}
+- Estado Predictivo de Insumos & Stock:
+${inventoryService.getStockPredictions(menuItems).filter(p => p.isCritical || p.isDepleted).map(p => `  * ${p.itemName}: ${p.isDepleted ? 'AGOTADO (0 porciones)' : `CRÍTICO (solo quedan ~${p.remainingPortions} porciones por ${p.criticalIngredient || 'insumo'})`}`).join('\n') || '  * Todos los platillos tienen stock saludable.'}
 ${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})` : '- Sin mesa seleccionada.'}
 
 ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
@@ -324,6 +328,12 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
         >
           <BrainCircuit className="w-3 h-3 text-[#a9b994]" />
           <span>🧠 ¿Qué aprendiste hoy?</span>
+        </button>
+        <button
+          onClick={() => handlePromptClick('¿Qué platillos tienen stock crítico o insumos bajos?')}
+          className="px-2.5 py-1 rounded-full bg-white border border-amber-300 text-amber-900 hover:bg-amber-50 whitespace-nowrap font-bold cursor-pointer flex items-center gap-1"
+        >
+          <span>📉 Alertas de Stock</span>
         </button>
         <button
           onClick={() => handlePromptClick('Ejecuta un ciclo de aprendizaje diario y dime tu IQ')}

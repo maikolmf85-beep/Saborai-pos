@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { MenuItem, Table, TableItem, SubAccount, TenantInfo, UserRole, UserProfile } from '../types';
 import { 
   Sparkles, 
@@ -15,7 +15,9 @@ import {
   Wallet, 
   ArrowRightLeft, 
   ReceiptText,
-  X
+  X,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { QuickPaymentModal } from './QuickPaymentModal';
 import { soundService } from '../services/soundEffects';
@@ -86,6 +88,11 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [currentModSelections, setCurrentModSelections] = useState<{ modifierName: string; choiceName: string; extraPrice: number }[]>([]);
 
   const [activeSubcategory, setActiveSubcategory] = useState<string>('Todas');
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const voiceRecognitionRef = useRef<any>(null);
+
+  const stockPredictions = inventoryService.getStockPredictions(menuItems);
+  const stockPredictionsMap = new Map(stockPredictions.map(p => [p.itemId, p]));
 
   const currentDiner = subAccounts.find(s => s.id === selectedSubAccount) || subAccounts[0];
 
@@ -211,6 +218,114 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     if (selectedProductForMods) {
       setSelectedProductForMods(null);
       setCurrentModSelections([]);
+    }
+  };
+
+  const startVoiceOrder = () => {
+    // @ts-ignore
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      if (onNotify) {
+        onNotify({
+          id: `voice_err_${Date.now()}`,
+          type: 'HACIENDA_UPDATE',
+          title: 'Voz no soportada',
+          message: 'Tu navegador no soporta reconocimiento por voz. Te sugerimos usar Google Chrome o Edge.',
+          timestamp: new Date()
+        });
+      }
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'es-CR';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => setIsListeningVoice(true);
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0].transcript)
+          .join('');
+        setIsListeningVoice(false);
+        parseAndExecuteVoiceCommand(transcript);
+      };
+      recognition.onerror = () => setIsListeningVoice(false);
+      recognition.onend = () => setIsListeningVoice(false);
+
+      voiceRecognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListeningVoice(false);
+    }
+  };
+
+  const stopVoiceOrder = () => {
+    if (voiceRecognitionRef.current) {
+      try { voiceRecognitionRef.current.stop(); } catch {}
+    }
+    setIsListeningVoice(false);
+  };
+
+  const parseAndExecuteVoiceCommand = (rawTranscript: string) => {
+    const text = rawTranscript.trim().toLowerCase();
+    if (!text) return;
+
+    const numberWords: Record<string, number> = {
+      'un': 1, 'una': 1, 'uno': 1, '1': 1,
+      'dos': 2, '2': 2,
+      'tres': 3, '3': 3,
+      'cuatro': 4, '4': 4,
+      'cinco': 5, '5': 5,
+      'seis': 6, '6': 6,
+      'siete': 7, '7': 7,
+      'ocho': 8, '8': 8,
+      'nueve': 9, '9': 9,
+      'diez': 10, '10': 10
+    };
+
+    const itemsToAdd: { product: MenuItem; quantity: number }[] = [];
+
+    for (const item of menuItems) {
+      const itemNameLower = item.name.toLowerCase();
+      if (text.includes(itemNameLower)) {
+        const beforeIndex = text.indexOf(itemNameLower);
+        const prefix = text.substring(Math.max(0, beforeIndex - 15), beforeIndex).trim();
+        const prefixWords = prefix.split(/\s+/);
+        const lastWord = prefixWords[prefixWords.length - 1];
+        const qty = numberWords[lastWord] || 1;
+        itemsToAdd.push({ product: item, quantity: qty });
+      }
+    }
+
+    if (itemsToAdd.length > 0) {
+      for (const { product, quantity } of itemsToAdd) {
+        for (let q = 0; q < quantity; q++) {
+          _executeAddItem(product, []);
+        }
+      }
+      soundService.playSuccessChime();
+      if (onNotify) {
+        onNotify({
+          id: `voice_${Date.now()}`,
+          type: 'ORDER_READY',
+          title: '🎤 Comanda por Voz',
+          message: `Nyza agregó: ${itemsToAdd.map(i => `${i.quantity}x ${i.product.name}`).join(', ')}`,
+          timestamp: new Date()
+        });
+      }
+    } else {
+      setSearchTerm(rawTranscript);
+      if (onNotify) {
+        onNotify({
+          id: `voice_search_${Date.now()}`,
+          type: 'NEW_ORDER',
+          title: '🎤 Búsqueda por voz',
+          message: `Filtrando platillos con: "${rawTranscript}"`,
+          timestamp: new Date()
+        });
+      }
     }
   };
 
@@ -590,16 +705,48 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           
           {/* Search Bar & Subcategory Navigation */}
           <div className="flex flex-col gap-3 sticky top-0 bg-stone-50/95 backdrop-blur-sm z-10 pt-1 pb-3">
-            <div className="relative">
-              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
-              <input
-                type="text"
-                placeholder="Buscar platillo, café o bebida..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-white border border-stone-200 rounded-2xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 placeholder:text-stone-400"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar platillo, café o bebida..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-white border border-stone-200 rounded-2xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 placeholder:text-stone-400"
+                />
+              </div>
+
+              {/* Botón de Comanda por Voz con Nyza */}
+              <button
+                type="button"
+                onClick={isListeningVoice ? stopVoiceOrder : startVoiceOrder}
+                className={`px-3 py-2.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                  isListeningVoice 
+                    ? 'bg-red-500 border-red-600 text-white animate-pulse shadow-md' 
+                    : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-100 hover:text-stone-900 shadow-xs'
+                }`}
+                title={isListeningVoice ? "Detener dictado por voz" : "Comandar por voz con Nyza (Ej: 'Dos Hamburguesas y un Café')"}
+              >
+                {isListeningVoice ? <Mic className="w-4 h-4 text-white" /> : <Mic className="w-4 h-4 text-[#588157]" />}
+                <span className="hidden sm:inline text-xs font-bold">
+                  {isListeningVoice ? 'Escuchando...' : 'Comanda por Voz'}
+                </span>
+              </button>
             </div>
+
+            {/* Banner de escucha activa de comanda por voz */}
+            {isListeningVoice && (
+              <div className="px-3.5 py-2 bg-red-50 border border-red-200 text-red-900 rounded-xl text-xs font-semibold flex items-center justify-between animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                  <span>Nyza escuchando: Di el nombre y cantidad del platillo (ej. <em>"Dos Casados y un Café"</em>)...</span>
+                </div>
+                <button type="button" onClick={stopVoiceOrder} className="text-[11px] font-bold text-red-700 underline cursor-pointer">
+                  Detener
+                </button>
+              </div>
+            )}
 
             {availableSubcategories.length > 0 && (
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
@@ -620,14 +767,31 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
             )}
           </div>
 
-          {/* Copilot AI Pairing Pill */}
+          {/* Copilot AI Pairing Pill con botón de venta cruzada / upselling directo */}
           {aiSuggestion && (
             <div className="px-4 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 text-stone-700">
-                <Sparkles className="w-3.5 h-3.5 text-[#588157]" />
-                <span className="font-semibold text-stone-900">Saborai Copilot:</span>
+              <div className="flex items-center gap-2 text-stone-700 min-w-0">
+                <Sparkles className="w-3.5 h-3.5 text-[#588157] shrink-0" />
+                <span className="font-semibold text-stone-900 shrink-0">Saborai Copilot:</span>
                 <span className="text-stone-600 truncate">{aiSuggestion}</span>
               </div>
+              {(() => {
+                const suggestedItem = menuItems.find(m => 
+                  aiSuggestion.toLowerCase().includes(m.name.toLowerCase()) && m.available !== false
+                );
+                if (!suggestedItem) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => handleAddItem(suggestedItem)}
+                    className="shrink-0 px-2.5 py-1 bg-stone-900 hover:bg-stone-800 text-white rounded-xl font-bold text-[11px] flex items-center gap-1 transition-all shadow-2xs cursor-pointer"
+                    title={`Agregar ${suggestedItem.name} a la cuenta`}
+                  >
+                    <Plus className="w-3 h-3 text-[#a9b994]" />
+                    <span>+ {suggestedItem.name}</span>
+                  </button>
+                );
+              })()}
             </div>
           )}
 
@@ -647,6 +811,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 const qtyInOrder = currentOrderItems
                   .filter(oi => oi.name === item.name)
                   .reduce((sum, oi) => sum + oi.quantity, 0);
+                const prediction = stockPredictionsMap.get(item.id);
 
                 return (
                   <button
@@ -675,6 +840,13 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                           {isOutOfStock ? (
                             <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
                               Agotado
+                            </span>
+                          ) : prediction && prediction.isCritical ? (
+                            <span 
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300"
+                              title={`Insumo crítico: ${prediction.criticalIngredient}`}
+                            >
+                              Quedan ~{prediction.remainingPortions}
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">

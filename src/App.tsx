@@ -1300,6 +1300,21 @@ export function App() {
             } else if (cmd.type === 'OPEN_SHIFT') {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
+            } else if (cmd.type === 'TOGGLE_DISH_AVAILABILITY') {
+               const targetName = (cmd.product || '').toLowerCase();
+               const updated = menuItems.map(m =>
+                 m.name.toLowerCase().includes(targetName)
+                   ? { ...m, available: Boolean(cmd.available) }
+                   : m
+               );
+               handleUpdateMenu(updated);
+               addNotification({
+                 id: `nyza_${Date.now()}`,
+                 type: 'HACIENDA_UPDATE',
+                 title: 'Nyza Menú',
+                 message: `${cmd.available ? 'Activó' : 'Pausó'} "${cmd.product || 'platillo'}" en el menú.`,
+                 timestamp: new Date()
+               });
             } else if (cmd.tool_calls && Array.isArray(cmd.tool_calls)) {
                (async () => {
                  for (const tool of cmd.tool_calls) {
