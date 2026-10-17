@@ -1108,6 +1108,7 @@ export function App() {
                   onUpdateTables={handleUpdateTables}
                   onQuickTakeaway={handleQuickTakeaway}
                   activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
+                  activeShiftZones={cashShiftService.getActiveShift()?.linkedZones}
                 />
               )
             )}

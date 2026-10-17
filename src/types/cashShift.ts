@@ -58,7 +58,8 @@ export interface CashRegister {
   assignedPrinterId?: string;
   isActive: boolean;
   notes?: string;
-  linkedZone?: string; // Salón/Zona exclusivo asociado a esta caja (ej: 'Salón Principal', 'Terraza')
+  linkedZone?: string; // Compatibilidad previa (1 salón)
+  linkedZones?: string[]; // Múltiples salones asociados (ej: ['Salón Principal', 'Patio'])
 }
 
 export interface CashShift {
@@ -69,7 +70,8 @@ export interface CashShift {
   cashRegisterId?: string;
   cashRegisterName?: string;
   terminalCode?: string;
-  linkedZone?: string; // Salón enlazado al abrir este turno
+  linkedZone?: string; // Compatibilidad previa
+  linkedZones?: string[]; // Salones autorizados al abrir este turno
   openedBy: {
     userId: string;
     userName: string;

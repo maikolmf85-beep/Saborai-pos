@@ -81,7 +81,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [openingNotes, setOpeningNotes] = useState<string>('');
   const [openingCashier, setOpeningCashier] = useState<UserProfile | null>(currentUser);
   const [openingPin, setOpeningPin] = useState<string>('');
-  const [openingZone, setOpeningZone] = useState<string>('');
+  const [openingZones, setOpeningZones] = useState<string[]>([]);
   const [openingError, setOpeningError] = useState<string | null>(null);
 
   // Movement (Egreso/Ingreso) form state
@@ -178,11 +178,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [editingRegisterId, setEditingRegisterId] = useState<string | null>(null);
   const [editRegisterName, setEditRegisterName] = useState<string>('');
   const [editRegisterTerminalCode, setEditRegisterTerminalCode] = useState<string>('');
-  const [editRegisterZone, setEditRegisterZone] = useState<string>('');
+  const [editRegisterZones, setEditRegisterZones] = useState<string[]>([]);
   const [showAddRegister, setShowAddRegister] = useState<boolean>(false);
   const [newRegisterName, setNewRegisterName] = useState<string>('');
   const [newRegisterTerminalCode, setNewRegisterTerminalCode] = useState<string>('');
-  const [newRegisterZone, setNewRegisterZone] = useState<string>('');
+  const [newRegisterZones, setNewRegisterZones] = useState<string[]>([]);
   const [newRegisterError, setNewRegisterError] = useState<string | null>(null);
 
   // Sync active shift on open
@@ -196,7 +196,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const curRegId = cashShiftService.getCurrentRegisterId() || (regList[0]?.id || 'caja-01');
       setSelectedRegisterId(curRegId);
       const matchedReg = regList.find(r => r.id === curRegId);
-      setOpeningZone(matchedReg?.linkedZone || '');
+      const initialZones = matchedReg?.linkedZones && matchedReg.linkedZones.length > 0
+        ? matchedReg.linkedZones
+        : (matchedReg?.linkedZone ? [matchedReg.linkedZone] : []);
+      setOpeningZones(initialZones);
       refreshData(curRegId);
       if (currentUser) {
         setOpeningCashier(currentUser);
@@ -215,7 +218,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setRegisters(regList);
     const targetReg = regList.find(r => r.id === targetRegId);
     if (targetReg && !shift) {
-      setOpeningZone(targetReg.linkedZone || '');
+      const regZones = targetReg.linkedZones && targetReg.linkedZones.length > 0
+        ? targetReg.linkedZones
+        : (targetReg.linkedZone ? [targetReg.linkedZone] : []);
+      setOpeningZones(regZones);
     }
     if (shift) {
       setCountedCardsInput(shift.systemSummary.cardSales);
@@ -240,7 +246,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setSelectedRegisterId(regId);
     const reg = registers.find(r => r.id === regId);
     if (reg) {
-      setOpeningZone(reg.linkedZone || '');
+      const regZones = reg.linkedZones && reg.linkedZones.length > 0
+        ? reg.linkedZones
+        : (reg.linkedZone ? [reg.linkedZone] : []);
+      setOpeningZones(regZones);
     }
     refreshData(regId);
   };
@@ -278,7 +287,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         Number(initialFloatInput),
         openingNotes,
         regIdToUse,
-        openingZone || undefined
+        undefined,
+        openingZones.length > 0 ? openingZones : undefined
       );
       soundService.playSuccessChime();
       setActiveShift(newShift);
@@ -390,14 +400,17 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setEditingRegisterId(reg.id);
     setEditRegisterName(reg.name);
     setEditRegisterTerminalCode(reg.terminalCode);
-    setEditRegisterZone(reg.linkedZone || '');
+    const zList = reg.linkedZones && reg.linkedZones.length > 0 
+      ? reg.linkedZones 
+      : (reg.linkedZone ? [reg.linkedZone] : []);
+    setEditRegisterZones(zList);
   };
 
   const handleCancelEditRegister = () => {
     setEditingRegisterId(null);
     setEditRegisterName('');
     setEditRegisterTerminalCode('');
-    setEditRegisterZone('');
+    setEditRegisterZones([]);
   };
 
   const handleSaveEditRegister = (regId: string) => {
@@ -407,7 +420,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     cashShiftService.updateCashRegister(regId, {
       name: trimmed,
       terminalCode: cleanCode || undefined,
-      linkedZone: editRegisterZone.trim() || undefined
+      linkedZone: editRegisterZones.length === 1 ? editRegisterZones[0] : undefined,
+      linkedZones: editRegisterZones.length > 0 ? editRegisterZones : undefined
     });
     soundService.playSuccessChime();
     setEditingRegisterId(null);
@@ -433,12 +447,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         branchCode: '001',
         allowsBilling: true,
         allowsOrdering: true,
-        linkedZone: newRegisterZone.trim() || undefined
+        linkedZone: newRegisterZones.length === 1 ? newRegisterZones[0] : undefined,
+        linkedZones: newRegisterZones.length > 0 ? newRegisterZones : undefined
       });
       soundService.playSuccessChime();
       setNewRegisterName('');
       setNewRegisterTerminalCode('');
-      setNewRegisterZone('');
+      setNewRegisterZones([]);
       setShowAddRegister(false);
       refreshData(selectedRegisterId);
     } catch (err: any) {
@@ -747,26 +762,56 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Salón / Zona Vinculada a la Caja */}
+                {/* 4. Salón(es) / Áreas Asignadas a esta Caja */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center gap-1">
-                    <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>4. Salón / Área Asignada a esta Caja:</span>
+                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center justify-between">
+                    <span className="flex items-center gap-1">
+                      <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>4. Salones / Áreas Asignadas a este Turno:</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setOpeningZones([])}
+                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                    >
+                      {openingZones.length === 0 ? '✓ Todos activos' : 'Marcar todos'}
+                    </button>
                   </label>
-                  <select
-                    value={openingZone}
-                    onChange={(e) => setOpeningZone(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
-                  >
-                    <option value="">🌐 Todos los Salones / Sin restricción</option>
-                    {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Terraza', 'Barra', 'VIP']).map((z) => (
-                      <option key={z} value={z}>
-                        📍 {z} (Abrir turno solo en este salón)
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-stone-400 mt-1">
-                    Si seleccionas un salón (ej. Terraza), al abrir turno esta caja atenderá y operará exclusivamente en ese salón.
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-stone-50 border border-stone-200 rounded-2xl">
+                    {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Patio', 'Terraza', 'Barra', 'VIP']).map((z) => {
+                      const isSelected = openingZones.includes(z);
+                      return (
+                        <button
+                          key={z}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setOpeningZones(openingZones.filter(item => item !== z));
+                            } else {
+                              setOpeningZones([...openingZones, z]);
+                            }
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                              : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100'
+                          }`}
+                        >
+                          <span className="truncate">📍 {z}</span>
+                          {isSelected ? (
+                            <Check className="w-3.5 h-3.5 text-white shrink-0" />
+                          ) : (
+                            <span className="w-3.5 h-3.5 rounded-full border border-stone-300 shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-stone-400 mt-1.5">
+                    {openingZones.length === 0 
+                      ? '🌐 Sin restricción: Esta caja atenderá todos los salones.' 
+                      : `✅ Habilitada solo en: ${openingZones.join(', ')}`}
                   </p>
                 </div>
 
@@ -1577,21 +1622,42 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </div>
 
                   <div className="mt-2.5">
-                    <label className="block text-[11px] font-bold text-stone-700 mb-1">
-                      Salón / Área Ligada por Defecto:
+                    <label className="block text-[11px] font-bold text-stone-700 mb-1 flex items-center justify-between">
+                      <span>Salones / Áreas Ligadas por Defecto:</span>
+                      <button
+                        type="button"
+                        onClick={() => setNewRegisterZones([])}
+                        className="text-[10px] text-emerald-800 font-bold hover:underline cursor-pointer"
+                      >
+                        {newRegisterZones.length === 0 ? '✓ Todos los salones' : 'Limpiar (Todos)'}
+                      </button>
                     </label>
-                    <select
-                      value={newRegisterZone}
-                      onChange={(e) => setNewRegisterZone(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xl bg-white focus:outline-hidden focus:ring-2 focus:ring-emerald-500 font-bold text-stone-800"
-                    >
-                      <option value="">🌐 Todos los salones (General)</option>
-                      {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Terraza', 'Barra', 'VIP']).map((z) => (
-                        <option key={z} value={z}>
-                          📍 {z}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-wrap gap-1.5 p-2 bg-white border border-stone-200 rounded-xl">
+                      {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Patio', 'Terraza', 'Barra', 'VIP']).map((z) => {
+                        const isChecked = newRegisterZones.includes(z);
+                        return (
+                          <button
+                            key={z}
+                            type="button"
+                            onClick={() => {
+                              if (isChecked) {
+                                setNewRegisterZones(newRegisterZones.filter(item => item !== z));
+                              } else {
+                                setNewRegisterZones([...newRegisterZones, z]);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                              isChecked
+                                ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                                : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
+                            }`}
+                          >
+                            <span>📍 {z}</span>
+                            {isChecked && <Check className="w-3 h-3 text-white" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-end gap-2">
@@ -1674,17 +1740,42 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                               />
                             </div>
                             <div>
-                              <label className="block text-[10px] font-semibold text-stone-500 mb-0.5">Salón Asociado:</label>
-                              <select
-                                value={editRegisterZone}
-                                onChange={(e) => setEditRegisterZone(e.target.value)}
-                                className="w-full px-2 py-1 text-xs border border-stone-300 rounded-lg bg-white font-bold text-stone-800"
-                              >
-                                <option value="">🌐 Todos los salones</option>
-                                {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Terraza', 'Barra', 'VIP']).map((z) => (
-                                  <option key={z} value={z}>📍 {z}</option>
-                                ))}
-                              </select>
+                              <label className="block text-[10px] font-semibold text-stone-500 mb-1 flex items-center justify-between">
+                                <span>Salones Asociados:</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditRegisterZones([])}
+                                  className="text-[9px] text-emerald-800 font-bold hover:underline"
+                                >
+                                  {editRegisterZones.length === 0 ? '✓ Todos' : 'Todos'}
+                                </button>
+                              </label>
+                              <div className="flex flex-wrap gap-1 p-1.5 bg-white border border-stone-300 rounded-lg">
+                                {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Patio', 'Terraza', 'Barra', 'VIP']).map((z) => {
+                                  const isChecked = editRegisterZones.includes(z);
+                                  return (
+                                    <button
+                                      key={z}
+                                      type="button"
+                                      onClick={() => {
+                                        if (isChecked) {
+                                          setEditRegisterZones(editRegisterZones.filter(item => item !== z));
+                                        } else {
+                                          setEditRegisterZones([...editRegisterZones, z]);
+                                        }
+                                      }}
+                                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                                        isChecked
+                                          ? 'bg-emerald-700 text-white border-emerald-800'
+                                          : 'bg-stone-50 text-stone-600 border-stone-200'
+                                      }`}
+                                    >
+                                      <span>📍 {z}</span>
+                                      {isChecked && <Check className="w-2.5 h-2.5 text-white" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
                             <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200">
                               <div className="flex items-center gap-1 text-[10px] text-stone-500 font-mono">
@@ -1751,13 +1842,17 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                             <span className="text-[10px] text-stone-400 font-mono block">
                               DGT: {reg.terminalCode} • Sucursal {reg.branchCode}
                             </span>
-                            {reg.linkedZone ? (
+                            {reg.linkedZones && reg.linkedZones.length > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md mt-1 border border-emerald-200" title={reg.linkedZones.join(', ')}>
+                                📍 Salones: {reg.linkedZones.join(', ')}
+                              </span>
+                            ) : reg.linkedZone ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md mt-1 border border-emerald-200">
                                 📍 Salón: {reg.linkedZone}
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[10px] font-medium text-stone-400 mt-1">
-                                🌐 Salón: Todos (General)
+                                🌐 Salones: Todos (General)
                               </span>
                             )}
                           </div>

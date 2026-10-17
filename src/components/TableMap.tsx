@@ -37,6 +37,7 @@ interface TableMapProps {
   onUpdateTables?: (tables: Table[]) => void;
   onQuickTakeaway?: () => void;
   activeShiftZone?: string;
+  activeShiftZones?: string[];
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -49,7 +50,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   tenant,
   onUpdateTenant,
   onUpdateTables,
-  activeShiftZone
+  activeShiftZone,
+  activeShiftZones
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -87,7 +89,13 @@ export const TableMap: React.FC<TableMapProps> = ({
     });
   }, [initialTablesList]);
 
+  // Allowed zones according to active shift (if linked to specific salons)
+  const effectiveZones = activeShiftZones && activeShiftZones.length > 0
+    ? tenantZones.filter(z => activeShiftZones.includes(z))
+    : (activeShiftZone ? [activeShiftZone] : tenantZones);
+
   const [selectedZone, setSelectedZone] = useState<string>(() => {
+    if (effectiveZones.length > 0) return effectiveZones[0];
     if (activeShiftZone) return activeShiftZone;
     return tenantZones[0] || 'General';
   });
@@ -97,16 +105,18 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
 
-  // Sync selectedZone when activeShiftZone changes or tenantZones updates
+  // Sync selectedZone when activeShiftZones change or tenantZones update
   useEffect(() => {
-    if (activeShiftZone) {
-      setSelectedZone(activeShiftZone);
+    if (effectiveZones.length > 0) {
+      if (!effectiveZones.includes(selectedZone)) {
+        setSelectedZone(effectiveZones[0]);
+      }
       return;
     }
     if (tenantZones.length > 0 && !tenantZones.includes(selectedZone)) {
       setSelectedZone(tenantZones[0]);
     }
-  }, [activeShiftZone, tenantZones, selectedZone]);
+  }, [activeShiftZone, activeShiftZones, tenantZones, selectedZone]);
 
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean;
@@ -468,17 +478,20 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {activeShiftZone ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-700 text-white rounded-lg text-[11px] font-black shadow-xs">
-                <span>📍 Turno Activo: {activeShiftZone}</span>
-                <span className="text-[9px] bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-200 font-bold uppercase">Exclusivo</span>
+            {effectiveZones.length < tenantZones.length && effectiveZones.length > 0 && (
+              <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-800 text-white rounded-lg text-[10px] font-black shrink-0">
+                <span>📍 Turno:</span>
+                <span className="text-[9px] bg-emerald-950/70 px-1 py-0.2 rounded text-emerald-200 uppercase font-bold">
+                  {effectiveZones.length === 1 ? '1 Salón' : `${effectiveZones.length} Salones`}
+                </span>
               </div>
-            ) : tenantZones.length === 0 ? (
+            )}
+            {effectiveZones.length === 0 ? (
               <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
                 Sin salones
               </span>
             ) : (
-              tenantZones.map((zone) => (
+              effectiveZones.map((zone) => (
                 <button
                   key={zone}
                   onClick={() => setSelectedZone(zone)}
@@ -492,7 +505,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </button>
               ))
             )}
-            {isAdmin && !activeShiftZone && (
+            {isAdmin && effectiveZones.length === tenantZones.length && (
               <button
                 onClick={() => setIsZoneModalOpen(true)}
                 className="px-2 py-1 ml-1 rounded-lg text-[11px] font-bold text-[#a9b994] bg-[#a9b994]/10 hover:bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center gap-1 cursor-pointer transition-colors"
