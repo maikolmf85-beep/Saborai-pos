@@ -256,11 +256,23 @@ export function App() {
             trialEndsAt: data.subscription?.trial_ends_at
           };
           
-          setCurrentUser(user);
+          // Preservar el colaborador seleccionado actualmente (por ejemplo, Rafael) si ya existe en localStorage
+          const savedActiveUserRaw = localStorage.getItem('saborai_user');
+          let effectiveUser = user;
+          if (savedActiveUserRaw) {
+            try {
+              const parsedSavedUser = JSON.parse(savedActiveUserRaw);
+              if (parsedSavedUser && parsedSavedUser.name) {
+                effectiveUser = parsedSavedUser;
+              }
+            } catch {}
+          }
+
+          setCurrentUser(effectiveUser);
           setTenant(tenantObj);
           setSubscription(sub);
           try {
-            localStorage.setItem('saborai_user', JSON.stringify(user));
+            localStorage.setItem('saborai_user', JSON.stringify(effectiveUser));
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
           } catch {}
         } else {
@@ -1095,6 +1107,7 @@ export function App() {
                   onUpdateTenant={handleUpdateTenant}
                   onUpdateTables={handleUpdateTables}
                   onQuickTakeaway={handleQuickTakeaway}
+                  activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
                 />
               )
             )}

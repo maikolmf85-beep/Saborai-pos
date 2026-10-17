@@ -36,6 +36,7 @@ interface TableMapProps {
   onUpdateTenant: (tenant: import('../types').TenantInfo) => void;
   onUpdateTables?: (tables: Table[]) => void;
   onQuickTakeaway?: () => void;
+  activeShiftZone?: string;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -47,7 +48,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   staffList = [],
   tenant,
   onUpdateTenant,
-  onUpdateTables
+  onUpdateTables,
+  activeShiftZone
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -85,19 +87,26 @@ export const TableMap: React.FC<TableMapProps> = ({
     });
   }, [initialTablesList]);
 
-  const [selectedZone, setSelectedZone] = useState<string>(tenantZones[0] || 'General');
+  const [selectedZone, setSelectedZone] = useState<string>(() => {
+    if (activeShiftZone) return activeShiftZone;
+    return tenantZones[0] || 'General';
+  });
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
 
-  // Sync selectedZone when tenantZones updates
+  // Sync selectedZone when activeShiftZone changes or tenantZones updates
   useEffect(() => {
+    if (activeShiftZone) {
+      setSelectedZone(activeShiftZone);
+      return;
+    }
     if (tenantZones.length > 0 && !tenantZones.includes(selectedZone)) {
       setSelectedZone(tenantZones[0]);
     }
-  }, [tenantZones, selectedZone]);
+  }, [activeShiftZone, tenantZones, selectedZone]);
 
   const [confirmConfig, setConfirmConfig] = useState<{
     isOpen: boolean;
@@ -459,7 +468,12 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {tenantZones.length === 0 ? (
+            {activeShiftZone ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-700 text-white rounded-lg text-[11px] font-black shadow-xs">
+                <span>📍 Turno Activo: {activeShiftZone}</span>
+                <span className="text-[9px] bg-emerald-900/60 px-1.5 py-0.5 rounded text-emerald-200 font-bold uppercase">Exclusivo</span>
+              </div>
+            ) : tenantZones.length === 0 ? (
               <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
                 Sin salones
               </span>
@@ -478,7 +492,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </button>
               ))
             )}
-            {isAdmin && (
+            {isAdmin && !activeShiftZone && (
               <button
                 onClick={() => setIsZoneModalOpen(true)}
                 className="px-2 py-1 ml-1 rounded-lg text-[11px] font-bold text-[#a9b994] bg-[#a9b994]/10 hover:bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center gap-1 cursor-pointer transition-colors"

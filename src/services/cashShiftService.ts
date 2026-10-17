@@ -142,6 +142,7 @@ class CashShiftService {
     allowsOrdering?: boolean;
     assignedPrinterId?: string;
     notes?: string;
+    linkedZone?: string;
   }): CashRegister {
     // Format terminal code to 5 digits
     const paddedTerminal = data.terminalCode.replace(/[^0-9]/g, '').padStart(5, '0').slice(-5) || '00001';
@@ -158,7 +159,8 @@ class CashShiftService {
       allowsOrdering: data.allowsOrdering ?? true,
       assignedPrinterId: data.assignedPrinterId,
       isActive: true,
-      notes: data.notes?.trim() || ''
+      notes: data.notes?.trim() || '',
+      linkedZone: data.linkedZone?.trim() || undefined
     };
 
     this.registers.push(newReg);
@@ -251,7 +253,8 @@ class CashShiftService {
     openedByUser: UserProfile,
     initialFloat: number,
     notes?: string,
-    registerId?: string
+    registerId?: string,
+    linkedZone?: string
   ): CashShift {
     const targetRegisterId = registerId || this.currentTerminalId || 'caja-01';
     const register = this.registers.find(r => r.id === targetRegisterId) || this.getCurrentRegister() || DEFAULT_REGISTERS[0];
@@ -276,6 +279,13 @@ class CashShiftService {
       invoicesCount: 0
     };
 
+    const zoneToUse = (linkedZone !== undefined ? linkedZone : register?.linkedZone)?.trim() || undefined;
+
+    // Si se especificó o cambió la zona vinculada a la caja, sincronizar la caja
+    if (linkedZone !== undefined && register) {
+      register.linkedZone = linkedZone.trim() || undefined;
+    }
+
     const newShift: CashShift = {
       id: `shift_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       shiftNumber: nextShiftNumber,
@@ -284,6 +294,7 @@ class CashShiftService {
       cashRegisterId: register?.id || 'caja-01',
       cashRegisterName: register?.name || 'Caja 01 - Principal',
       terminalCode: register?.terminalCode || '00001',
+      linkedZone: zoneToUse,
       openedBy: {
         userId: openedByUser?.id || 'usr_matamoros_admin',
         userName: openedByUser?.name || 'Maikol Matamoros',
