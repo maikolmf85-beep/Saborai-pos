@@ -12,6 +12,11 @@ class HaciendaService {
   private listeners: ((invoices: ElectronicInvoiceCR[]) => void)[] = [];
   private config: HaciendaConfig | null = null;
 
+  private getAuthHeaders(): Record<string, string> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
   constructor() {
     // Load invoices from local storage if available
     const saved = localStorage.getItem('saborai_hacienda_invoices');
@@ -89,7 +94,7 @@ class HaciendaService {
     try {
       const res = await fetch('/api/hacienda', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...this.getAuthHeaders() },
         body: JSON.stringify({
           action: 'test-connection',
           atvUsername: config.atvUsername,
@@ -163,7 +168,7 @@ class HaciendaService {
     // Call backend API
     fetch('/api/hacienda', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...this.getAuthHeaders() },
       body: JSON.stringify({
         action: 'emit',
         xmlString: invoice.xmlContent || '',
@@ -210,7 +215,7 @@ class HaciendaService {
       try {
         const res = await fetch('/api/hacienda', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...this.getAuthHeaders() },
           body: JSON.stringify({ action: 'consultar-estado', clave, ...credentials })
         });
         const data = await res.json().catch(() => null);
@@ -351,7 +356,7 @@ class HaciendaService {
     try {
       await fetch('/api/email/send-invoice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...this.getAuthHeaders() },
         body: JSON.stringify({
           to: inv.receptor.correo,
           customerName: inv.receptor.nombre,

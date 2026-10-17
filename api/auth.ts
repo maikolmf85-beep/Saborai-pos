@@ -3,22 +3,19 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { supabaseAdmin as supabase } from './_utils/supabase.js';
+import { allowedOriginForRedirect, getJwtSecret, handleOptions, setCorsHeaders } from './_utils/security.js';
 
-const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';
 const resendApiKey = process.env.RESEND_API_KEY;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS Configuration
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
+  let jwtSecret: string;
+  try {
+    jwtSecret = getJwtSecret();
+  } catch (error: any) {
+    console.error('[Auth] Configuración insegura:', error.message);
+    return res.status(500).json({ error: 'El servidor no está configurado correctamente.' });
   }
 
   // Resolve action from query params (via vercel rewrites) or URL path
@@ -307,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           { expiresIn: '1h' }
         );
 
-        const origin = req.headers.origin || 'https://pos.saborai.site';
+        const origin = allowedOriginForRedirect(req.headers.origin);
         const resetLink = `${origin}/?resetToken=${resetToken}`;
 
         if (!resendApiKey) {

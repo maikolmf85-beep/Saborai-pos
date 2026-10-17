@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
+import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
 
 try {
   dotenv.config();
@@ -19,22 +20,15 @@ interface SendInvoiceBody {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido. Utiliza POST.' });
   }
+
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
 
   const {
     to,

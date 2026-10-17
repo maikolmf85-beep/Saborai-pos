@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import Anthropic from '@anthropic-ai/sdk';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
+import { handleOptions, getJwtSecret, setCorsHeaders } from '../_utils/security.js';
 
 try {
   dotenv.config();
@@ -23,32 +24,21 @@ interface ChatRequestBody {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido. Utiliza POST.' });
   }
 
-  // Optional JWT verification (permite modo demo sin bloquear)
+  // El modo demo puede usar el fallback local, pero cualquier JWT enviado debe ser válido.
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];
-    const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';
     try {
-      jwt.verify(token, jwtSecret);
+      jwt.verify(token, getJwtSecret());
     } catch {
-      // Ignoramos error de expiración en demo para mantener disponibilidad
+      return res.status(401).json({ error: 'Sesión inválida o expirada.' });
     }
   }
 

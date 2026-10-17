@@ -376,7 +376,6 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         active: true
       };
       localStorage.setItem('saborai_pending_user', JSON.stringify(pendingUser));
-      localStorage.setItem('saborai_pending_password', password); 
     } catch (err) {
       console.error('Error registrando usuario antes del pago:', err);
     }

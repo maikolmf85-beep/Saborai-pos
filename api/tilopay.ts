@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
+import { handleOptions, setCorsHeaders } from './_utils/security.js';
 
 // Tipos requeridos
 interface TilopayCardData {
@@ -11,19 +12,8 @@ interface TilopayCardData {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS Headers para pruebas seguras
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-tilopay-signature'
-  );
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -36,8 +26,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // TILOPAY WEBHOOK HANDLER
   // -------------------------------------------------------------
   if (isWebhook) {
-    const tilopaySecret = process.env.TILOPAY_SECRET_KEY || 'tilo_sec_99a8b7c6d5e4f3a2b1';
+    const tilopaySecret = process.env.TILOPAY_SECRET_KEY?.trim();
     const receivedSignature = req.headers['x-tilopay-signature'] as string;
+    if (!tilopaySecret || !receivedSignature) {
+      return res.status(401).json({ error: 'Webhook no configurado o firma ausente.' });
+    }
     const rawBody = JSON.stringify(req.body);
 
     const expectedSignature = crypto
@@ -45,9 +38,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .update(rawBody)
       .digest('hex');
 
-    const isSignatureValid = receivedSignature === `sha256=${expectedSignature}` || process.env.NODE_ENV === 'development';
+    const expectedSignatureHeader = `sha256=${expectedSignature}`;
+    const receivedBuffer = Buffer.from(receivedSignature);
+    const expectedBuffer = Buffer.from(expectedSignatureHeader);
+    const isSignatureValid = receivedBuffer.length === expectedBuffer.length &&
+      crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 
-    if (!isSignatureValid && receivedSignature) {
+    if (!isSignatureValid) {
       return res.status(401).json({ error: 'Invalid HMAC Signature' });
     }
 

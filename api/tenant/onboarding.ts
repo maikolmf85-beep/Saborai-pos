@@ -1,41 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import jwt from 'jsonwebtoken';
 import { supabaseAdmin as supabase } from '../_utils/supabase.js';
+import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
-  }
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  const jwtSecret = process.env.JWT_SECRET || 'fallback-secret-for-development';
-
   try {
-    const decoded = jwt.verify(token, jwtSecret) as { userId: string; email: string };
+    const auth = await requireAuth(req, res);
+    if (!auth) return;
     
     // Update tenant onboarding status
     const { error } = await supabase
       .from('tenants')
       .update({ onboarding_completed: true })
-      .eq('user_id', decoded.userId);
+      .eq('user_id', auth.userId);
 
     if (error) {
       console.error('Error updating onboarding status:', error);
