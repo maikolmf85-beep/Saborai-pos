@@ -4,6 +4,7 @@ import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, Ar
 import { soundService } from '../services/soundEffects';
 import { CabysResult, searchCabys, suggestCabys, isValidCabys, RESTAURANT_CABYS_PRESETS, resolveRestaurantCabys } from '../services/cabysService';
 import { MenuUploaderModal } from './MenuUploaderModal';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface MenuEditorProps {
   menuItems: MenuItem[];
@@ -27,6 +28,22 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   // AI Menu Upload state
   const [isAiUploadOpen, setIsAiUploadOpen] = useState(false);
   
+  // Confirmation Dialog state
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   // Magical AI generation state
   const [isGenerating, setIsGenerating] = useState(false);
   
@@ -255,10 +272,21 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este platillo del menú?')) {
-      const updatedMenu = menuItems.filter(m => m.id !== id);
-      onUpdateMenu(updatedMenu);
-    }
+    const item = menuItems.find(m => m.id === id);
+    const itemName = item?.name || 'este platillo';
+
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Eliminar platillo del menú?',
+      message: `¿Estás seguro de que deseas eliminar permanentemente "${itemName}"? Ya no estará disponible para comandar.`,
+      confirmLabel: 'Sí, eliminar',
+      type: 'danger',
+      onConfirm: () => {
+        const updatedMenu = menuItems.filter(m => m.id !== id);
+        onUpdateMenu(updatedMenu);
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleMagicWand = () => {
@@ -455,7 +483,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
       {/* Slide-over Edit Form Modal */}
       {isEditing && editingItem && (
-        <div className="absolute inset-0 z-50 flex bg-stone-950/20 backdrop-blur-xs justify-end animate-in fade-in">
+        <div className="absolute inset-0 z-50 flex bg-stone-950/60 backdrop-blur-md justify-end animate-in fade-in">
           <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
             <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between bg-stone-50">
               <h3 className="font-black text-stone-900 text-lg flex items-center gap-2">
@@ -856,7 +884,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
       {/* Bulk Add Products Modal */}
       {isBulkAddOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-4xl max-h-[90vh] flex flex-col rounded-3xl overflow-hidden shadow-2xl relative">
             <div className="p-6 border-b border-stone-200 bg-stone-50 flex items-center justify-between shrink-0">
               <div>
@@ -969,7 +997,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
 
       {/* Category Management Modal */}
       {isCategoryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-stone-200">
             <div className="p-5 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
               <div>
@@ -981,7 +1009,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   Administra las categorías de tus platillos y bebidas.
                 </p>
               </div>
-              <button onClick={() => setIsCategoryModalOpen(false)} className="w-8 h-8 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:bg-stone-100 transition-colors">
+              <button onClick={() => setIsCategoryModalOpen(false)} className="w-8 h-8 rounded-full bg-white border border-stone-200 flex items-center justify-center text-stone-500 hover:bg-stone-100 transition-colors cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -1005,7 +1033,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   className="flex-1 px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#588157]"
                 />
-                <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800">
+                <button type="submit" className="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 cursor-pointer">
                   Añadir
                 </button>
               </form>
@@ -1015,15 +1043,24 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                   <div key={cat} className="flex items-center justify-between p-3 bg-white border border-stone-200 rounded-xl">
                     <span className="text-sm font-bold text-stone-700">{cat}</span>
                     <button
+                      type="button"
                       onClick={() => {
-                        if (window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}"? Los platillos seguirán existiendo pero debes reasignarlos.`)) {
-                          onUpdateTenant({
-                            ...tenant,
-                            menuCategories: dynamicCategories.filter(c => c !== cat)
-                          });
-                        }
+                        setConfirmConfig({
+                          isOpen: true,
+                          title: '¿Eliminar categoría?',
+                          message: `¿Seguro que deseas eliminar la categoría "${cat}"? Los platillos seguirán existiendo pero deberás reasignarles una categoría válida.`,
+                          confirmLabel: 'Eliminar categoría',
+                          type: 'danger',
+                          onConfirm: () => {
+                            onUpdateTenant({
+                              ...tenant,
+                              menuCategories: dynamicCategories.filter(c => c !== cat)
+                            });
+                            setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+                          }
+                        });
                       }}
-                      className="w-8 h-8 rounded-full hover:bg-red-50 text-stone-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                      className="w-8 h-8 rounded-full hover:bg-red-50 text-stone-400 hover:text-red-500 flex items-center justify-center transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1042,6 +1079,18 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
         onImportSuccess={handleImportFromAi}
         taxRegime={taxRegime}
         existingCategories={dynamicCategories}
+      />
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

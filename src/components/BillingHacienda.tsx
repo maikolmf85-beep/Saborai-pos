@@ -1331,7 +1331,7 @@ Medio de Pago: ${paymentMethod}
 
       {/* ================= MODAL: TRASLADAR ÍTEM ENTRE CUENTAS ================= */}
       {itemToTransfer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-4 animate-in zoom-in-95 duration-150">
             
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
@@ -1411,7 +1411,7 @@ Medio de Pago: ${paymentMethod}
 
       {/* XML Modal */}
       {showXmlModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-3xl rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <h3 className="text-base font-bold text-stone-900">XML Factura Electrónica v4.4 (Hacienda CR)</h3>

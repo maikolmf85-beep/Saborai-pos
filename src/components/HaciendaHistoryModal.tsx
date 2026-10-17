@@ -15,6 +15,7 @@ import {
 import { ElectronicInvoiceCR, TenantInfo } from '../types';
 import { haciendaService } from '../services/haciendaService';
 import { downloadXmlFile } from '../services/haciendaXml';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface HaciendaHistoryModalProps {
   isOpen: boolean;
@@ -26,6 +27,20 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   const [invoices, setInvoices] = useState<ElectronicInvoiceCR[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [invoiceToPrint, setInvoiceToPrint] = useState<ElectronicInvoiceCR | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
   
   useEffect(() => {
     if (isOpen) {
@@ -76,9 +91,17 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   };
 
   const handleAnular = (clave: string) => {
-    if (confirm('¿Deseas anular este documento? Se generará y emitirá una Nota de Crédito Electrónica v4.4 ante el Ministerio de Hacienda.')) {
-      haciendaService.voidInvoice(clave, undefined, tenant);
-    }
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Anular documento y emitir Nota de Crédito?',
+      message: 'Se generará y transmitirá inmediatamente una Nota de Crédito Electrónica v4.4 ante el Ministerio de Hacienda para anular fiscalmente esta factura. ¿Deseas continuar?',
+      confirmLabel: 'Sí, anular documento',
+      type: 'danger',
+      onConfirm: () => {
+        haciendaService.voidInvoice(clave, undefined, tenant);
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleReimprimir = (invoice: ElectronicInvoiceCR) => {
@@ -91,7 +114,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white border border-stone-200 rounded-3xl w-full max-w-5xl shadow-2xl relative flex flex-col max-h-[90vh]">
         
         {/* Header */}
@@ -259,6 +282,18 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
           </div>
         </div>
       )}
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

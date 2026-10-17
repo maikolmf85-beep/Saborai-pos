@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { TenantInfo, SubscriptionPlan, SubscriptionStatus } from '../types';
 import { notionService } from '../services/notionService';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface SuperAdminBackofficeProps {
   currentTenant: TenantInfo;
@@ -45,6 +46,21 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [selectedTenantForEdit, setSelectedTenantForEdit] = useState<TenantInfo | null>(null);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -549,9 +565,17 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
                     {tenant.id !== currentTenant.id && (
                       <button
                         onClick={() => {
-                          if (window.confirm(`¿Estás seguro de eliminar el registro de ${tenant.name}?`)) {
-                            setTenantsList(prev => prev.filter(t => t.id !== tenant.id));
-                          }
+                          setConfirmConfig({
+                            isOpen: true,
+                            title: '¿Eliminar restaurante registrado?',
+                            message: `¿Estás seguro de que deseas eliminar permanentemente el registro de "${tenant.name}"? Se perderán sus configuraciones locales.`,
+                            confirmLabel: 'Sí, eliminar restaurante',
+                            type: 'danger',
+                            onConfirm: () => {
+                              setTenantsList(prev => prev.filter(t => t.id !== tenant.id));
+                              setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+                            }
+                          });
                         }}
                         className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
                         title="Eliminar restaurante"
@@ -890,6 +914,18 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+      />
 
       </div>
     </div>

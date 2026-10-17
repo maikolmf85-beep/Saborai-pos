@@ -1139,7 +1139,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
       {/* Note Modal */}
       {selectedItemForNotes && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-stone-200 space-y-4">
             <h3 className="text-sm font-bold text-stone-900">Agregar Nota para Cocina / Bar</h3>
 
@@ -1199,7 +1199,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
       {/* Transfer Item Modal */}
       {transferringItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-sm rounded-3xl p-5 shadow-2xl border border-stone-200 space-y-4">
             <h3 className="text-sm font-bold text-stone-900">Mover ítem a otra cuenta</h3>
             <p className="text-xs text-stone-500">{transferringItem.name}</p>
@@ -1293,7 +1293,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
       {/* Modifier Selection Modal */}
       {selectedProductForMods && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-stone-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden relative">
             <div className="p-4 border-b border-stone-200 bg-stone-50 flex items-center justify-between">
               <div>

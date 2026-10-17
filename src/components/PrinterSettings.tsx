@@ -22,6 +22,7 @@ import {
   Sliders,
   Sparkles
 } from 'lucide-react';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export const PrinterSettings: React.FC = () => {
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
@@ -52,6 +53,21 @@ export const PrinterSettings: React.FC = () => {
     setPrinters(printerService.loadPrinters());
   };
 
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   const handleOpenAdd = () => {
     setEditingPrinter(null);
     setFormData({
@@ -77,10 +93,21 @@ export const PrinterSettings: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (confirm('¿Deseas eliminar la configuración de esta impresora?')) {
-      printerService.deletePrinter(id);
-      loadPrinters();
-    }
+    const prn = printers.find(p => p.id === id);
+    const prnName = prn?.name || 'esta impresora';
+
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Eliminar configuración de impresora?',
+      message: `¿Deseas eliminar la impresora "${prnName}"? Dejará de recibir comandas y comprobantes automáticos.`,
+      confirmLabel: 'Sí, eliminar',
+      type: 'danger',
+      onConfirm: () => {
+        printerService.deletePrinter(id);
+        loadPrinters();
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleToggleEnabled = (printer: PrinterConfig) => {
@@ -366,7 +393,7 @@ export const PrinterSettings: React.FC = () => {
 
       {/* Modal para Crear / Editar Impresora */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/75 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-stone-900 border border-stone-700 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative space-y-5 text-stone-100">
             <h3 className="text-xl font-black text-stone-100 flex items-center gap-2">
               <Printer className="w-5 h-5 text-[#a9b994]" />
@@ -521,6 +548,18 @@ export const PrinterSettings: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+      />
 
     </div>
   );

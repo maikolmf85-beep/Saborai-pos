@@ -25,6 +25,7 @@ import { TenantInfo, SubscriptionStatus, TaxRegime } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
 import { haciendaService } from '../services/haciendaService';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -58,6 +59,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Local form state for business profile & tax regime
   const [selectedRegime, setSelectedRegime] = useState<TaxRegime>(tenant.taxRegime || 'TRADITIONAL');
   const [includeService10, setIncludeService10] = useState<boolean>(tenant.includeService10ByDefault ?? true);
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
   const [businessName, setBusinessName] = useState(tenant.name);
   const [cedulaJuridica, setCedulaJuridica] = useState(tenant.cedulaJuridica);
   const [email, setEmail] = useState(tenant.email);
@@ -175,7 +191,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/70 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="bg-white w-full max-w-6xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-stone-200">
         
         {/* Header */}
@@ -610,12 +626,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (window.confirm('¿Estás seguro que deseas cancelar tu suscripción a Saborai POS? Esta acción detendrá los cobros y limitará tu acceso.')) {
-                        onUpdateTenantStatus('CANCELLED');
-                        alert('Tu suscripción ha sido cancelada. Mantendrás el acceso hasta el final del periodo de gracia.');
-                      }
+                      setConfirmConfig({
+                        isOpen: true,
+                        title: '¿Cancelar suscripción a Saborai POS?',
+                        message: 'Esta acción detendrá los cobros automáticos y limitará tu acceso a las funciones avanzadas al terminar el periodo contratado. ¿Deseas proceder con la cancelación?',
+                        confirmLabel: 'Sí, cancelar suscripción',
+                        type: 'danger',
+                        onConfirm: () => {
+                          onUpdateTenantStatus('CANCELLED');
+                          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+                        }
+                      });
                     }}
-                    className="shrink-0 px-5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 hover:border-red-300 rounded-xl text-xs font-bold transition-all shadow-sm"
+                    className="shrink-0 px-5 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 border border-red-200 hover:border-red-300 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
                   >
                     Finalizar Suscripción
                   </button>
@@ -1042,6 +1065,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
       </div>
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

@@ -44,6 +44,7 @@ import {
 import { UserProfile, TenantInfo } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { soundService } from '../services/soundEffects';
+import { ConfirmDialog } from './ConfirmDialog';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -131,6 +132,21 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   });
 
   const totalDataphonesCounted = dataphones.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   const handleUpdateDataphoneAmount = (index: number, amount: number) => {
     setDataphones(prev => {
@@ -311,30 +327,41 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       return;
     }
 
-    try {
-      const { closedShift, zReport } = cashShiftService.closeShift(
-        countedCashTotal,
-        totalDataphonesCounted,
-        Number(countedSinpeInput || 0),
-        closingUser,
-        denominations,
-        differenceJustification,
-        selectedRegisterId,
-        dataphones
-      );
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Confirmar cierre de turno y arqueo?',
+      message: `Estás a punto de cerrar el turno de ${currentRegisterObj?.name || 'la caja'} y generar el Reporte Z oficial. Se registrará un total en efectivo contado de ₡${countedCashTotal.toLocaleString()} y datáfonos de ₡${totalDataphonesCounted.toLocaleString()}. ¿Deseas proceder?`,
+      confirmLabel: 'Sí, cerrar turno',
+      type: 'warning',
+      onConfirm: () => {
+        try {
+          const { closedShift, zReport } = cashShiftService.closeShift(
+            countedCashTotal,
+            totalDataphonesCounted,
+            Number(countedSinpeInput || 0),
+            closingUser,
+            denominations,
+            differenceJustification,
+            selectedRegisterId,
+            dataphones
+          );
 
-      soundService.playSuccessChime();
-      setActiveShift(null);
-      refreshData(selectedRegisterId);
-      onClose();
+          soundService.playSuccessChime();
+          setActiveShift(null);
+          refreshData(selectedRegisterId);
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+          onClose();
 
-      if (zReport && onOpenZReport) {
-        onOpenZReport(zReport);
+          if (zReport && onOpenZReport) {
+            onOpenZReport(zReport);
+          }
+        } catch (err: any) {
+          setCloseError(err.message || 'Error al cerrar caja.');
+          soundService.playErrorBuzz();
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    } catch (err: any) {
-      setCloseError(err.message || 'Error al cerrar caja.');
-      soundService.playErrorBuzz();
-    }
+    });
   };
 
   const handleGenerateConsolidatedReport = () => {
@@ -400,14 +427,24 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   };
 
   const handleDeleteRegister = (regId: string, name: string) => {
-    if (!window.confirm(`¿Estás seguro de eliminar la terminal "${name}"?`)) return;
-    try {
-      cashShiftService.deleteCashRegister(regId);
-      soundService.playSuccessChime();
-      refreshData();
-    } catch (err: any) {
-      alert(err.message || 'No se pudo eliminar la caja.');
-    }
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Eliminar terminal de caja?',
+      message: `¿Estás seguro de eliminar la terminal "${name}"? Esta acción no se puede deshacer y no debe realizarse si la caja tiene turnos en curso.`,
+      confirmLabel: 'Eliminar terminal',
+      type: 'danger',
+      onConfirm: () => {
+        try {
+          cashShiftService.deleteCashRegister(regId);
+          soundService.playSuccessChime();
+          refreshData();
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        } catch (err: any) {
+          alert(err.message || 'No se pudo eliminar la caja.');
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
   };
 
   const currentRegisterObj = registers.find(r => r.id === selectedRegisterId) || registers[0] || cashShiftService.getCurrentRegister();
@@ -1729,7 +1766,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         {/* SUBMODAL: REGISTRAR EGRESO (SALIDA) O INGRESO (ENTRADA)  */}
         {/* ======================================================== */}
         {showMovementForm && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/60 backdrop-blur-xs animate-in fade-in">
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-md animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-stone-200 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
@@ -1828,6 +1865,18 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         )}
 
       </div>
+
+      {/* Modal de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

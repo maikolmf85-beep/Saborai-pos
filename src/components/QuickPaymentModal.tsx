@@ -384,7 +384,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/70 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white border border-stone-200 rounded-3xl p-6 sm:p-7 max-w-xl w-full shadow-2xl relative space-y-4 max-h-[95vh] overflow-y-auto">
         
         {/* Close button */}

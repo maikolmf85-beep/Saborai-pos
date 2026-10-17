@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Table, TableStatus, UserProfile } from '../types';
 import { WaiterPinModal } from './WaiterPinModal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { 
   Plus, 
   UtensilsCrossed, 
@@ -97,6 +98,21 @@ export const TableMap: React.FC<TableMapProps> = ({
       setSelectedZone(tenantZones[0]);
     }
   }, [tenantZones, selectedZone]);
+
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    type?: 'danger' | 'warning' | 'info';
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Sync fullscreen state with browser changes
   useEffect(() => {
@@ -262,15 +278,26 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   const handleDeleteTable = (tableId: string) => {
-    if (window.confirm('¿Seguro que deseas eliminar esta mesa del plano?')) {
-      const updatedTables = tables.filter(t => t.id !== tableId);
-      setTables(updatedTables);
-      if (onUpdateTables) onUpdateTables(updatedTables);
+    const tbl = tables.find(t => t.id === tableId);
+    const tableName = tbl ? (tbl.name || `Mesa ${tbl.number}`) : 'esta mesa';
 
-      if (selectedTable?.id === tableId) {
-        setSelectedTable(null);
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Eliminar mesa del plano?',
+      message: `¿Estás seguro de que deseas eliminar permanentemente "${tableName}"? Esta acción no se puede deshacer.`,
+      confirmLabel: 'Sí, eliminar',
+      type: 'danger',
+      onConfirm: () => {
+        const updatedTables = tables.filter(t => t.id !== tableId);
+        setTables(updatedTables);
+        if (onUpdateTables) onUpdateTables(updatedTables);
+
+        if (selectedTable?.id === tableId) {
+          setSelectedTable(null);
+        }
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
       }
-    }
+    });
   };
 
   const handleRotateTable = (tableId: string) => {
@@ -303,17 +330,33 @@ export const TableMap: React.FC<TableMapProps> = ({
   const handleDeleteZone = (zone: string) => {
     const hasTables = tables.some(t => t.zone === zone);
     if (hasTables) {
-      alert(`No puedes eliminar el salón "${zone}" porque tiene mesas asignadas. Elimina o mueve las mesas primero.`);
+      setConfirmConfig({
+        isOpen: true,
+        title: 'No se puede eliminar el salón',
+        message: `El salón "${zone}" tiene mesas asociadas actualmente. Reubica o elimina las mesas antes de borrar esta área.`,
+        confirmLabel: 'Entendido',
+        cancelLabel: 'Cerrar',
+        type: 'warning',
+        onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false }))
+      });
       return;
     }
 
-    if (window.confirm(`¿Seguro que deseas eliminar el salón "${zone}"?`)) {
-      onUpdateTenant({
-        ...tenant,
-        zones: tenantZones.filter(z => z !== zone)
-      });
-      if (selectedZone === zone) setSelectedZone('Todas');
-    }
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Eliminar salón o área?',
+      message: `¿Estás seguro de que deseas eliminar el salón "${zone}" de la configuración del restaurante?`,
+      confirmLabel: 'Eliminar salón',
+      type: 'danger',
+      onConfirm: () => {
+        onUpdateTenant({
+          ...tenant,
+          zones: tenantZones.filter(z => z !== zone)
+        });
+        if (selectedZone === zone) setSelectedZone('Todas');
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleOpenTableOrder = (table: Table) => {
@@ -855,7 +898,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
       {/* Modal: Añadir Mesa al Mapa */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <h3 className="text-base font-bold text-stone-900">Añadir Mesita al Salón</h3>
@@ -951,7 +994,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
       {/* Modal: Gestión de Salones */}
       {isZoneModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <h3 className="text-base font-bold text-stone-900">Gestión de Salones / Zonas</h3>
@@ -1037,6 +1080,18 @@ export const TableMap: React.FC<TableMapProps> = ({
         table={tableForPinAuth}
         staffList={staffList}
         onConfirm={handlePinValidated}
+      />
+
+      {/* Ventana de confirmación elegante */}
+      <ConfirmDialog
+        isOpen={confirmConfig.isOpen}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmLabel={confirmConfig.confirmLabel}
+        cancelLabel={confirmConfig.cancelLabel}
+        type={confirmConfig.type}
+        onConfirm={confirmConfig.onConfirm}
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
       />
 
     </div>
