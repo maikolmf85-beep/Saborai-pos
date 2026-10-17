@@ -214,7 +214,7 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
   // Respuesta de fallback inteligente local cuando no hay API keys externas configuradas en el servidor
   return res.status(200).json({
     success: true,
-    response: `¡Hola! Soy Saborai Copilot. Estoy listo para ayudarte con la comanda de ${context.restaurantName || 'tu restaurante'}. Para activar la inteligencia predictiva completa con Google Gemini, configura tu variable GEMINI_API_KEY en Vercel. Mientras tanto, puedes usar todos los comandos rápidos del POS normalmente.`,
+    response: `¡Hola! Soy Nyza. Estoy listo para ayudarte con la comanda de ${context.restaurantName || 'tu restaurante'}.`,
     provider: 'local-fallback'
   });
 }
