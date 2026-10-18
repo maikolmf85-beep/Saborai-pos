@@ -35,40 +35,8 @@ import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
-import { clearLegacyOperationalData, getTenantItem, hasTenantItem, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
+import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-react';
-
-// Limpieza automática preventiva de datos de ejemplo previos en el navegador
-try {
-  const CLEAN_KEY = 'saborai_clean_slate_fresh_v1';
-  if (typeof window !== 'undefined' && !localStorage.getItem(CLEAN_KEY)) {
-    const tenantRaw = localStorage.getItem('saborai_tenant') || '';
-    const registersRaw = localStorage.getItem('saborai_cash_registers') || '';
-    const staffRaw = localStorage.getItem('saborai_staff') || '';
-    const tablesRaw = localStorage.getItem('saborai_tables') || '';
-    const shiftsRaw = localStorage.getItem('saborai_shifts_history') || '';
-    const printersRaw = localStorage.getItem('saborai_printers_config_v2') || '';
-
-    const isLegacyDemo =
-      tenantRaw.includes('Fuego & Palmera') ||
-      tenantRaw.includes('tenant_saborai_cr_001') ||
-      tenantRaw.includes('Escazú') ||
-      registersRaw.includes('caja-01') ||
-      staffRaw.includes('Carlos Admin') ||
-      staffRaw.includes('Kevin Murillo') ||
-      shiftsRaw.includes('Fuego & Palmera') ||
-      printersRaw.includes('prn_caja_default') ||
-      tablesRaw.includes('Terraza VIP');
-
-    if (isLegacyDemo) {
-      clearLegacyOperationalData();
-      if (tenantRaw.includes('Fuego & Palmera') || tenantRaw.includes('tenant_saborai_cr_001')) {
-        localStorage.removeItem('saborai_tenant');
-      }
-    }
-    localStorage.setItem(CLEAN_KEY, 'true');
-  }
-} catch {}
 
 export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => 
@@ -213,6 +181,7 @@ export function App() {
 
         if (res.ok && data.success) {
           setActiveTenantId(data.tenant.id);
+          migrateLegacyDataToTenant(data.tenant.id);
           const user: UserProfile = {
             id: data.user.id,
             name: data.user.name,
@@ -264,6 +233,9 @@ export function App() {
 
           setCurrentUser(effectiveUser);
           setTenant(tenantObj);
+          setMenuItems(getTenantItem<MenuItem[]>('menu', tenantObj.id) || []);
+          setTables(getTenantItem<Table[]>('tables', tenantObj.id) || []);
+          setStaffList(getTenantItem<UserProfile[]>('staff', tenantObj.id) || [effectiveUser]);
           setSubscription(sub);
           try {
             localStorage.setItem('saborai_user', JSON.stringify(effectiveUser));
@@ -527,6 +499,7 @@ export function App() {
 
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
     setActiveTenantId(loggedTenant.id);
+    migrateLegacyDataToTenant(loggedTenant.id);
     setCurrentUser(user);
     setTenant(loggedTenant);
     setMenuItems(getTenantItem<MenuItem[]>('menu', loggedTenant.id) || []);

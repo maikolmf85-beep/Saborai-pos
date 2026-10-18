@@ -16,6 +16,21 @@ const OPERATIONAL_KEYS = [
   'subscription'
 ] as const;
 
+const LEGACY_KEY_MAP: Record<string, TenantStorageKey> = {
+  saborai_menu: 'menu',
+  saborai_tables: 'tables',
+  saborai_staff: 'staff',
+  saborai_inventory_movements: 'inventory_movements',
+  saborai_hacienda_config: 'hacienda_config',
+  saborai_hacienda_invoices: 'hacienda_invoices',
+  saborai_cash_registers: 'cash_registers',
+  saborai_shifts_history: 'shifts_history',
+  saborai_shifts_map: 'shifts_map',
+  saborai_printers_config_v2: 'printers_config_v2',
+  saborai_notion_records: 'notion_records',
+  saborai_kds_orders: 'kds_orders'
+};
+
 export type TenantStorageKey = typeof OPERATIONAL_KEYS[number] | string;
 
 function normalizeId(value: string): string {
@@ -98,6 +113,31 @@ export function clearLegacyOperationalData(): void {
     'saborai_notion_records',
     'saborai_kds_orders'
   ].forEach(key => localStorage.removeItem(key));
+}
+
+/** Recupera datos previos solo cuando pertenecen al tenant autenticado. */
+export function migrateLegacyDataToTenant(tenantId: string): boolean {
+  if (typeof window === 'undefined' || !tenantId) return false;
+
+  try {
+    const legacyTenantRaw = localStorage.getItem('saborai_tenant');
+    const legacyTenant = legacyTenantRaw ? JSON.parse(legacyTenantRaw) : null;
+    if (!legacyTenant || String(legacyTenant.id) !== String(tenantId)) return false;
+
+    let migrated = false;
+    Object.entries(LEGACY_KEY_MAP).forEach(([legacyKey, scopedKey]) => {
+      const legacyValue = localStorage.getItem(legacyKey);
+      if (!legacyValue || hasTenantItem(scopedKey, tenantId)) return;
+      try {
+        setTenantItem(scopedKey, JSON.parse(legacyValue), tenantId);
+        migrated = true;
+      } catch {}
+    });
+    setActiveTenantId(tenantId);
+    return migrated;
+  } catch {
+    return false;
+  }
 }
 
 export function startCleanDemoSession(tenantId: string): void {
