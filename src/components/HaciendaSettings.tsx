@@ -21,6 +21,7 @@ import {
 import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
+import { getTenantItem } from '../services/tenantStorage';
 
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
@@ -33,8 +34,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
     const fromService = haciendaService.getConfig();
     if (fromService) return fromService;
     try {
-      const fromLocal = localStorage.getItem('saborai_hacienda_config');
-      if (fromLocal) return JSON.parse(fromLocal);
+      const fromLocal = getTenantItem<HaciendaConfig>('hacienda_config', tenant.id);
+      if (fromLocal) return fromLocal;
     } catch {}
     return tenant.haciendaConfig || null;
   };

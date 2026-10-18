@@ -1,5 +1,6 @@
 import { ElectronicInvoiceCR, TableItem, TenantInfo } from '../types';
 import { resolveRestaurantCabys, isValidCabys } from './cabysService';
+import { getStoredTenantId, getTenantItem } from './tenantStorage';
 
 /* ------------------------------------------------------------------ */
 /*  Utilidades de fecha / clave / consecutivo (Hacienda CR)           */
@@ -31,7 +32,7 @@ export type TipoDocumentoCR = 'FE' | 'TE' | 'NC' | 'ND';
 const TIPO_DOC_CODE: Record<TipoDocumentoCR, string> = { FE: '01', ND: '02', NC: '03', TE: '04' };
 
 function seqKey(branch: string, terminal: string, tipo: TipoDocumentoCR) {
-  return `saborai_hacienda_seq_${branch}_${terminal}_${tipo}`;
+  return `saborai:tenant:${getStoredTenantId() || 'unknown'}:hacienda_seq_${branch}_${terminal}_${tipo}`;
 }
 
 /** Siguiente número consecutivo SIN reservarlo (para vistas previas). */
@@ -284,8 +285,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   // Obtener la configuración más reciente (localStorage tiene prioridad sobre tenant desactualizado)
   let savedHc: any = null;
   try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
-    if (raw) savedHc = JSON.parse(raw);
+    const saved = getTenantItem<any>('hacienda_config', tenant.id);
+    if (saved) savedHc = saved;
   } catch {}
   const hc = { ...(tenant.haciendaConfig || {}), ...(savedHc || {}) };
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getTenantItem } from '../services/tenantStorage';
 import { 
   Printer, 
   Send, 
@@ -129,8 +130,8 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [emittedInfo, setEmittedInfo] = useState<{ clave: string; consecutivo: string; fecha: Date; tipo: 'FE' | 'TE' } | null>(null);
   let savedLocalHc: any = null;
   try {
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
-    if (raw) savedLocalHc = JSON.parse(raw);
+    const saved = getTenantItem<any>('hacienda_config', tenant.id);
+    if (saved) savedLocalHc = saved;
   } catch {}
   const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
   const activeDocType = emittedInfo?.tipo ?? docType;

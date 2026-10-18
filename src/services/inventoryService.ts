@@ -1,7 +1,8 @@
 import { MenuItem } from '../types';
+import { getTenantItem, setTenantItem } from './tenantStorage';
 
-const MENU_STORAGE_KEY = 'saborai_menu';
-const INVENTORY_MOVEMENTS_KEY = 'saborai_inventory_movements';
+const MENU_STORAGE_KEY = 'menu';
+const INVENTORY_MOVEMENTS_KEY = 'inventory_movements';
 
 export interface InventoryMovement {
   id: string;
@@ -70,11 +71,8 @@ export class InventoryService {
    */
   public getMenu(): MenuItem[] {
     try {
-      const saved = localStorage.getItem(MENU_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
+      const parsed = getTenantItem<MenuItem[]>(MENU_STORAGE_KEY);
+      if (Array.isArray(parsed)) return parsed;
     } catch {}
     return [];
   }
@@ -84,7 +82,7 @@ export class InventoryService {
    */
   public saveMenu(menu: MenuItem[]): void {
     try {
-      localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(menu));
+      setTenantItem(MENU_STORAGE_KEY, menu);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('saborai_menu_updated', { detail: menu }));
         window.dispatchEvent(new CustomEvent('saborai_inventory_updated', { detail: menu }));
@@ -233,8 +231,8 @@ export class InventoryService {
    */
   public getMovements(): InventoryMovement[] {
     try {
-      const saved = localStorage.getItem(INVENTORY_MOVEMENTS_KEY);
-      if (saved) return JSON.parse(saved);
+      const saved = getTenantItem<InventoryMovement[]>(INVENTORY_MOVEMENTS_KEY);
+      if (saved) return saved;
     } catch {}
     return [];
   }
@@ -244,7 +242,7 @@ export class InventoryService {
     try {
       const existing = this.getMovements();
       const updated = [...newMovements, ...existing].slice(0, 200); // Guardar últimos 200
-      localStorage.setItem(INVENTORY_MOVEMENTS_KEY, JSON.stringify(updated));
+      setTenantItem(INVENTORY_MOVEMENTS_KEY, updated);
     } catch {}
   }
 }

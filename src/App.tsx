@@ -35,6 +35,7 @@ import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
+import { clearLegacyOperationalData, getTenantItem, hasTenantItem, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-react';
 
 // Limpieza automática preventiva de datos de ejemplo previos en el navegador
@@ -60,13 +61,7 @@ try {
       tablesRaw.includes('Terraza VIP');
 
     if (isLegacyDemo) {
-      localStorage.removeItem('saborai_tables');
-      localStorage.removeItem('saborai_cash_registers');
-      localStorage.removeItem('saborai_staff');
-      localStorage.removeItem('saborai_shifts_history');
-      localStorage.removeItem('saborai_shifts_map');
-      localStorage.removeItem('saborai_printers_config_v2');
-      localStorage.removeItem('saborai_notion_records');
+      clearLegacyOperationalData();
       if (tenantRaw.includes('Fuego & Palmera') || tenantRaw.includes('tenant_saborai_cr_001')) {
         localStorage.removeItem('saborai_tenant');
       }
@@ -111,8 +106,7 @@ export function App() {
   const [tenant, setTenant] = useState<TenantInfo>(() => {
     try {
       const saved = localStorage.getItem('saborai_tenant');
-      const savedHaciendaRaw = localStorage.getItem('saborai_hacienda_config');
-      const savedHaciendaConfig = savedHaciendaRaw ? JSON.parse(savedHaciendaRaw) : undefined;
+      const savedHaciendaConfig = getTenantItem<any>('hacienda_config');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
@@ -150,13 +144,14 @@ export function App() {
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
     setTenant(updated);
+    setActiveTenantId(updated.id);
     if (!skipBroadcast && broadcastTenantRef.current) {
       broadcastTenantRef.current(updated);
     }
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updated));
       if (updated.haciendaConfig) {
-        localStorage.setItem('saborai_hacienda_config', JSON.stringify(updated.haciendaConfig));
+        setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
     } catch {}
   };
@@ -217,6 +212,7 @@ export function App() {
         const data = await res.json();
 
         if (res.ok && data.success) {
+          setActiveTenantId(data.tenant.id);
           const user: UserProfile = {
             id: data.user.id,
             name: data.user.name,
@@ -226,10 +222,8 @@ export function App() {
             role: data.user.role,
             active: data.user.active
           };
-          const savedHaciendaRaw = localStorage.getItem('saborai_hacienda_config');
-          const savedHaciendaConfig = savedHaciendaRaw ? JSON.parse(savedHaciendaRaw) : undefined;
-          const savedTenantRaw = localStorage.getItem('saborai_tenant');
-          const savedTenant = savedTenantRaw ? JSON.parse(savedTenantRaw) : null;
+          const savedHaciendaConfig = getTenantItem<any>('hacienda_config', data.tenant.id);
+          const savedTenant = getTenantItem<TenantInfo>('tenant_profile', data.tenant.id);
 
           const tenantObj: TenantInfo = {
             id: data.tenant.id,
@@ -274,6 +268,7 @@ export function App() {
           try {
             localStorage.setItem('saborai_user', JSON.stringify(effectiveUser));
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
+            setTenantItem('tenant_profile', tenantObj, tenantObj.id);
           } catch {}
         } else {
           // Token invalid or expired
@@ -306,11 +301,8 @@ export function App() {
   // Menu Catalog State
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
     try {
-      const saved = localStorage.getItem('saborai_menu');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
+      const scoped = getTenantItem<MenuItem[]>('menu');
+      if (Array.isArray(scoped)) return scoped;
     } catch {}
     return sampleMenuItems;
   });
@@ -319,7 +311,7 @@ export function App() {
     setMenuItems(updatedMenu);
     if (!skipBroadcast) broadcastMenuItems(updatedMenu);
     try {
-      localStorage.setItem('saborai_menu', JSON.stringify(updatedMenu));
+      setTenantItem('menu', updatedMenu, tenant.id);
     } catch {}
   };
 
@@ -327,10 +319,8 @@ export function App() {
   useEffect(() => {
     const handleInventoryChange = () => {
       try {
-        const saved = localStorage.getItem('saborai_menu');
-        if (saved) {
-          setMenuItems(JSON.parse(saved));
-        }
+        const saved = getTenantItem<MenuItem[]>('menu', tenant.id);
+        if (saved) setMenuItems(saved);
       } catch {}
     };
     window.addEventListener('saborai_inventory_updated', handleInventoryChange);
@@ -339,11 +329,8 @@ export function App() {
 
   const [tables, setTables] = useState<Table[]>(() => {
     try {
-      const saved = localStorage.getItem('saborai_tables');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
+      const scoped = getTenantItem<Table[]>('tables');
+      if (Array.isArray(scoped)) return scoped;
     } catch {}
     return initialTables;
   });
@@ -352,7 +339,7 @@ export function App() {
     setTables(updatedTables);
     if (!skipBroadcast) broadcastTables(updatedTables);
     try {
-      localStorage.setItem('saborai_tables', JSON.stringify(updatedTables));
+      setTenantItem('tables', updatedTables, tenant.id);
     } catch {}
   };
 
@@ -370,7 +357,7 @@ export function App() {
       broadcastStaffRef.current(newStaff);
     }
     try {
-      localStorage.setItem('saborai_staff', JSON.stringify(newStaff));
+      setTenantItem('staff', newStaff, tenant.id);
     } catch {}
   };
 
@@ -390,7 +377,7 @@ export function App() {
       menuItems,
       tenant,
       staff: staffList,
-      hasLocalData: !!localStorage.getItem('saborai_menu') || !!localStorage.getItem('saborai_tables') || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0 || !!localStorage.getItem('saborai_tenant')
+      hasLocalData: hasTenantItem('menu', tenant.id) || hasTenantItem('tables', tenant.id) || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0 || hasTenantItem('tenant_profile', tenant.id)
     })
   );
 
@@ -422,22 +409,21 @@ export function App() {
 
   // Staff & Collaborators state (4 Roles: Admin, Salonero, Cajero, Salonero c/ Caja)
   const [staffList, setStaffList] = useState<UserProfile[]>(() => {
-    const adminUser: UserProfile = {
-      id: 'usr_matamoros_admin',
-      name: 'Maikol Matamoros',
-      email: 'matamoros.maikol85@gmail.com',
-      phone: '8888-8888',
+    const adminUser: UserProfile = currentUser || {
+      id: 'usr_local_admin',
+      name: 'Administrador',
+      email: '',
+      phone: '',
       role: 'ADMIN',
-      restaurantName: 'SaborAI POS',
-      active: true,
-      pin: '1234'
+      restaurantName: tenant.name,
+      active: true
     };
     try {
-      const saved = localStorage.getItem('saborai_staff');
+    const saved = getTenantItem<UserProfile[]>('staff');
       if (saved) {
-        const parsed = JSON.parse(saved);
+        const parsed = saved;
         if (Array.isArray(parsed) && parsed.length > 0) {
-          if (!parsed.some((s: any) => s.email === 'matamoros.maikol85@gmail.com')) {
+          if (adminUser.email && !parsed.some((s: any) => s.email === adminUser.email)) {
             return [adminUser, ...parsed];
           }
           return parsed;
@@ -540,8 +526,12 @@ export function App() {
   }, []);
 
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
+    setActiveTenantId(loggedTenant.id);
     setCurrentUser(user);
     setTenant(loggedTenant);
+    setMenuItems(getTenantItem<MenuItem[]>('menu', loggedTenant.id) || []);
+    setTables(getTenantItem<Table[]>('tables', loggedTenant.id) || []);
+    setStaffList(getTenantItem<UserProfile[]>('staff', loggedTenant.id) || [user]);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
       localStorage.setItem('saborai_tenant', JSON.stringify(loggedTenant));
@@ -557,7 +547,7 @@ export function App() {
       const exists = prev.some(m => m.id === user.id || m.email === user.email);
       if (!exists) {
         const next = [user, ...prev];
-        try { localStorage.setItem('saborai_staff', JSON.stringify(next)); } catch {}
+        setTenantItem('staff', next, loggedTenant.id);
         return next;
       }
       return prev;
@@ -578,8 +568,22 @@ export function App() {
   };
 
   const handleStartDemo = (plan: SubscriptionPlan) => {
+    const demoTenantId = `tenant_demo_${Date.now()}`;
+    startCleanDemoSession(demoTenantId);
+    setMenuItems([]);
+    setTables([]);
+    setStaffList([]);
+    setKdsOrders([]);
+    setSelectedTableForOrder(null);
     const updatedTenant: TenantInfo = {
       ...tenant,
+      id: demoTenantId,
+      name: 'SaborAI Demo',
+      email: '',
+      phone: '',
+      location: '',
+      zones: [],
+      menuCategories: [],
       plan: plan,
       status: 'ACTIVE',
       monthlyFee: plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000,
@@ -588,6 +592,7 @@ export function App() {
     setTenant(updatedTenant);
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updatedTenant));
+      setTenantItem('tenant_profile', updatedTenant, demoTenantId);
     } catch {}
 
     // Force subscription to DEMO mode
@@ -613,6 +618,7 @@ export function App() {
       active: true
     };
     try { localStorage.setItem('saborai_user', JSON.stringify(demoUser)); } catch {}
+    setTenantItem('staff', [], demoTenantId);
     setCurrentUser(demoUser);
 
     setActiveTab('pos');

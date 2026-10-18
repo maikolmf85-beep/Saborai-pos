@@ -18,6 +18,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
+import { getTenantItem } from '../services/tenantStorage';
 import { PosNotification } from './NotificationToast';
 
 interface QuickPaymentModalProps {
@@ -209,8 +210,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     // Obtener la cédula del emisor más fresca (de la configuración guardada o del tenant)
     let savedLocalHc: any = null;
     try {
-      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_hacienda_config') : null;
-      if (raw) savedLocalHc = JSON.parse(raw);
+      const saved = getTenantItem<any>('hacienda_config', tenant.id);
+      if (saved) savedLocalHc = saved;
     } catch {}
     const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
 

@@ -6,6 +6,7 @@ import {
   generateHaciendaXmlV44, 
   reserveConsecutivoNumber 
 } from './haciendaXml';
+import { getTenantItem, setTenantItem } from './tenantStorage';
 
 class HaciendaService {
   private invoices: ElectronicInvoiceCR[] = [];
@@ -19,11 +20,10 @@ class HaciendaService {
 
   constructor() {
     // Load invoices from local storage if available
-    const saved = localStorage.getItem('saborai_hacienda_invoices');
+    const saved = getTenantItem<ElectronicInvoiceCR[]>('hacienda_invoices');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        this.invoices = parsed.map((inv: any) => ({
+        this.invoices = saved.map((inv: any) => ({
           ...inv,
           fechaEmision: new Date(inv.fechaEmision)
         }));
@@ -33,10 +33,10 @@ class HaciendaService {
     }
 
     // Load config from local storage if available
-    const savedConfig = localStorage.getItem('saborai_hacienda_config');
+    const savedConfig = getTenantItem<HaciendaConfig>('hacienda_config');
     if (savedConfig) {
       try {
-        this.config = JSON.parse(savedConfig);
+        this.config = savedConfig;
       } catch (e) {
         console.error('Failed to load hacienda config', e);
       }
@@ -45,10 +45,10 @@ class HaciendaService {
 
   public getConfig(): HaciendaConfig | null {
     if (!this.config) {
-      const savedConfig = localStorage.getItem('saborai_hacienda_config');
+      const savedConfig = getTenantItem<HaciendaConfig>('hacienda_config');
       if (savedConfig) {
         try {
-          this.config = JSON.parse(savedConfig);
+          this.config = savedConfig;
         } catch (e) {
           console.error('Failed to load hacienda config', e);
         }
@@ -59,13 +59,13 @@ class HaciendaService {
 
   public saveConfig(config: HaciendaConfig) {
     this.config = config;
-    localStorage.setItem('saborai_hacienda_config', JSON.stringify(config));
+    setTenantItem('hacienda_config', config);
     // Also notify any custom event listeners
     window.dispatchEvent(new CustomEvent('saborai_hacienda_config_updated', { detail: config }));
   }
 
   private persist() {
-    localStorage.setItem('saborai_hacienda_invoices', JSON.stringify(this.invoices));
+    setTenantItem('hacienda_invoices', this.invoices);
     this.notifyListeners();
   }
 

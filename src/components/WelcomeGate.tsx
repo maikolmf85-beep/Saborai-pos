@@ -7,6 +7,7 @@ import {
 import { tilopayService } from '../services/tilopayService';
 import { UserProfile, TenantInfo } from '../types';
 import { notionService } from '../services/notionService';
+import { startCleanDemoSession } from '../services/tenantStorage';
 
 export interface SaboraiSubscription {
   mode: 'DEMO' | 'TRIAL' | 'ACTIVE';
@@ -227,6 +228,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       return;
     }
     const { user, tenant } = buildDemoSession(demoEmail.trim());
+    startCleanDemoSession(tenant.id);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
       localStorage.setItem('saborai_tenant', JSON.stringify(tenant));

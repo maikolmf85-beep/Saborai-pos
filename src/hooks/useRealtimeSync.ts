@@ -21,7 +21,7 @@ export function useRealtimeSync(
   }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState]);
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !supabaseClient) return;
 
     const channelName = `tenant-${tenantId}-sync`;
     const channel = supabaseClient.channel(channelName);
@@ -94,7 +94,7 @@ export function useRealtimeSync(
       .on('broadcast', { event: 'sync-tenant' }, ({ payload }) => {
         // Only accept tenant sync if we are in demo/empty, or if the incoming tenant has the same ID (to update settings)
         const currentState = callbacksRef.current.getCurrentState();
-        if (currentState.tenant?.id === 'tnt_demo_123' || currentState.tenant?.id === payload.tenant.id) {
+        if (currentState.tenant?.id?.startsWith('tenant_demo_') || currentState.tenant?.id === payload.tenant.id) {
           // Merge zones to prevent stale devices from wiping newly created zones
           const localZones = currentState.tenant?.zones || [];
           const incomingZones = payload.tenant?.zones || [];
@@ -125,7 +125,7 @@ export function useRealtimeSync(
         const state = callbacksRef.current.getCurrentState();
         if (state && state.hasLocalData) {
           // Prevent broadcasting if this is a fresh/demo instance with no real data
-          const isFreshDemo = state.tenant?.id === 'tnt_demo_123' && (!state.staff || state.staff.length === 0) && (!state.tables || state.tables.length === 0);
+          const isFreshDemo = state.tenant?.id?.startsWith('tenant_demo_') && (!state.staff || state.staff.length === 0) && (!state.tables || state.tables.length === 0) && (!state.menuItems || state.menuItems.length === 0);
           if (isFreshDemo) {
             console.log('Skipping broadcast of fresh demo state to avoid overwriting network.');
             return;

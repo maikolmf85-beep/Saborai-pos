@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getTenantItem } from '../services/tenantStorage';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -28,8 +29,8 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) =>
   // Load staff list for tip liquidation calculations
   const staffList: UserProfile[] = useMemo(() => {
     try {
-      const saved = localStorage.getItem('saborai_staff');
-      if (saved) return JSON.parse(saved);
+      const saved = getTenantItem<any[]>('staff');
+      if (saved) return saved;
     } catch {}
     return [];
   }, []);

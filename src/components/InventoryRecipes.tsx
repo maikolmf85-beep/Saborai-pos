@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MenuItem } from '../types';
 import { sampleMenuItems } from '../data/mockData';
+import { getTenantItem } from '../services/tenantStorage';
 import { 
   Boxes, 
   AlertTriangle, 
@@ -16,11 +17,8 @@ import {
 export const InventoryRecipes: React.FC = () => {
   const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
     try {
-      const saved = localStorage.getItem('saborai_menu');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
+      const parsed = getTenantItem<MenuItem[]>('menu');
+      if (Array.isArray(parsed)) return parsed;
     } catch {}
     return sampleMenuItems;
   });
