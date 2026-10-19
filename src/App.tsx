@@ -435,6 +435,14 @@ export function App() {
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
     } catch {}
+
+    // Cambiar de colaborador no abre ni reemplaza el turno de caja activo.
+    // Solo registra al usuario como participante del mismo turno.
+    const activeShift = cashShiftService.registerUserOnActiveShift(user);
+    if (activeShift) {
+      broadcastShifts(cashShiftService.getAllActiveShiftsMap());
+    }
+    setShiftsVersion(v => v + 1);
   };
 
   const handleSwitchWaiter = (staff: UserProfile) => {
@@ -455,8 +463,8 @@ export function App() {
     addNotification({
       id: `switch_${Date.now()}`,
       type: 'ORDER_READY',
-      title: 'Cambio de Turno Realizado',
-      message: `El sistema ahora opera bajo el turno de ${staff.name}`,
+      title: 'Usuario cambiado',
+      message: `${staff.name} se incorporó al turno activo. El turno de caja continúa abierto.`,
       server: staff.name,
       timestamp: new Date()
     });

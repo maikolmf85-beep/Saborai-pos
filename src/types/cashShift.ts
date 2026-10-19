@@ -62,6 +62,13 @@ export interface CashRegister {
   linkedZones?: string[]; // Múltiples salones asociados (ej: ['Salón Principal', 'Patio'])
 }
 
+export interface CashShiftParticipant {
+  userId: string;
+  userName: string;
+  userRole: string;
+  joinedAt: string;
+}
+
 export interface CashShift {
   id: string;
   shiftNumber: number;
@@ -77,6 +84,8 @@ export interface CashShift {
     userName: string;
     userRole: string;
   };
+  /** Usuarios que trabajaron dentro del mismo turno; openedBy conserva al responsable de apertura. */
+  participants?: CashShiftParticipant[];
   openedAt: string; // ISO string
   initialCashFloat: number; // Fondo de caja inicial
   status: ShiftStatus;

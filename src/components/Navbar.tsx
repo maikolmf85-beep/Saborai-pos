@@ -586,7 +586,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                 }
                 label={user.name}
-                sublabel={`${user.role === 'ADMIN' ? 'Administrador' : user.role === 'CAJERO' ? 'Cajero' : 'Salonero'} • Cambiar turno PIN`}
+                sublabel={`${user.role === 'ADMIN' ? 'Administrador' : user.role === 'CAJERO' ? 'Cajero' : 'Salonero'} • Cambiar usuario PIN`}
               />
             )}
 
@@ -710,4 +710,3 @@ export const Navbar: React.FC<NavbarProps> = ({
     </>
   );
 };
-

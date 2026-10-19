@@ -8,7 +8,8 @@ import {
   ShiftSystemSummary,
   CashRegister,
   ConsolidatedZReportData,
-  DataphoneClosingEntry
+  DataphoneClosingEntry,
+  CashShiftParticipant
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
 
@@ -240,6 +241,37 @@ class CashShiftService {
     return this.activeShiftsMap[targetId] || null;
   }
 
+  /** Añade al usuario al turno abierto; cambiar de usuario no cambia el turno. */
+  registerUserOnActiveShift(user: UserProfile, registerId?: string): CashShift | null {
+    const shift = this.getActiveShift(registerId);
+    if (!shift || shift.status !== 'OPEN' || !user?.id) return shift;
+
+    const participants: CashShiftParticipant[] = Array.isArray(shift.participants)
+      ? [...shift.participants]
+      : [{
+          userId: shift.openedBy.userId,
+          userName: shift.openedBy.userName,
+          userRole: shift.openedBy.userRole,
+          joinedAt: shift.openedAt
+        }];
+
+    if (!participants.some(participant => participant.userId === user.id)) {
+      participants.push({
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        joinedAt: new Date().toISOString()
+      });
+      shift.participants = participants;
+      this.saveToStorage();
+    } else if (!shift.participants) {
+      shift.participants = participants;
+      this.saveToStorage();
+    }
+
+    return shift;
+  }
+
   getAllActiveShifts(): { register: CashRegister; shift: CashShift | null }[] {
     return this.registers.map(reg => ({
       register: reg,
@@ -321,6 +353,12 @@ class CashShiftService {
         userName: openedByUser?.name || 'Maikol Matamoros',
         userRole: openedByUser?.role || 'ADMIN'
       },
+      participants: [{
+        userId: openedByUser?.id || 'usr_matamoros_admin',
+        userName: openedByUser?.name || 'Maikol Matamoros',
+        userRole: openedByUser?.role || 'ADMIN',
+        joinedAt: new Date().toISOString()
+      }],
       openedAt: new Date().toISOString(),
       initialCashFloat: initialFloat,
       status: 'OPEN',

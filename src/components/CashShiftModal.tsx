@@ -345,9 +345,12 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       role: (activeShift?.openedBy?.userRole as any) || 'CAJERO'
     };
 
-    // Validate that the same user who opened the shift is closing it
-    if (activeShift && closingUser.id !== activeShift.openedBy.userId) {
-      setCloseError(`El cierre de caja solo puede ser realizado por la persona que lo abrió: ${activeShift.openedBy.userName}.`);
+    // El turno puede ser compartido por varios colaboradores. La apertura
+    // conserva un responsable, pero un administrador/cajero autorizado puede
+    // realizar el cierre sin crear ni cambiar de turno.
+    const canCloseSharedShift = ['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(closingUser.role);
+    if (activeShift && closingUser.id !== activeShift.openedBy.userId && !canCloseSharedShift) {
+      setCloseError(`Este turno es compartido. El cierre requiere al responsable de apertura o un usuario autorizado (administrador/cajero).`);
       soundService.playErrorBuzz();
       return;
     }
@@ -864,7 +867,12 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     <span className="text-xs text-stone-400">•</span>
                     <span className="text-xs text-stone-300 font-mono">{activeShift.terminalId}</span>
                   </div>
-                  <h3 className="text-xl font-black">Cajero: {activeShift.openedBy.userName}</h3>
+                  <h3 className="text-xl font-black">Turno abierto por: {activeShift.openedBy.userName}</h3>
+                  <p className="text-xs text-stone-500 mt-1">
+                    {activeShift.participants && activeShift.participants.length > 1
+                      ? `${activeShift.participants.length} colaboradores trabajando en este mismo turno`
+                      : 'Los cambios de usuario no cambian este turno'}
+                  </p>
                   <p className="text-xs text-stone-400">
                     Abierto hoy a las {new Date(activeShift.openedAt).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}
                   </p>
