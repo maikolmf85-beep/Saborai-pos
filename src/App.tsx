@@ -118,6 +118,10 @@ export function App() {
     }
     try {
       localStorage.setItem('saborai_tenant', JSON.stringify(updated));
+      // Persistir también en el almacenamiento aislado por tenant. El perfil
+      // contiene los salones y categorías, que deben sobrevivir al logout y
+      // no depender únicamente del estado global de la sesión.
+      setTenantItem('tenant_profile', updated, updated.id);
       if (updated.haciendaConfig) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
@@ -498,16 +502,31 @@ export function App() {
   }, []);
 
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
-    setActiveTenantId(loggedTenant.id);
-    migrateLegacyDataToTenant(loggedTenant.id);
+    // El endpoint de login devuelve la identidad del tenant, pero los ajustes
+    // operativos (salones, categorías, régimen y Hacienda) pueden haber sido
+    // guardados localmente por tenant. Restaurarlos aquí evita que el login
+    // reemplace el tenant hidratado por uno sin salones.
+    const savedTenant = getTenantItem<TenantInfo>('tenant_profile', loggedTenant.id);
+    const restoredTenant: TenantInfo = {
+      ...loggedTenant,
+      zones: savedTenant?.zones ?? loggedTenant.zones ?? [],
+      menuCategories: savedTenant?.menuCategories ?? loggedTenant.menuCategories ?? [],
+      taxRegime: savedTenant?.taxRegime ?? loggedTenant.taxRegime,
+      includeService10ByDefault: savedTenant?.includeService10ByDefault ?? loggedTenant.includeService10ByDefault,
+      haciendaConfig: savedTenant?.haciendaConfig ?? loggedTenant.haciendaConfig
+    };
+
+    setActiveTenantId(restoredTenant.id);
+    migrateLegacyDataToTenant(restoredTenant.id);
     setCurrentUser(user);
-    setTenant(loggedTenant);
-    setMenuItems(getTenantItem<MenuItem[]>('menu', loggedTenant.id) || []);
-    setTables(getTenantItem<Table[]>('tables', loggedTenant.id) || []);
-    setStaffList(getTenantItem<UserProfile[]>('staff', loggedTenant.id) || [user]);
+    setTenant(restoredTenant);
+    setMenuItems(getTenantItem<MenuItem[]>('menu', restoredTenant.id) || []);
+    setTables(getTenantItem<Table[]>('tables', restoredTenant.id) || []);
+    setStaffList(getTenantItem<UserProfile[]>('staff', restoredTenant.id) || [user]);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
-      localStorage.setItem('saborai_tenant', JSON.stringify(loggedTenant));
+      localStorage.setItem('saborai_tenant', JSON.stringify(restoredTenant));
+      setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
     } catch {}
     // If logging in with existing account and no subscription record, treat as active
     if (!subscription) {
@@ -520,7 +539,7 @@ export function App() {
       const exists = prev.some(m => m.id === user.id || m.email === user.email);
       if (!exists) {
         const next = [user, ...prev];
-        setTenantItem('staff', next, loggedTenant.id);
+        setTenantItem('staff', next, restoredTenant.id);
         return next;
       }
       return prev;

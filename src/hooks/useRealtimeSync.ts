@@ -21,10 +21,11 @@ export function useRealtimeSync(
   }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState]);
 
   useEffect(() => {
-    if (!tenantId || !supabaseClient) return;
+    const client = supabaseClient;
+    if (!tenantId || !client) return;
 
     const channelName = `tenant-${tenantId}-sync`;
-    const channel = supabaseClient.channel(channelName);
+    const channel = client.channel(channelName);
 
     channel
       .on('broadcast', { event: 'sync-tables' }, ({ payload }) => {
@@ -149,7 +150,7 @@ export function useRealtimeSync(
     channelRef.current = channel;
 
     return () => {
-      supabaseClient.removeChannel(channel);
+      client.removeChannel(channel);
     };
   }, [tenantId]); // Only re-subscribe if tenantId changes
 
