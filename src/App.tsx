@@ -38,6 +38,21 @@ import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-react';
 
+function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null {
+  const scopedTenant = getTenantItem<TenantInfo>('tenant_profile', tenantId);
+  if (scopedTenant) return scopedTenant;
+
+  // Compatibilidad con sesiones anteriores: antes de esta reparación el
+  // tenant completo se guardaba solamente en saborai_tenant.
+  try {
+    const rawTenant = localStorage.getItem('saborai_tenant');
+    const legacyTenant = rawTenant ? JSON.parse(rawTenant) as TenantInfo : null;
+    return legacyTenant && String(legacyTenant.id) === String(tenantId) ? legacyTenant : null;
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => 
     new URLSearchParams(window.location.search).get('resetToken')
@@ -196,7 +211,7 @@ export function App() {
             active: data.user.active
           };
           const savedHaciendaConfig = getTenantItem<any>('hacienda_config', data.tenant.id);
-          const savedTenant = getTenantItem<TenantInfo>('tenant_profile', data.tenant.id);
+          const savedTenant = getTenantProfileWithLegacyFallback(data.tenant.id);
 
           const tenantObj: TenantInfo = {
             id: data.tenant.id,
@@ -506,7 +521,7 @@ export function App() {
     // operativos (salones, categorías, régimen y Hacienda) pueden haber sido
     // guardados localmente por tenant. Restaurarlos aquí evita que el login
     // reemplace el tenant hidratado por uno sin salones.
-    const savedTenant = getTenantItem<TenantInfo>('tenant_profile', loggedTenant.id);
+    const savedTenant = getTenantProfileWithLegacyFallback(loggedTenant.id);
     const restoredTenant: TenantInfo = {
       ...loggedTenant,
       zones: savedTenant?.zones ?? loggedTenant.zones ?? [],
