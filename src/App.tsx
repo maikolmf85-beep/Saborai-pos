@@ -1354,6 +1354,7 @@ export function App() {
         currentUser={currentUser}
         menuItems={menuItems}
         selectedTable={selectedTableForOrder}
+        zones={tenant.zones || []}
         onOpenLearningHub={() => setIsNyzaHubOpen(true)}
         onQuickAction={(action) => {
           try {
@@ -1365,6 +1366,8 @@ export function App() {
                const item = menuItems.find(m => m.name.toLowerCase().includes((cmd.product || '').toLowerCase()));
                if (item) {
                  const existingItems = selectedTableForOrder.activeOrder?.items ? [...selectedTableForOrder.activeOrder.items] : [];
+                 const selectedModifiers = Array.isArray(cmd.modifiers) ? cmd.modifiers : [];
+                 const modifierExtra = selectedModifiers.reduce((sum: number, mod: any) => sum + (Number(mod.extraPrice) || 0), 0);
                  const newOrder = {
                     orderNumber: selectedTableForOrder.activeOrder?.orderNumber || `ORD-${Date.now()}`,
                     server: selectedTableForOrder.activeOrder?.server || currentUser?.name || 'Mesero',
@@ -1376,11 +1379,12 @@ export function App() {
                         id: `itm_${Date.now()}`,
                         name: item.name,
                         quantity: cmd.quantity || 1,
-                        price: item.price,
+                        price: item.price + modifierExtra,
                         notes: 'Agregado por Nysa IA',
                         cabysCode: item.cabysCode,
                         taxRate: item.taxRate,
-                        category: item.station === 'Bar' ? 'Bar' : 'Cocina'
+                        category: item.station === 'Bar' ? 'Bar' : 'Cocina',
+                        selectedModifiers: selectedModifiers.length > 0 ? selectedModifiers : undefined
                       }
                     ]
                  };
@@ -1401,6 +1405,37 @@ export function App() {
                    timestamp: new Date()
                  });
                }
+            } else if (cmd.type === 'ADD_ZONE') {
+               const zoneName = String(cmd.name || '').trim();
+               if (!zoneName) throw new Error('Nyza recibió un salón sin nombre.');
+               const existingZones = tenant.zones || [];
+               if (!existingZones.some(z => z.toLowerCase() === zoneName.toLowerCase())) {
+                 handleUpdateTenant({ ...tenant, zones: [...existingZones, zoneName] });
+                 addNotification({
+                   id: `nyza_zone_${Date.now()}`,
+                   type: 'ORDER_READY',
+                   title: 'Nyza IA',
+                   message: `Creó el salón "${zoneName}".`,
+                   timestamp: new Date()
+                 });
+               } else {
+                 addNotification({
+                   id: `nyza_zone_exists_${Date.now()}`,
+                   type: 'NEW_ORDER',
+                   title: 'Nyza IA',
+                   message: `El salón "${zoneName}" ya existe.`,
+                   timestamp: new Date()
+                 });
+               }
+            } else if (cmd.type === 'OPEN_REPORTS') {
+               setActiveTab('reports');
+               addNotification({
+                 id: `nyza_report_${Date.now()}`,
+                 type: 'ORDER_READY',
+                 title: 'Nyza IA',
+                 message: `Abrí los reportes de ${cmd.range || 'hoy'} para que revises las cifras reales.`,
+                 timestamp: new Date()
+               });
             } else if (cmd.type === 'ADD_TABLE') {
                const tableName = cmd.name || 'Nueva Mesa';
                const tableNumberStr = tableName.replace(/\D/g, '');

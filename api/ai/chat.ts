@@ -14,9 +14,16 @@ interface ChatRequestBody {
   userText: string;
   messages?: Array<{ sender: 'ai' | 'user'; text: string }>;
   context?: {
-    menuItems?: Array<{ name: string; price: number; category?: string; available?: boolean }>;
+    menuItems?: Array<{
+      name: string;
+      price: number;
+      category?: string;
+      available?: boolean;
+      modifiers?: Array<{ name: string; choices?: string[] }>;
+    }>;
     selectedTable?: { id?: string; name?: string; status?: string; seats?: number } | null;
     currentUser?: { name?: string; role?: string };
+    zones?: string[];
     restaurantName?: string;
     knowledgeContext?: string;
     systemInstruction?: string;
@@ -51,6 +58,17 @@ function isSimpleGreeting(text: string): boolean {
     .replace(/[!¡?¿.,;:]+/g, ' ')
     .trim();
   return /^(hola|buenas|buenos dias|buenas tardes|buenas noches|pura vida|hey|hi|hello)(\s+(nyza|nysa))?$/.test(normalized);
+}
+
+function getIntent(text: string): 'support' | 'learning' | 'menu' | 'order' | 'reports' | 'layout' | 'general' {
+  const normalized = text.toLocaleLowerCase('es-CR');
+  if (/impres|hacienda|factur|base de datos|lento|error|falla|repar|soporte|caja|turno/.test(normalized)) return 'support';
+  if (/aprend|mejor|iq|evoluc|heuristic|conocimiento/.test(normalized)) return 'learning';
+  if (/reporte|ventas|ingres|ticket promedio|propina|estadistica|cierre/.test(normalized)) return 'reports';
+  if (/salon|salón|mesa|terraza|patio|barra|zona|area|área/.test(normalized)) return 'layout';
+  if (/comanda|pedido|platillo|producto|menu|menú|hamburgues|rib eye|carne|sin cebolla|pepinillo|termino|término/.test(normalized)) return 'order';
+  if (/precio|carta|categoria|categoría|disponib|bebida|postre/.test(normalized)) return 'menu';
+  return 'general';
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -92,46 +110,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  const menuSummary = Array.isArray(context.menuItems) && context.menuItems.length > 0
-    ? context.menuItems.map(m => `${m.name} (₡${m.price.toLocaleString()})`).join(', ')
-    : 'Catálogo de menú vacío o no configurado.';
-
+  const intent = getIntent(cleanUserText);
+  const menuItems = Array.isArray(context.menuItems) ? context.menuItems : [];
+  const needsMenu = ['menu', 'order', 'general'].includes(intent);
+  const menuSummary = needsMenu && menuItems.length > 0
+    ? menuItems.slice(0, 80).map(m => {
+        const modifiers = m.modifiers?.length
+          ? ` [opciones: ${m.modifiers.map(mod => `${mod.name}${mod.choices?.length ? `=${mod.choices.join('|')}` : ''}`).join('; ')}]`
+          : '';
+        return `${m.name} (₡${Number(m.price || 0).toLocaleString()}${m.available === false ? ', AGOTADO' : ''})${modifiers}`;
+      }).join(', ')
+    : '';
   const tableSummary = context.selectedTable
-    ? `Mesa actual: ${context.selectedTable.name || 'Sin nombre'} (${context.selectedTable.status || 'AVAILABLE'})`
-    : 'Sin mesa seleccionada.';
+    ? `${context.selectedTable.name || 'Sin nombre'} (${context.selectedTable.status || 'AVAILABLE'})`
+    : 'sin mesa seleccionada';
+  const baseInstruction = `Eres Nyza, la inteligencia operativa de Saborai POS para restaurantes de Costa Rica.
+Responde en español costarricense, con precisión y máximo 4 oraciones salvo que el usuario solicite un reporte detallado.
+No inventes datos. Si falta información, dilo y pide solo el dato necesario.
+Puedes sugerir modificaciones de comanda de forma contextual: para cortes como Rib Eye sugiere término de cocción; para hamburguesas considera sin cebolla, sin pepinillos, salsas y extras. Presenta sugerencias como opciones, nunca las agregues sin confirmación.
 
-  const systemInstruction = context.systemInstruction || `Eres Saborai Copilot (desarrollado con Nyza AI), un asistente inteligente de punto de venta (POS) gastronómico para restaurantes de Costa Rica.
-Tu misión es asistir ágilmente al personal (saloneros, cajeros, administradores y cocineros) en la toma de pedidos, cuadres de caja, sugerencias de maridaje, dudas de facturación electrónica Hacienda v4.4, escandallos y atajos operativos.
-
-Reglas de respuesta:
-1. Sé conciso, profesional, dinámico y amigable.
-2. Si el usuario te pide una acción concreta del POS, incluye al final de tu respuesta un bloque de código JSON con la acción solicitada. Ejemplos de acciones soportadas:
-- Agregar producto:
-\`\`\`json
-{"type": "ADD_ITEM", "product": "nombre_producto", "quantity": 1}
-\`\`\`
-- Crear mesa:
-\`\`\`json
-{"type": "ADD_TABLE", "name": "Mesa 2", "zone": "Principal"}
-\`\`\`
-- Abrir o gestionar turno:
-\`\`\`json
-{"type": "OPEN_SHIFT"}
-\`\`\`
-
-3. Marco legal y financiero de Costa Rica:
-- Moneda principal: Colones costarricenses (₡) y USD opcional.
-- Impuesto de Valor Agregado (IVA): 13% estándar (o exento según régimen simplificado).
-- Servicio a la mesa: 10% obligatorio por Ley N° 4946 en consumos de salón.
-- Facturación Electrónica v4.4 del Ministerio de Hacienda (clave 50 dígitos, consecutivos 20 dígitos).
-
-Contexto del restaurante:
-- Restaurante: ${context.restaurantName || 'Mi Restaurante'}
-- Usuario en turno: ${context.currentUser?.name || 'Usuario'} (${context.currentUser?.role || 'ADMIN'})
-- ${tableSummary}
-- Menú disponible: ${menuSummary}
-${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${context.knowledgeContext}` : ''}
-`;
+Acciones POS disponibles; devuelve SOLO un bloque JSON al final cuando corresponda:
+ADD_ITEM {product, quantity, modifiers:[{modifierName, choiceName, extraPrice}]}; ADD_TABLE {name, zone, seats}; ADD_ZONE {name}; OPEN_REPORTS {range:"today"|"week"|"month"}; TOGGLE_DISH_AVAILABILITY {product, available}; OPEN_SHIFT; y tool_calls para diagnóstico autorizado.
+Para crear o mostrar un reporte usa OPEN_REPORTS; no inventes cifras que no estén en los datos del sistema.
+El usuario actual es ${context.currentUser?.name || 'Empleado'} (${context.currentUser?.role || 'ADMIN'}). Mesa: ${tableSummary}.
+Salones configurados: ${(context.zones || []).join(', ') || 'ninguno'}.
+${needsMenu ? `Menú relevante:\n${menuSummary || 'catálogo vacío'}` : 'No es necesario enviar el menú para esta consulta.'}
+${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendizaje:\n${context.knowledgeContext}` : ''}`;
+  const systemInstruction = context.systemInstruction || baseInstruction;
 
   // Historial resumido de conversación
   const recentHistory = messages.slice(-6).map(m => `[${m.sender === 'user' ? 'Usuario' : 'Copilot'}]: ${m.text}`).join('\n');

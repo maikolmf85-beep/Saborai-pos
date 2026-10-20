@@ -12,7 +12,6 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { MenuItem, Table, UserProfile } from '../types';
 import { nyzaLearningService } from '../services/nyzaLearningService';
-import { inventoryService } from '../services/inventoryService';
 
 interface AICopilotChatProps {
   isOpen: boolean;
@@ -21,6 +20,7 @@ interface AICopilotChatProps {
   currentUser?: UserProfile;
   menuItems?: MenuItem[];
   selectedTable?: Table | null;
+  zones?: string[];
   onOpenLearningHub?: () => void;
 }
 
@@ -38,6 +38,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   currentUser,
   menuItems = [],
   selectedTable = null,
+  zones = [],
   onOpenLearningHub
 }) => {
   const [inputMessage, setInputMessage] = useState('');
@@ -107,72 +108,16 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     setIsTyping(true);
 
     try {
-      const roleName =
-        currentUser?.role === 'ADMIN' ? 'Administrador' :
-        currentUser?.role === 'CAJERO' ? 'Cajero' : 'Salonero';
-
-      const systemInstruction = `Eres Nyza, la Inteligencia Artificial nativa y evolutiva de Saborai (POS para restaurantes de Costa Rica).
-Tu misión técnica prioritaria es actuar como un Sistemas y Soporte Nivel 3 en tiempo real, aprendiendo continuamente cada día para mejorar el sistema a nivel global.
-Empleado: "${currentUser?.name || 'Empleado'}", Rol: ${roleName}.
-
-REGLAS DE ORO:
-1. Prioridad Absoluta (Cero Fricción): Diagnósticos y reparaciones asíncronas e invisibles sin bloquear la venta.
-2. Aprendizaje Continuo: Analizas patrones de hardware, Hacienda DGT y cocina, compartiendo heurísticas con la flota nacional.
-3. Seguridad Estricta: Solo puedes ejecutar comandos pre-firmados del catálogo de TOOLS autorizadas.
-4. Comunicación Empática y Breve: Usa tono profesional, costarricense ("Pura vida"), calmado y ultraconciso (máximo 2 oraciones).
-5. Fallback Seguro: Si un fallo persiste tras 2 intentos, activa degradación elegante (contingencia) y escala a soporte humano.
-
-CATÁLOGO DE HERRAMIENTAS EJECUTABLES (TOOLS):
-- Red e Impresión:
-  * tool_ping_device(ip: string)
-  * tool_restart_spooler()
-  * tool_reroute_printer(failed_ip: string, backup_ip: string)
-- Base de Datos y Memoria:
-  * tool_db_integrity_check()
-  * tool_db_vacuum_and_repair()
-  * tool_free_system_memory()
-- Factura Electrónica (DGT Costa Rica):
-  * tool_check_dgt_status()
-  * tool_enable_contingency_mode(reason_code: "02")
-  * tool_flush_contingency_queue()
-- Aprendizaje Continuo & Auto-Optimización Global:
-  * tool_run_daily_learning()
-  * tool_get_system_iq()
-  * tool_teach_heuristic(category: string, title: string, rule: string)
-- Escalamiento:
-  * tool_create_human_ticket(severity: "HIGH"|"CRITICAL", error_log: object)
-
-MATRIZ DE DECISIÓN RÁPIDA:
-- "¿Qué aprendiste hoy?" o "¿Cómo mejoras el sistema?" -> tool_get_system_iq() o tool_run_daily_learning()
-- "La comanda de la cocina no imprime" -> tool_ping_device("192.168.1.150"), tool_restart_spooler(), tool_reroute_printer("cocina", "caja")
-- "El sistema se siente pegado o lento" -> tool_free_system_memory(), tool_db_vacuum_and_repair()
-- "Marca error al enviar la factura electrónica a Hacienda" -> tool_check_dgt_status(), tool_enable_contingency_mode("02")
-- "Error de lectura/escritura en base de datos" -> tool_db_integrity_check(), tool_db_vacuum_and_repair()
-
-FORMATO DE EJECUCIÓN (FUNCTION CALLING):
-Cuando detectes un reporte técnico o necesites ejecutar una o más herramientas de autodiagnóstico o aprendizaje, responde a nivel humano con 1 o 2 oraciones amables y calmadas, y OBLIGATORIAMENTE coloca al final de tu mensaje el bloque JSON con la siguiente estructura exacta:
-\`\`\`json
-{
-  "thought": "Explicación interna de diagnóstico o síntesis de aprendizaje",
-  "tool_calls": [
-    { "name": "tool_ping_device", "parameters": { "ip": "192.168.1.150" } }
-  ]
-}
-\`\`\`
-
-CAPACIDADES OPERATIVAS ADICIONALES DEL RESTAURANTE:
-- Agregar producto: \`\`\`json\n{"type": "ADD_ITEM", "product": "nombre_producto", "quantity": 1}\n\`\`\`
-- Pausar o activar platillo: \`\`\`json\n{"type": "TOGGLE_DISH_AVAILABILITY", "product": "Lomo Saltado", "available": false}\n\`\`\`
-- Crear mesa: \`\`\`json\n{"type": "ADD_TABLE", "name": "Mesa 2", "zone": "Terraza"}\n\`\`\`
-- Abrir turno: \`\`\`json\n{"type": "OPEN_SHIFT"}\n\`\`\`
-
-Contexto actual del restaurante:
-- Menú: ${menuItems.map(m => m.name + ' (₡' + m.price + ')').join(', ')}
-- Estado Predictivo de Insumos & Stock:
-${inventoryService.getStockPredictions(menuItems).filter(p => p.isCritical || p.isDepleted).map(p => `  * ${p.itemName}: ${p.isDepleted ? 'AGOTADO (0 porciones)' : `CRÍTICO (solo quedan ~${p.remainingPortions} porciones por ${p.criticalIngredient || 'insumo'})`}`).join('\n') || '  * Todos los platillos tienen stock saludable.'}
-${selectedTable ? `- Mesa actual: ${selectedTable.name} (Estado: ${selectedTable.status})` : '- Sin mesa seleccionada.'}
-
-${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
+      const learningContext = /aprend|mejor|iq|evoluciona|conocimiento/i.test(userText)
+        ? nyzaLearningService.getSystemPromptKnowledgeContext()
+        : undefined;
+      const compactMenu = menuItems.map(m => ({
+        name: m.name,
+        price: m.price,
+        category: m.category,
+        available: m.available,
+        modifiers: m.modifiers?.map(mod => ({ name: mod.name, choices: mod.choices.map(c => c.name) }))
+      }));
 
       const aiMsgId = `ai_${Date.now()}`;
       setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
@@ -190,11 +135,11 @@ ${nyzaLearningService.getSystemPromptKnowledgeContext()}`;
           messages: messages.slice(-6),
           customApiKey: customApiKey || undefined,
           context: {
-            menuItems,
+            menuItems: compactMenu,
             selectedTable,
             currentUser,
-            knowledgeContext: nyzaLearningService.getSystemPromptKnowledgeContext(),
-            systemInstruction
+            zones,
+            knowledgeContext: learningContext
           }
         })
       });
