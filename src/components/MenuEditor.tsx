@@ -56,7 +56,8 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   const [isAutoFillingAll, setIsAutoFillingAll] = useState(false);
   const [autoFillSummary, setAutoFillSummary] = useState<string | null>(null);
 
-  const ALLOWED_RATES = [0.13, 0.08, 0.04, 0.01, 0];
+const ALLOWED_RATES = [0.13, 0.08, 0.04, 0.01, 0];
+const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '☕', '🍕', '🍔', '🌮', '🍣', '🐟', '🥩', '🍗', '🥗', '🍝', '🍰', '🍨', '🍟'];
 
   const runCabysSearch = async (text: string, category?: string) => {
     if (!text.trim()) { setCabysResults([]); return []; }
@@ -510,9 +511,30 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
                       type="text"
                       required
                       value={editingItem.imageIcon || ''}
-                      onChange={e => setEditingItem({...editingItem, imageIcon: e.target.value})}
+                      onChange={e => setEditingItem({...editingItem, imageIcon: e.target.value, iconManual: true})}
                       className="w-full text-2xl text-center px-0 py-2 border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                     />
+                    <div className="flex flex-wrap gap-1 mt-2" aria-label="Iconos disponibles">
+                      {MENU_ICON_PRESETS.map(icon => (
+                        <button
+                          key={icon}
+                          type="button"
+                          onClick={() => setEditingItem({ ...editingItem, imageIcon: icon, iconManual: true })}
+                          className={`w-7 h-7 rounded-lg text-base border transition-colors ${editingItem.imageIcon === icon && editingItem.iconManual ? 'bg-[#a9b994]/30 border-[#588157]' : 'bg-stone-50 border-stone-200 hover:bg-stone-100'}`}
+                          title={`Usar icono ${icon}`}
+                        >
+                          {icon}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setEditingItem({ ...editingItem, imageIcon: '🍽️', iconManual: false })}
+                        className="px-2 h-7 rounded-lg text-[10px] font-bold text-stone-600 bg-stone-50 border border-stone-200 hover:bg-stone-100"
+                        title="Asignar automáticamente según el producto"
+                      >
+                        Auto
+                      </button>
+                    </div>
                   </div>
                   <div className="flex-1">
                     <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Nombre del Platillo</label>

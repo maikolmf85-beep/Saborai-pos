@@ -8,9 +8,9 @@ const normalize = (value: string) => value
 const matches = (text: string, terms: string[]) => terms.some(term => text.includes(term));
 
 /** Devuelve el icono configurado por el restaurante o uno contextual si usa el genérico. */
-export function getMenuItemIcon(item: Pick<MenuItem, 'name' | 'description' | 'category' | 'subcategory' | 'station' | 'imageIcon'>): string {
+export function getMenuItemIcon(item: Pick<MenuItem, 'name' | 'description' | 'category' | 'subcategory' | 'station' | 'imageIcon' | 'iconManual'>): string {
   const configured = item.imageIcon?.trim();
-  if (configured && configured !== '🍽️' && configured !== '🍴') return configured;
+  if (configured && (item.iconManual || (configured !== '🍽️' && configured !== '🍴'))) return configured;
 
   const text = normalize([
     item.name,

@@ -130,6 +130,7 @@ export interface MenuItem {
   taxRate: number;
   available: boolean;
   imageIcon: string;
+  iconManual?: boolean; // Si es true, respeta el icono elegido aunque sea el genérico
   ingredients: { name: string; requiredQty: number; unit: string; currentStock: number }[];
   aiSuggestedPairing?: string;
   prepTime?: number; // Tiempo estimado de preparación en minutos
