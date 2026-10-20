@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getTenantItem } from '../services/tenantStorage';
+import { getTenantItem, setTenantItem } from '../services/tenantStorage';
 import { 
   Printer, 
   Send, 
@@ -103,10 +103,13 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
   const [savedCustomers, setSavedCustomers] = useState<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>(() => {
     try {
-      const raw = localStorage.getItem('saborai_customers');
-      return raw ? JSON.parse(raw) : [];
+      return getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || [];
     } catch { return []; }
   });
+
+  useEffect(() => {
+    setSavedCustomers(getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || []);
+  }, [tenant.id]);
 
   // Filter items based on active subaccount tab
   const activeItems: TableItem[] = selectedSubAccount === 'ALL'
@@ -160,9 +163,8 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
     setIsSearchingHacienda(true);
     try {
       // Check local saved customers first
-      const saved = localStorage.getItem('saborai_customers');
-      if (saved) {
-        const customers = JSON.parse(saved);
+      const customers = getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || [];
+      if (customers.length > 0) {
         const found = customers.find((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
         if (found) {
           setCustomerName(found.name || '');
@@ -197,7 +199,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
           ...savedCustomers.filter(c => c.cedula !== cleanCed)
         ].slice(0, 30);
         setSavedCustomers(updatedList);
-        localStorage.setItem('saborai_customers', JSON.stringify(updatedList));
+        setTenantItem('customers', updatedList, tenant.id);
       } catch {}
 
       if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Hacienda CR', message: 'Datos extraídos correctamente del padrón y guardados localmente', timestamp: new Date() });
@@ -398,8 +400,7 @@ Medio de Pago: ${paymentMethod}
 
       // Save customer for future
       try {
-        const saved = localStorage.getItem('saborai_customers');
-        let customers = saved ? JSON.parse(saved) : [];
+        let customers = getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || [];
         const newCustomer = {
           cedula: customerCedula,
           name: customerName,
@@ -412,7 +413,7 @@ Medio de Pago: ${paymentMethod}
         } else {
           customers.push(newCustomer);
         }
-        localStorage.setItem('saborai_customers', JSON.stringify(customers));
+        setTenantItem('customers', customers, tenant.id);
       } catch (err) {}
     }
 

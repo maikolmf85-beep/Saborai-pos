@@ -1,6 +1,7 @@
 import { PrinterConfig, PrinterRole, PrintReceiptData, PrintResult } from '../types/printer';
+import { getTenantItem, setTenantItem } from './tenantStorage';
 
-const PRINTERS_STORAGE_KEY = 'saborai_printers_config_v2';
+const PRINTERS_STORAGE_KEY = 'printers_config_v2';
 const DEFAULT_PRINT_RELAY_URL = 'http://127.0.0.1:8080/print';
 
 // ESC/POS Commands Constants
@@ -171,12 +172,21 @@ interface BluetoothDevice {
 
 export class PrinterService {
   private printers: PrinterConfig[] = [];
+  private tenantId: string | null = null;
   // Conexiones activas WebUSB
   private usbDeviceCache: Map<string, USBDevice> = new Map();
   // Conexiones activas WebBluetooth
   private bluetoothDeviceCache: Map<string, BluetoothDevice> = new Map();
 
   constructor() {
+    this.printers = [];
+  }
+
+  public setTenantContext(tenantId: string): void {
+    if (!tenantId || this.tenantId === tenantId) return;
+    this.tenantId = tenantId;
+    this.usbDeviceCache.clear();
+    this.bluetoothDeviceCache.clear();
     this.loadPrinters();
   }
 
@@ -184,14 +194,14 @@ export class PrinterService {
    * Cargar impresoras desde almacenamiento local
    */
   public loadPrinters(): PrinterConfig[] {
+    if (!this.tenantId) {
+      this.printers = [];
+      return this.printers;
+    }
     try {
-      const stored = localStorage.getItem(PRINTERS_STORAGE_KEY);
-      if (stored) {
-        this.printers = JSON.parse(stored);
-      } else {
-        this.printers = [];
-        this.savePrinters();
-      }
+      const stored = getTenantItem<PrinterConfig[]>(PRINTERS_STORAGE_KEY, this.tenantId);
+      this.printers = Array.isArray(stored) ? stored : [];
+      this.savePrinters();
     } catch {
       this.printers = [];
     }
@@ -202,8 +212,9 @@ export class PrinterService {
    * Guardar impresoras en almacenamiento local
    */
   public savePrinters(): void {
+    if (!this.tenantId) return;
     try {
-      localStorage.setItem(PRINTERS_STORAGE_KEY, JSON.stringify(this.printers));
+      setTenantItem(PRINTERS_STORAGE_KEY, this.printers, this.tenantId);
     } catch (e) {
       console.error('Error saving printers to localStorage', e);
     }

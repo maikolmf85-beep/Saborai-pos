@@ -12,12 +12,12 @@ import {
   CashShiftParticipant
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
+import { getTenantItem, setTenantItem } from './tenantStorage';
 
-const STORAGE_KEY_ACTIVE_SHIFTS_MAP = 'saborai_active_shifts_map';
-const STORAGE_KEY_CURRENT_TERMINAL_ID = 'saborai_current_terminal_id';
-const STORAGE_KEY_CASH_REGISTERS = 'saborai_cash_registers';
-const STORAGE_KEY_SHIFTS_HISTORY = 'saborai_shifts_history';
-const STORAGE_KEY_ACTIVE_SHIFT_LEGACY = 'saborai_active_shift';
+const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
+const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
+const TENANT_KEY_CASH_REGISTERS = 'cash_registers';
+const TENANT_KEY_SHIFTS_HISTORY = 'shifts_history';
 
 export const DEFAULT_REGISTERS: CashRegister[] = [
   {
@@ -38,67 +38,63 @@ class CashShiftService {
   private currentTerminalId: string = '';
   private activeShiftsMap: Record<string, CashShift> = {}; // key: registerId (e.g. 'caja-01')
   private shiftsHistory: CashShift[] = [];
+  private tenantId: string | null = null;
 
   constructor() {
+    this.resetInMemoryState();
+  }
+
+  setTenantContext(tenantId: string): void {
+    if (!tenantId || this.tenantId === tenantId) return;
+    this.tenantId = tenantId;
     this.loadFromStorage();
   }
 
+  private resetInMemoryState(): void {
+    this.registers = [...DEFAULT_REGISTERS];
+    this.currentTerminalId = this.registers[0].id;
+    this.activeShiftsMap = {};
+    this.shiftsHistory = [];
+  }
+
   private loadFromStorage(): void {
+    this.resetInMemoryState();
+    if (!this.tenantId) return;
+
     try {
       // 1. Load registers
-      const savedRegisters = localStorage.getItem(STORAGE_KEY_CASH_REGISTERS);
-      if (savedRegisters) {
-        const parsed = JSON.parse(savedRegisters);
-        this.registers = Array.isArray(parsed) && parsed.length > 0 ? parsed : [...DEFAULT_REGISTERS];
-      } else {
-        this.registers = [...DEFAULT_REGISTERS];
-        localStorage.setItem(STORAGE_KEY_CASH_REGISTERS, JSON.stringify(this.registers));
-      }
+      const parsedRegisters = getTenantItem<CashRegister[]>(TENANT_KEY_CASH_REGISTERS, this.tenantId);
+      this.registers = Array.isArray(parsedRegisters) && parsedRegisters.length > 0
+        ? parsedRegisters
+        : [...DEFAULT_REGISTERS];
 
       // 2. Load current terminal ID for this device
-      const savedTerminalId = localStorage.getItem(STORAGE_KEY_CURRENT_TERMINAL_ID);
+      const savedTerminalId = getTenantItem<string>(TENANT_KEY_CURRENT_TERMINAL_ID, this.tenantId);
       if (savedTerminalId && this.registers.some(r => r.id === savedTerminalId)) {
         this.currentTerminalId = savedTerminalId;
       } else {
         const defaultReg = this.registers.find(r => r.isDefault) || this.registers[0] || DEFAULT_REGISTERS[0];
         this.currentTerminalId = defaultReg.id;
-        localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
       }
 
       // 3. Load active shifts map
-      const savedShiftsMap = localStorage.getItem(STORAGE_KEY_ACTIVE_SHIFTS_MAP);
-      if (savedShiftsMap) {
-        this.activeShiftsMap = JSON.parse(savedShiftsMap);
-      } else {
-        this.activeShiftsMap = {};
-      }
+      this.activeShiftsMap = getTenantItem<Record<string, CashShift>>(TENANT_KEY_ACTIVE_SHIFTS_MAP, this.tenantId) || {};
 
       // 4. Load shifts history
-      const savedHistory = localStorage.getItem(STORAGE_KEY_SHIFTS_HISTORY);
-      if (savedHistory) {
-        this.shiftsHistory = JSON.parse(savedHistory);
-      } else {
-        this.shiftsHistory = [];
-      }
+      this.shiftsHistory = getTenantItem<CashShift[]>(TENANT_KEY_SHIFTS_HISTORY, this.tenantId) || [];
+      this.saveToStorage();
     } catch (e) {
       console.warn('Error loading shifts from storage:', e);
     }
   }
 
   private saveToStorage(): void {
+    if (!this.tenantId) return;
     try {
-      localStorage.setItem(STORAGE_KEY_CASH_REGISTERS, JSON.stringify(this.registers));
-      localStorage.setItem(STORAGE_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId);
-      localStorage.setItem(STORAGE_KEY_ACTIVE_SHIFTS_MAP, JSON.stringify(this.activeShiftsMap));
-      localStorage.setItem(STORAGE_KEY_SHIFTS_HISTORY, JSON.stringify(this.shiftsHistory));
-
-      // Keep legacy active shift key updated for any direct legacy consumer
-      const currentShift = this.activeShiftsMap[this.currentTerminalId];
-      if (currentShift) {
-        localStorage.setItem(STORAGE_KEY_ACTIVE_SHIFT_LEGACY, JSON.stringify(currentShift));
-      } else {
-        localStorage.removeItem(STORAGE_KEY_ACTIVE_SHIFT_LEGACY);
-      }
+      setTenantItem(TENANT_KEY_CASH_REGISTERS, this.registers, this.tenantId);
+      setTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId, this.tenantId);
+      setTenantItem(TENANT_KEY_ACTIVE_SHIFTS_MAP, this.activeShiftsMap, this.tenantId);
+      setTenantItem(TENANT_KEY_SHIFTS_HISTORY, this.shiftsHistory, this.tenantId);
     } catch (e) {
       console.warn('Error saving shifts to storage:', e);
     }
