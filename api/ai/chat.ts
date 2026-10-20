@@ -43,6 +43,16 @@ function parseAction(rawText: string): { action: any | null; display: string } {
   };
 }
 
+function isSimpleGreeting(text: string): boolean {
+  const normalized = text
+    .toLocaleLowerCase('es-CR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[!¡?¿.,;:]+/g, ' ')
+    .trim();
+  return /^(hola|buenas|buenos dias|buenas tardes|buenas noches|pura vida|hey|hi|hello)(\s+(nyza|nysa))?$/.test(normalized);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -69,6 +79,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const cleanUserText = userText.trim();
+
+  // Los saludos no requieren razonamiento ni una llamada de red. Esta ruta
+  // evita que una conversación básica espere la latencia del proveedor de IA.
+  if (isSimpleGreeting(cleanUserText)) {
+    return res.status(200).json({
+      success: true,
+      response: '¡Pura vida! Soy Nyza. ¿En qué puedo ayudarte?',
+      rawResponse: '¡Pura vida! Soy Nyza. ¿En qué puedo ayudarte?',
+      action: null,
+      provider: 'local-fast-path'
+    });
+  }
+
   const menuSummary = Array.isArray(context.menuItems) && context.menuItems.length > 0
     ? context.menuItems.map(m => `${m.name} (₡${m.price.toLocaleString()})`).join(', ')
     : 'Catálogo de menú vacío o no configurado.';
