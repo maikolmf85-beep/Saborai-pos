@@ -313,9 +313,10 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   // Nunca devolver un saludo genérico como si Nyza hubiera procesado la
   // consulta: eso ocultaba la causa real y hacía parecer funcional al chat.
   if (providerErrors.length > 0) {
+    const detail = providerErrors[providerErrors.length - 1];
     return res.status(502).json({
-      error: 'Nyza encontró las variables de IA, pero el proveedor rechazó o no pudo procesar la solicitud.',
-      details: providerErrors[providerErrors.length - 1]
+      error: `Nyza encontró las variables de IA, pero el proveedor rechazó o no pudo procesar la solicitud. ${detail}`,
+      details: detail
     });
   }
 
