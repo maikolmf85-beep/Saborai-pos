@@ -5,6 +5,7 @@ import { soundService } from '../services/soundEffects';
 import { CabysResult, searchCabys, suggestCabys, isValidCabys, RESTAURANT_CABYS_PRESETS, resolveRestaurantCabys } from '../services/cabysService';
 import { MenuUploaderModal } from './MenuUploaderModal';
 import { ConfirmDialog } from './ConfirmDialog';
+import { getMenuItemIcon } from '../services/menuIconService';
 
 interface MenuEditorProps {
   menuItems: MenuItem[];
@@ -437,7 +438,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
               <div key={item.id} className="bg-white border border-stone-200 rounded-2xl p-4 flex flex-col justify-between hover:border-[#a9b994] transition-all hover:shadow-md group">
                 <div>
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-3xl">{item.imageIcon}</span>
+                    <span className="text-3xl">{getMenuItemIcon(item)}</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 uppercase tracking-wider">
                       {item.category}
                     </span>
@@ -1095,4 +1096,3 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
     </div>
   );
 };
-

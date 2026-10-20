@@ -25,6 +25,7 @@ import { PosNotification } from './NotificationToast';
 import { printerService } from '../services/printerService';
 import { inventoryService } from '../services/inventoryService';
 import { getConfiguredOrRecommendedModifiers } from '../services/modifierRecommendationService';
+import { getMenuItemIcon } from '../services/menuIconService';
 
 interface OrderTakingProps {
   table: Table;
@@ -878,7 +879,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                     <div>
                       <div className="flex items-start justify-between gap-2">
                         <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
-                          {item.imageIcon}
+                          {getMenuItemIcon(item)}
                         </span>
                         <div className="flex items-center gap-1.5">
                           {qtyInOrder > 0 && (
