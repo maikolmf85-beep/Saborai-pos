@@ -225,6 +225,98 @@ IMPORTANTE: Responde ÚNICAMENTE con un objeto JSON válido con la siguiente est
   throw new Error('Claude no devolvió contenido interpretable.');
 }
 
+async function parseWithOpenAICompatible(
+  apiKey: string,
+  cleanBase64: string,
+  resolvedMime: string
+): Promise<{ data: any; model: string }> {
+  const baseUrl = (process.env.OPENAI_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const model = process.env.OPENAI_MENU_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  const dataUri = `data:${resolvedMime};base64,${cleanBase64}`;
+  const isPdf = resolvedMime === 'application/pdf';
+
+  // Chat Completions soporta image_url de forma amplia. El bloque file es
+  // compatible con gateways que aceptan archivos inline; si el gateway no lo
+  // implementa, el flujo continúa con Gemini/Claude cuando estén configurados.
+  const mediaPart = isPdf
+    ? {
+        type: 'file',
+        file: { filename: 'menu.pdf', file_data: dataUri }
+      }
+    : {
+        type: 'image_url',
+        image_url: { url: dataUri, detail: 'high' }
+      };
+
+  const extractionPrompt = `${PROMPT_TEXT}
+Responde ÚNICAMENTE con JSON válido, sin markdown ni texto adicional, usando exactamente esta estructura:
+{
+  "categorias": [
+    {
+      "nombre_categoria": "string",
+      "productos": [
+        {
+          "nombre": "string",
+          "descripcion": "string",
+          "precio": 0,
+          "tipo_producto": "comida | bebida_no_alcoholica | bebida_alcoholica",
+          "cabys": "0000000000000"
+        }
+      ]
+    }
+  ]
+}
+Conserva los precios tal como aparecen en la carta. Si un precio no es legible, usa 0 y no inventes uno. Solo incluye productos realmente visibles en el documento.`;
+
+  const requestBody: any = {
+    model,
+    temperature: 0.1,
+    max_tokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: extractionPrompt },
+        mediaPart
+      ]
+    }],
+    response_format: { type: 'json_object' }
+  };
+
+  const call = async (body: any) => {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+    const payload: any = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = payload?.error?.message || `HTTP ${response.status}`;
+      throw new Error(`OpenAI-compatible: ${message}`);
+    }
+    const rawText = typeof payload?.choices?.[0]?.message?.content === 'string'
+      ? payload.choices[0].message.content
+      : '';
+    if (!rawText) throw new Error('OpenAI-compatible no devolvió contenido.');
+    return extractJsonFromText(rawText);
+  };
+
+  try {
+    return { data: await call(requestBody), model };
+  } catch (err: any) {
+    // Algunos gateways compatibles no implementan response_format; reintentar
+    // sin esa opción conserva compatibilidad sin duplicar el procesamiento.
+    const message = String(err?.message || err);
+    if (message.includes('response_format') || message.includes('json_object') || message.includes('unsupported')) {
+      const { response_format: _ignored, ...withoutFormat } = requestBody;
+      return { data: await call(withoutFormat), model };
+    }
+    throw err;
+  }
+}
+
 /**
  * Función central de procesamiento de menú
  */
@@ -233,9 +325,10 @@ async function processMenuExtraction(params: {
   mimeType?: string;
   geminiApiKey?: string;
   anthropicApiKey?: string;
+  openAiApiKey?: string;
   customKey?: string;
 }) {
-  const { fileBase64, mimeType, geminiApiKey, anthropicApiKey, customKey } = params;
+  const { fileBase64, mimeType, geminiApiKey, anthropicApiKey, openAiApiKey, customKey } = params;
 
   if (!fileBase64) {
     throw new Error('No se envió ningún archivo');
@@ -267,10 +360,16 @@ async function processMenuExtraction(params: {
     process.env.VITE_ANTHROPIC_API_KEY
   )?.trim();
 
+  let detectedOpenAiKey = (
+    openAiApiKey || process.env.OPENAI_API_KEY
+  )?.trim();
+
   const genericCustomKey = (customKey || '').trim();
   if (genericCustomKey) {
     if (genericCustomKey.startsWith('sk-ant-')) {
       detectedAnthropicKey = genericCustomKey;
+    } else if (genericCustomKey.startsWith('sk-')) {
+      detectedOpenAiKey = genericCustomKey;
     } else {
       detectedGeminiKey = genericCustomKey;
     }
@@ -282,13 +381,17 @@ async function processMenuExtraction(params: {
   if (detectedAnthropicKey === 'tu_clave_aqui' || detectedAnthropicKey === 'tu_api_key_aqui') {
     detectedAnthropicKey = undefined;
   }
+  if (detectedOpenAiKey === 'tu_openai_api_key' || detectedOpenAiKey === 'tu_api_key_aqui') {
+    detectedOpenAiKey = undefined;
+  }
 
   const hasGemini = Boolean(detectedGeminiKey);
   const hasAnthropic = Boolean(detectedAnthropicKey);
+  const hasOpenAi = Boolean(detectedOpenAiKey);
 
-  if (!hasGemini && !hasAnthropic) {
+  if (!hasGemini && !hasAnthropic && !hasOpenAi) {
     throw new Error(
-      'API Key no configurada. Configura GEMINI_API_KEY o ANTHROPIC_API_KEY en las variables de entorno de Vercel.'
+      'API Key no configurada. Configura GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY en las variables de entorno de Vercel.'
     );
   }
 
@@ -307,8 +410,18 @@ async function processMenuExtraction(params: {
       console.warn('Gemini falló en /api/parse-menu:', gMsg);
       errors.push(`Gemini: ${gMsg}`);
 
-      // Respaldo automático con Claude Vision si está disponible
-      if (hasAnthropic && detectedAnthropicKey) {
+      // Respaldo automático con OpenAI-compatible o Claude Vision.
+      if (hasOpenAi && detectedOpenAiKey) {
+        console.log('Iniciando respaldo automático con OpenAI-compatible Vision...');
+        try {
+          const openAiRes = await parseWithOpenAICompatible(detectedOpenAiKey, cleanBase64, resolvedMime);
+          menuData = openAiRes.data;
+          usedEngine = `OpenAI-compatible (${openAiRes.model})`;
+        } catch (openAiErr: any) {
+          errors.push(`OpenAI-compatible: ${String(openAiErr?.message || openAiErr)}`);
+        }
+      }
+      if (!menuData && hasAnthropic && detectedAnthropicKey) {
         console.log('Iniciando respaldo automático con Claude Vision...');
         try {
           menuData = await parseWithClaude(detectedAnthropicKey, cleanBase64, resolvedMime);
@@ -316,6 +429,25 @@ async function processMenuExtraction(params: {
         } catch (claudeErr: any) {
           const cMsg = String(claudeErr?.message || claudeErr);
           errors.push(`Claude: ${cMsg}`);
+        }
+      }
+    }
+  } else if (hasOpenAi && detectedOpenAiKey) {
+    try {
+      const openAiRes = await parseWithOpenAICompatible(detectedOpenAiKey, cleanBase64, resolvedMime);
+      menuData = openAiRes.data;
+      usedEngine = `OpenAI-compatible (${openAiRes.model})`;
+    } catch (openAiErr: any) {
+      const oMsg = String(openAiErr?.message || openAiErr);
+      console.warn('OpenAI-compatible falló en /api/parse-menu:', oMsg);
+      errors.push(`OpenAI-compatible: ${oMsg}`);
+      if (hasAnthropic && detectedAnthropicKey) {
+        console.log('Iniciando respaldo automático con Claude Vision...');
+        try {
+          menuData = await parseWithClaude(detectedAnthropicKey, cleanBase64, resolvedMime);
+          usedEngine = 'Claude 4.5 Vision (Respaldo)';
+        } catch (claudeErr: any) {
+          errors.push(`Claude: ${String(claudeErr?.message || claudeErr)}`);
         }
       }
     }
@@ -424,7 +556,7 @@ export default async function handler(req: any, res?: any) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-gemini-api-key, x-anthropic-api-key, x-ai-provider'
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, x-gemini-api-key, x-anthropic-api-key, x-openai-api-key, x-ai-provider'
   );
 
   if (req.method === 'OPTIONS') {
@@ -439,11 +571,13 @@ export default async function handler(req: any, res?: any) {
     const body = req.body || {};
     const headerGemini = (req.headers?.['x-gemini-api-key'] as string)?.trim();
     const headerAnthropic = (req.headers?.['x-anthropic-api-key'] as string)?.trim();
+    const headerOpenAi = (req.headers?.['x-openai-api-key'] as string)?.trim();
 
     const result = await processMenuExtraction({
       ...body,
       geminiApiKey: headerGemini || body.geminiApiKey,
-      anthropicApiKey: headerAnthropic || body.anthropicApiKey
+      anthropicApiKey: headerAnthropic || body.anthropicApiKey,
+      openAiApiKey: headerOpenAi || body.openAiApiKey
     });
 
     return res.status(200).json(result);
