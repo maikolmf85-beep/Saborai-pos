@@ -71,8 +71,8 @@ async function parseWithGemini(
   resolvedMime: string
 ): Promise<{ data: any; model: string }> {
   const ai = new GoogleGenAI({ apiKey });
-  // Mantener el analizador en el modelo vigente para proyectos nuevos.
-  const candidateModels = ['gemini-3.8-flash'];
+  // Mantener el analizador en modelos vigentes y gratuitos para proyectos nuevos.
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 
   let lastError: any = null;
 
@@ -103,19 +103,11 @@ async function parseWithGemini(
       const msg = String(err?.message || err || '');
       console.warn(`Intento con modelo ${currentModel} falló:`, msg);
 
-      const isHighDemandOrUnavailable =
-        msg.includes('high demand') ||
-        msg.includes('overloaded') ||
-        msg.includes('UNAVAILABLE') ||
-        msg.includes('RESOURCE_EXHAUSTED') ||
-        msg.includes('503') ||
-        msg.includes('429') ||
-        msg.includes('not found') ||
-        msg.includes('no longer available');
+      const isHighDemandOrUnavailable = /high demand|overloaded|unavailable|resource_exhausted|503|429/i.test(msg);
 
       if (attempt < candidateModels.length - 1 && isHighDemandOrUnavailable) {
-        // Pausa breve de 1s antes de intentar con el siguiente modelo de Gemini
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Pausa breve antes de cambiar al respaldo de Gemini.
+        await new Promise((resolve) => setTimeout(resolve, 900));
         continue;
       }
       throw err;

@@ -158,44 +158,45 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
     customApiKey && customApiKey.startsWith('AIza') ? customApiKey : undefined
   );
   if (geminiKey) {
-    // El proyecto actual de Gemini ya no admite los modelos 1.5/2.5 para
-    // usuarios nuevos. Usar un único modelo vigente evita reintentos 404.
-    const geminiModels = ['gemini-3.8-flash'];
+    // 3.8 es el modelo principal; 3.5 Flash-Lite es un respaldo vigente,
+    // multimodal y disponible en el nivel gratuito.
+    const geminiModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 
     try {
       const ai = new GoogleGenAI({ apiKey: geminiKey });
       for (const modelName of geminiModels) {
-        try {
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [
-              {
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents: [{
                 role: 'user',
-                parts: [
-                  { text: `${systemInstruction}\n\n${fullPrompt}` }
-                ]
-              }
-            ]
-          });
-
-          const rawText = response.text || '';
-          if (rawText) {
-            const parsed = parseAction(rawText);
-            const action = parsed.action;
-            const cleanDisplay = parsed.display;
-
-            return res.status(200).json({
-              success: true,
-              response: cleanDisplay || rawText,
-              rawResponse: rawText,
-              action,
-              provider: 'gemini',
-              model: modelName
+                parts: [{ text: `${systemInstruction}\n\n${fullPrompt}` }]
+              }]
             });
+
+            const rawText = response.text || '';
+            if (rawText) {
+              const parsed = parseAction(rawText);
+              return res.status(200).json({
+                success: true,
+                response: parsed.display || rawText,
+                rawResponse: rawText,
+                action: parsed.action,
+                provider: 'gemini',
+                model: modelName
+              });
+            }
+          } catch (mErr: any) {
+            const message = String(mErr?.message || mErr);
+            const transient = /503|429|unavailable|high demand|resource_exhausted|overloaded/i.test(message);
+            if (transient && attempt === 0) {
+              await new Promise(resolve => setTimeout(resolve, 900));
+              continue;
+            }
+            providerErrors.push(`Gemini ${modelName}: ${message.slice(0, 240)}`);
+            console.warn(`[API AI Chat] Modelo ${modelName} no disponible:`, message);
           }
-        } catch (mErr: any) {
-          providerErrors.push(`Gemini ${modelName}: ${String(mErr?.message || mErr).slice(0, 240)}`);
-          console.warn(`[API AI Chat] Modelo ${modelName} no disponible:`, mErr?.message || mErr);
         }
       }
     } catch (gErr: any) {
