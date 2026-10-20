@@ -21,6 +21,7 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
+  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   
   // Custom categories management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -236,6 +237,7 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
     setCabysResults([]);
     setCabysQuery(item?.name || '');
     setCabysAutoNote(null);
+    setIsIconPickerOpen(false);
     setIsEditing(true);
   };
 
@@ -511,30 +513,39 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
                       type="text"
                       required
                       value={editingItem.imageIcon || ''}
+                      onClick={() => setIsIconPickerOpen(true)}
                       onChange={e => setEditingItem({...editingItem, imageIcon: e.target.value, iconManual: true})}
                       className="w-full text-2xl text-center px-0 py-2 border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                     />
-                    <div className="flex flex-wrap gap-1 mt-2" aria-label="Iconos disponibles">
-                      {MENU_ICON_PRESETS.map(icon => (
+                    {isIconPickerOpen && (
+                      <div className="flex flex-wrap gap-1 mt-2 p-2 rounded-xl bg-stone-50 border border-stone-200" aria-label="Iconos disponibles">
+                        {MENU_ICON_PRESETS.map(icon => (
+                          <button
+                            key={icon}
+                            type="button"
+                            onClick={() => {
+                              setEditingItem({ ...editingItem, imageIcon: icon, iconManual: true });
+                              setIsIconPickerOpen(false);
+                            }}
+                            className={`w-7 h-7 rounded-lg text-base border transition-colors ${editingItem.imageIcon === icon && editingItem.iconManual ? 'bg-[#a9b994]/30 border-[#588157]' : 'bg-white border-stone-200 hover:bg-stone-100'}`}
+                            title={`Usar icono ${icon}`}
+                          >
+                            {icon}
+                          </button>
+                        ))}
                         <button
-                          key={icon}
                           type="button"
-                          onClick={() => setEditingItem({ ...editingItem, imageIcon: icon, iconManual: true })}
-                          className={`w-7 h-7 rounded-lg text-base border transition-colors ${editingItem.imageIcon === icon && editingItem.iconManual ? 'bg-[#a9b994]/30 border-[#588157]' : 'bg-stone-50 border-stone-200 hover:bg-stone-100'}`}
-                          title={`Usar icono ${icon}`}
+                          onClick={() => {
+                            setEditingItem({ ...editingItem, imageIcon: '🍽️', iconManual: false });
+                            setIsIconPickerOpen(false);
+                          }}
+                          className="px-2 h-7 rounded-lg text-[10px] font-bold text-stone-600 bg-white border border-stone-200 hover:bg-stone-100"
+                          title="Asignar automáticamente según el producto"
                         >
-                          {icon}
+                          Auto
                         </button>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setEditingItem({ ...editingItem, imageIcon: '🍽️', iconManual: false })}
-                        className="px-2 h-7 rounded-lg text-[10px] font-bold text-stone-600 bg-stone-50 border border-stone-200 hover:bg-stone-100"
-                        title="Asignar automáticamente según el producto"
-                      >
-                        Auto
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </div>
                   <div className="flex-1">
                     <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Nombre del Platillo</label>
