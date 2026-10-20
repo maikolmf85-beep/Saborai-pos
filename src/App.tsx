@@ -26,6 +26,7 @@ const WelcomeGate = lazy(() => import('./components/WelcomeGate').then(m => ({ d
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then(m => ({ default: m.ResetPasswordScreen })));
 const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ default: m.GuidedTour })));
 import { cashShiftService } from './services/cashShiftService';
+import { printerService } from './services/printerService';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
@@ -40,14 +41,22 @@ import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-reac
 
 function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null {
   const scopedTenant = getTenantItem<TenantInfo>('tenant_profile', tenantId);
-  if (scopedTenant) return scopedTenant;
+  const storedZones = getTenantItem<string[]>('zones', tenantId);
+  if (scopedTenant) {
+    return {
+      ...scopedTenant,
+      zones: Array.isArray(storedZones) ? storedZones : (scopedTenant.zones || [])
+    };
+  }
 
   // Compatibilidad con sesiones anteriores: antes de esta reparación el
   // tenant completo se guardaba solamente en saborai_tenant.
   try {
     const rawTenant = localStorage.getItem('saborai_tenant');
     const legacyTenant = rawTenant ? JSON.parse(rawTenant) as TenantInfo : null;
-    return legacyTenant && String(legacyTenant.id) === String(tenantId) ? legacyTenant : null;
+    return legacyTenant && String(legacyTenant.id) === String(tenantId)
+      ? { ...legacyTenant, zones: Array.isArray(storedZones) ? storedZones : (legacyTenant.zones || []) }
+      : null;
   } catch {
     return null;
   }
@@ -78,8 +87,7 @@ export function App() {
 
   const [subscription, setSubscription] = useState<SaboraiSubscription | null>(() => {
     try {
-      const saved = localStorage.getItem('saborai_subscription');
-      return saved ? JSON.parse(saved) : null;
+      return getTenantItem<SaboraiSubscription>('subscription') || null;
     } catch {
       return null;
     }
@@ -90,17 +98,19 @@ export function App() {
     try {
       const saved = localStorage.getItem('saborai_tenant');
       const savedHaciendaConfig = getTenantItem<any>('hacienda_config');
+      const savedZones = getTenantItem<string[]>('zones');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
           ...initialTenant,
           ...parsed,
+          zones: Array.isArray(savedZones) ? savedZones : (parsed.zones || []),
           taxRegime: parsed.taxRegime || 'TRADITIONAL',
           includeService10ByDefault: parsed.includeService10ByDefault ?? true,
           haciendaConfig: { ...(parsed.haciendaConfig || {}), ...(savedHaciendaConfig || {}) }
         };
       }
-      return { ...initialTenant, haciendaConfig: savedHaciendaConfig };
+      return { ...initialTenant, zones: savedZones || [], haciendaConfig: savedHaciendaConfig };
     } catch {
       return initialTenant;
     }
@@ -137,10 +147,20 @@ export function App() {
       // contiene los salones y categorías, que deben sobrevivir al logout y
       // no depender únicamente del estado global de la sesión.
       setTenantItem('tenant_profile', updated, updated.id);
+      setTenantItem('zones', updated.zones || [], updated.id);
       if (updated.haciendaConfig) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
     } catch {}
+  };
+
+  const persistSubscription = (value: SaboraiSubscription | null, tenantId = tenant.id) => {
+    if (value) {
+      setTenantItem('subscription', value, tenantId);
+      return;
+    }
+    const normalizedId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+    try { localStorage.removeItem(`saborai:tenant:${normalizedId}:subscription`); } catch {}
   };
 
   const [appDomain, setAppDomain] = useState<'LANDING' | 'POS' | 'ADMIN'>(() => {
@@ -201,6 +221,8 @@ export function App() {
         if (res.ok && data.success) {
           setActiveTenantId(data.tenant.id);
           migrateLegacyDataToTenant(data.tenant.id);
+          cashShiftService.setTenantContext(data.tenant.id);
+          printerService.setTenantContext(data.tenant.id);
           const user: UserProfile = {
             id: data.user.id,
             name: data.user.name,
@@ -228,7 +250,7 @@ export function App() {
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
             haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
-            zones: savedTenant?.zones || [],
+            zones: getTenantItem<string[]>('zones', data.tenant.id) || savedTenant?.zones || [],
             menuCategories: savedTenant?.menuCategories || []
           };
           const sub: SaboraiSubscription = { 
@@ -256,10 +278,12 @@ export function App() {
           setTables(getTenantItem<Table[]>('tables', tenantObj.id) || []);
           setStaffList(getTenantItem<UserProfile[]>('staff', tenantObj.id) || [effectiveUser]);
           setSubscription(sub);
+          persistSubscription(sub, tenantObj.id);
           try {
             localStorage.setItem('saborai_user', JSON.stringify(effectiveUser));
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
             setTenantItem('tenant_profile', tenantObj, tenantObj.id);
+            setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
           } catch {}
         } else {
           // Token invalid or expired
@@ -335,6 +359,16 @@ export function App() {
   };
 
   const [shiftsVersion, setShiftsVersion] = useState(0);
+
+  // Cada sesión usa su propio espacio operativo. Al cambiar de tenant se
+  // descarta el estado en memoria anterior y se carga únicamente el nuevo.
+  useEffect(() => {
+    setActiveTenantId(tenant.id);
+    migrateLegacyDataToTenant(tenant.id);
+    cashShiftService.setTenantContext(tenant.id);
+    printerService.setTenantContext(tenant.id);
+    setShiftsVersion(v => v + 1);
+  }, [tenant.id]);
 
   const handleUpdateShifts = (shiftsMap: any, skipBroadcast = false) => {
     cashShiftService.syncShiftsMap(shiftsMap);
@@ -541,6 +575,8 @@ export function App() {
 
     setActiveTenantId(restoredTenant.id);
     migrateLegacyDataToTenant(restoredTenant.id);
+    cashShiftService.setTenantContext(restoredTenant.id);
+    printerService.setTenantContext(restoredTenant.id);
     setCurrentUser(user);
     setTenant(restoredTenant);
     setMenuItems(getTenantItem<MenuItem[]>('menu', restoredTenant.id) || []);
@@ -550,12 +586,16 @@ export function App() {
       localStorage.setItem('saborai_user', JSON.stringify(user));
       localStorage.setItem('saborai_tenant', JSON.stringify(restoredTenant));
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
+      setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
     } catch {}
-    // If logging in with existing account and no subscription record, treat as active
-    if (!subscription) {
+    // La suscripción se resuelve por tenant, nunca desde el estado de la cuenta anterior.
+    const tenantSubscription = getTenantItem<SaboraiSubscription>('subscription', restoredTenant.id);
+    if (!tenantSubscription) {
       const activeSub: SaboraiSubscription = { mode: 'ACTIVE', activatedAt: new Date().toISOString() };
-      try { localStorage.setItem('saborai_subscription', JSON.stringify(activeSub)); } catch {}
+      persistSubscription(activeSub, restoredTenant.id);
       setSubscription(activeSub);
+    } else {
+      setSubscription(tenantSubscription);
     }
     // Add to staffList if not present
     setStaffList(prev => {
@@ -585,6 +625,8 @@ export function App() {
   const handleStartDemo = (plan: SubscriptionPlan) => {
     const demoTenantId = `tenant_demo_${Date.now()}`;
     startCleanDemoSession(demoTenantId);
+    cashShiftService.setTenantContext(demoTenantId);
+    printerService.setTenantContext(demoTenantId);
     setMenuItems([]);
     setTables([]);
     setStaffList([]);
@@ -619,7 +661,7 @@ export function App() {
       trialEndsAt: trialEnd.toISOString(),
       activatedAt: new Date().toISOString(),
     };
-    try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+    persistSubscription(sub, demoTenantId);
     setSubscription(sub);
 
     // Set a fake demo user so we skip WelcomeGate entirely
@@ -872,7 +914,7 @@ export function App() {
       }>
         <WelcomeGate
           onSubscriptionActivated={(sub, user, tenant) => {
-            try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+            persistSubscription(sub, tenant.id);
             setSubscription(sub);
             handleLoginSuccess(user, tenant);
           }}
@@ -893,7 +935,7 @@ export function App() {
         </p>
         <button
           onClick={() => {
-            try { localStorage.removeItem('saborai_subscription'); } catch {}
+            persistSubscription(null);
             setSubscription(null);
             setSkipSubscriptionGate(false);
           }}
@@ -942,7 +984,7 @@ export function App() {
       }>
         <WelcomeGate
           onSubscriptionActivated={(sub, user, tenantData) => {
-            try { localStorage.setItem('saborai_subscription', JSON.stringify(sub)); } catch {}
+            persistSubscription(sub, tenantData.id);
             setSubscription(sub);
             handleLoginSuccess(user, tenantData);
           }}
@@ -1035,7 +1077,7 @@ export function App() {
             </div>
             <button
               onClick={() => {
-                try { localStorage.removeItem('saborai_subscription'); } catch {}
+                persistSubscription(null);
                 setSubscription(null);
                 setSkipSubscriptionGate(false);
               }}

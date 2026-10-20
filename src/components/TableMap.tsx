@@ -90,9 +90,13 @@ export const TableMap: React.FC<TableMapProps> = ({
   }, [initialTablesList]);
 
   // Allowed zones according to active shift (if linked to specific salons)
-  const effectiveZones = activeShiftZones && activeShiftZones.length > 0
+  const shiftZones = activeShiftZones && activeShiftZones.length > 0
     ? tenantZones.filter(z => activeShiftZones.includes(z))
-    : (activeShiftZone ? [activeShiftZone] : tenantZones);
+    : (activeShiftZone && tenantZones.includes(activeShiftZone) ? [activeShiftZone] : []);
+  // Si una caja conserva vínculos a salones renombrados/eliminados, no se debe
+  // dejar el mapa vacío: la configuración vigente del tenant sigue siendo la
+  // fuente de verdad para mostrar sus salones.
+  const effectiveZones = shiftZones.length > 0 ? shiftZones : tenantZones;
 
   const [selectedZone, setSelectedZone] = useState<string>(() => {
     if (effectiveZones.length > 0) return effectiveZones[0];
