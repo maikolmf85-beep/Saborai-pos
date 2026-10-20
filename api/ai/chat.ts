@@ -76,6 +76,11 @@ function configuredSecret(...values: Array<string | undefined>): string {
   return /^(tu_|your_|replace_|changeme)/i.test(value) ? '' : value;
 }
 
+function isAuthenticationFailure(error: any): boolean {
+  const text = String(error?.message || error || '').toLowerCase();
+  return /401|invalid x-api-key|authentication_error|unauthorized/.test(text);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -150,15 +155,13 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   const fullPrompt = `${recentHistory ? `${recentHistory}\n` : ''}[Usuario]: ${cleanUserText}`;
 
   // 1. Motor Primario: Google Gemini
-  const geminiKey = (customApiKey && customApiKey.startsWith('AIza'))
-    ? customApiKey
-    : configuredSecret(
-        process.env.GEMINI_API_KEY,
-        process.env.GEMINI_KEY,
-        process.env.GEMINI_API_TOKEN,
-        process.env.VITE_GEMINI_API_KEY,
-        customApiKey && !customApiKey.startsWith('sk-') ? customApiKey : undefined
-      );
+  const geminiKey = configuredSecret(
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_KEY,
+    process.env.GEMINI_API_TOKEN,
+    process.env.VITE_GEMINI_API_KEY,
+    customApiKey && customApiKey.startsWith('AIza') ? customApiKey : undefined
+  );
   if (geminiKey) {
     const geminiModels = [
       process.env.GEMINI_MODEL || 'gemini-3.8-flash',
@@ -262,9 +265,12 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   }
 
   // 3. Motor Fallback: Anthropic Claude
-  const anthropicKey = (customApiKey && customApiKey.startsWith('sk-ant'))
-    ? customApiKey
-    : configuredSecret(process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_KEY, process.env.VITE_ANTHROPIC_API_KEY);
+  const anthropicKey = configuredSecret(
+    process.env.ANTHROPIC_API_KEY,
+    process.env.ANTHROPIC_KEY,
+    process.env.VITE_ANTHROPIC_API_KEY,
+    customApiKey && customApiKey.startsWith('sk-ant') ? customApiKey : undefined
+  );
   if (anthropicKey) {
     const claudeModels = [
       'claude-haiku-4-5-20251001',
@@ -302,6 +308,9 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
         } catch (cErr: any) {
           providerErrors.push(`Anthropic ${modelName}: ${String(cErr?.message || cErr).slice(0, 240)}`);
           console.warn(`[API AI Chat] Falló Claude modelo ${modelName}:`, cErr?.message || cErr);
+          // Una clave inválida no se arregla cambiando de modelo; evita repetir
+          // tres veces el mismo 401 y pasa al siguiente proveedor configurado.
+          if (isAuthenticationFailure(cErr)) break;
         }
       }
     } catch (aErr: any) {
@@ -313,7 +322,7 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   // Nunca devolver un saludo genérico como si Nyza hubiera procesado la
   // consulta: eso ocultaba la causa real y hacía parecer funcional al chat.
   if (providerErrors.length > 0) {
-    const detail = providerErrors[providerErrors.length - 1];
+    const detail = Array.from(new Set(providerErrors)).slice(-2).join(' | ');
     return res.status(502).json({
       error: `Nyza encontró las variables de IA, pero el proveedor rechazó o no pudo procesar la solicitud. ${detail}`,
       details: detail
