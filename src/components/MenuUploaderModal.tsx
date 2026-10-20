@@ -221,23 +221,11 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         customApiKey.trim() ||
         (typeof localStorage !== 'undefined' ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim() : '')
       );
-      const envClaudeKey = (import.meta.env.VITE_ANTHROPIC_API_KEY as string | undefined)?.trim();
       const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
-
-      const finalGeminiKey = effectiveKey && !effectiveKey.startsWith('sk-ant-')
-        ? effectiveKey
-        : (!effectiveKey ? envGeminiKey : undefined);
-
-      const finalAnthropicKey = effectiveKey && effectiveKey.startsWith('sk-ant-')
-        ? effectiveKey
-        : (!effectiveKey ? envClaudeKey : undefined);
-
+      const finalGeminiKey = effectiveKey || envGeminiKey;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
-      if (finalAnthropicKey) {
-        headers['x-anthropic-api-key'] = finalAnthropicKey;
-      }
       if (finalGeminiKey) {
         headers['x-gemini-api-key'] = finalGeminiKey;
       }
@@ -249,8 +237,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
           fileBase64: fileDataUri,
           mimeType: resolvedMime,
           customKey: effectiveKey || undefined,
-          geminiApiKey: finalGeminiKey,
-          anthropicApiKey: finalAnthropicKey
+          geminiApiKey: finalGeminiKey
         })
       });
 

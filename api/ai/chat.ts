@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
-import Anthropic from '@anthropic-ai/sdk';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import { handleOptions, getJwtSecret, setCorsHeaders } from '../_utils/security.js';
@@ -76,10 +75,6 @@ function configuredSecret(...values: Array<string | undefined>): string {
   return /^(tu_|your_|replace_|changeme)/i.test(value) ? '' : value;
 }
 
-function isAuthenticationFailure(error: any): boolean {
-  const text = String(error?.message || error || '').toLowerCase();
-  return /401|invalid x-api-key|authentication_error|unauthorized/.test(text);
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
@@ -164,7 +159,7 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   );
   if (geminiKey) {
     const geminiModels = [
-      process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+      process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
       'gemini-2.5-flash',
       'gemini-1.5-flash'
     ];
@@ -211,114 +206,6 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
     }
   }
 
-  // 2. Motor OpenAI-compatible del lado servidor. La clave nunca se envía
-  // desde el navegador; también permite usar gateways compatibles.
-  const openAiKey = configuredSecret(
-    process.env.OPENAI_API_KEY,
-    process.env.OPENAI_KEY,
-    process.env.OPENAI_API_TOKEN,
-    process.env.AI_API_KEY
-  );
-  const openAiBase = (process.env.OPENAI_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
-  const openAiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-  if (openAiKey && openAiKey !== 'tu_openai_api_key') {
-    try {
-      const openAiRes = await fetch(`${openAiBase}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openAiKey}` },
-        body: JSON.stringify({
-          model: openAiModel,
-          temperature: 0.25,
-          max_tokens: 1200,
-          messages: [
-            { role: 'system', content: systemInstruction },
-            ...messages.slice(-6).map(message => ({
-              role: message.sender === 'user' ? 'user' : 'assistant',
-              content: message.text
-            })),
-            { role: 'user', content: cleanUserText }
-          ]
-        })
-      });
-      const openAiData: any = await openAiRes.json().catch(() => ({}));
-      if (openAiRes.ok) {
-        const rawText = extractAssistantText(openAiData?.choices?.[0]?.message?.content);
-        if (rawText) {
-          const parsed = parseAction(rawText);
-          return res.status(200).json({
-            success: true,
-            response: parsed.display,
-            rawResponse: rawText,
-            action: parsed.action,
-            provider: 'openai-compatible',
-            model: openAiModel
-          });
-        }
-      } else {
-        providerErrors.push(`OpenAI-compatible: ${String(openAiData?.error?.message || `HTTP ${openAiRes.status}`).slice(0, 240)}`);
-        console.warn('[API AI Chat] OpenAI-compatible rechazó la solicitud:', openAiData?.error?.message || openAiRes.status);
-      }
-    } catch (openAiErr: any) {
-      providerErrors.push(`OpenAI-compatible: ${String(openAiErr?.message || openAiErr).slice(0, 240)}`);
-      console.warn('[API AI Chat] Error conectando al proveedor OpenAI-compatible:', openAiErr?.message || openAiErr);
-    }
-  }
-
-  // 3. Motor Fallback: Anthropic Claude
-  const anthropicKey = configuredSecret(
-    process.env.ANTHROPIC_API_KEY,
-    process.env.ANTHROPIC_KEY,
-    process.env.VITE_ANTHROPIC_API_KEY,
-    customApiKey && customApiKey.startsWith('sk-ant') ? customApiKey : undefined
-  );
-  if (anthropicKey) {
-    const claudeModels = [
-      'claude-haiku-4-5-20251001',
-      'claude-3-5-haiku-20241022',
-      'claude-3-haiku-20240307'
-    ];
-
-    try {
-      const anthropic = new Anthropic({ apiKey: anthropicKey });
-      for (const modelName of claudeModels) {
-        try {
-          const msg = await anthropic.messages.create({
-            model: modelName,
-            max_tokens: 1024,
-            system: systemInstruction,
-            messages: [{ role: 'user', content: fullPrompt }]
-          });
-
-          const firstBlock = msg.content[0];
-          const rawText = firstBlock && firstBlock.type === 'text' ? firstBlock.text : '';
-          if (rawText) {
-            const parsed = parseAction(rawText);
-            const action = parsed.action;
-            const cleanDisplay = parsed.display;
-
-            return res.status(200).json({
-              success: true,
-              response: cleanDisplay || rawText,
-              rawResponse: rawText,
-              action,
-              provider: 'anthropic',
-              model: modelName
-            });
-          }
-        } catch (cErr: any) {
-          providerErrors.push(`Anthropic ${modelName}: ${String(cErr?.message || cErr).slice(0, 240)}`);
-          console.warn(`[API AI Chat] Falló Claude modelo ${modelName}:`, cErr?.message || cErr);
-          // Una clave inválida no se arregla cambiando de modelo; evita repetir
-          // tres veces el mismo 401 y pasa al siguiente proveedor configurado.
-          if (isAuthenticationFailure(cErr)) break;
-        }
-      }
-    } catch (aErr: any) {
-      providerErrors.push(`Anthropic: ${String(aErr?.message || aErr).slice(0, 240)}`);
-      console.warn('[API AI Chat] Error conectando a Anthropic:', aErr?.message || aErr);
-    }
-  }
-
   // Nunca devolver un saludo genérico como si Nyza hubiera procesado la
   // consulta: eso ocultaba la causa real y hacía parecer funcional al chat.
   if (providerErrors.length > 0) {
@@ -330,6 +217,6 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   }
 
   return res.status(503).json({
-    error: 'Nyza no tiene un motor de IA configurado en el servidor. Configura GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY en el entorno de producción.'
+    error: 'Nyza no tiene Gemini configurado. Configura GEMINI_API_KEY en el entorno de producción.'
   });
 }
