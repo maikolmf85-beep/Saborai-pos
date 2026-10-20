@@ -17,7 +17,7 @@ import {
   TrendingUp,
   BrainCircuit,
   ShoppingBag,
-  CircleDollarSign,
+  Calculator,
   Menu,
   X,
   ChevronUp
@@ -269,7 +269,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-emerald-400">
-                      <CircleDollarSign className="w-4 h-4" />
+                      <Calculator className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="font-bold text-xs flex items-center gap-1.5">
@@ -553,7 +553,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <NavVerticalItem
                 id="nav-shift-btn"
                 onClick={() => onOpenCashShift(isShiftOpen ? 'status' : 'status')}
-                icon={<CircleDollarSign className="w-5 h-5" />}
+                icon={<Calculator className="w-5 h-5" />}
                 label={isShiftOpen ? "Turno de Caja Abierto" : "Turno Cerrado"}
                 sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Cierre Z y arqueo` : `${activeRegisterName || 'Caja'} • Clic para iniciar turno`}
                 variant={isShiftOpen ? 'default' : 'warning'}
