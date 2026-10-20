@@ -23,6 +23,26 @@ interface ChatRequestBody {
   };
 }
 
+function extractAssistantText(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content.map((part: any) => typeof part === 'string' ? part : part?.text || '').join('').trim();
+  }
+  return '';
+}
+
+function parseAction(rawText: string): { action: any | null; display: string } {
+  const match = rawText.match(/```json\s*([\s\S]*?)\s*```/i);
+  let action = null;
+  if (match?.[1]) {
+    try { action = JSON.parse(match[1]); } catch {}
+  }
+  return {
+    action,
+    display: rawText.replace(/```json\s*[\s\S]*?\s*```/gi, '').trim() || rawText
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -123,14 +143,9 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
 
           const rawText = response.text || '';
           if (rawText) {
-            // Extraer acción si existe
-            let action = null;
-            const match = rawText.match(/```json\n(\{.*?\})\n```/s);
-            if (match && match[1]) {
-              try { action = JSON.parse(match[1]); } catch {}
-            }
-
-            const cleanDisplay = rawText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
+            const parsed = parseAction(rawText);
+            const action = parsed.action;
+            const cleanDisplay = parsed.display;
 
             return res.status(200).json({
               success: true,
@@ -150,7 +165,53 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
     }
   }
 
-  // 2. Motor Fallback: Anthropic Claude
+  // 2. Motor OpenAI-compatible del lado servidor. La clave nunca se envía
+  // desde el navegador; también permite usar gateways compatibles.
+  const openAiKey = process.env.OPENAI_API_KEY || '';
+  const openAiBase = (process.env.OPENAI_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const openAiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+  if (openAiKey && openAiKey !== 'tu_openai_api_key') {
+    try {
+      const openAiRes = await fetch(`${openAiBase}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openAiKey}` },
+        body: JSON.stringify({
+          model: openAiModel,
+          temperature: 0.25,
+          max_tokens: 1200,
+          messages: [
+            { role: 'system', content: systemInstruction },
+            ...messages.slice(-6).map(message => ({
+              role: message.sender === 'user' ? 'user' : 'assistant',
+              content: message.text
+            })),
+            { role: 'user', content: cleanUserText }
+          ]
+        })
+      });
+      const openAiData: any = await openAiRes.json().catch(() => ({}));
+      if (openAiRes.ok) {
+        const rawText = extractAssistantText(openAiData?.choices?.[0]?.message?.content);
+        if (rawText) {
+          const parsed = parseAction(rawText);
+          return res.status(200).json({
+            success: true,
+            response: parsed.display,
+            rawResponse: rawText,
+            action: parsed.action,
+            provider: 'openai-compatible',
+            model: openAiModel
+          });
+        }
+      } else {
+        console.warn('[API AI Chat] OpenAI-compatible rechazó la solicitud:', openAiData?.error?.message || openAiRes.status);
+      }
+    } catch (openAiErr: any) {
+      console.warn('[API AI Chat] Error conectando al proveedor OpenAI-compatible:', openAiErr?.message || openAiErr);
+    }
+  }
+
+  // 3. Motor Fallback: Anthropic Claude
   const anthropicKey = (customApiKey && customApiKey.startsWith('sk-ant'))
     ? customApiKey
     : (process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '');
@@ -175,13 +236,9 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
           const firstBlock = msg.content[0];
           const rawText = firstBlock && firstBlock.type === 'text' ? firstBlock.text : '';
           if (rawText) {
-            let action = null;
-            const match = rawText.match(/```json\n(\{.*?\})\n```/s);
-            if (match && match[1]) {
-              try { action = JSON.parse(match[1]); } catch {}
-            }
-
-            const cleanDisplay = rawText.replace(/```json\n\{.*?\}\n```/gs, '').trim();
+            const parsed = parseAction(rawText);
+            const action = parsed.action;
+            const cleanDisplay = parsed.display;
 
             return res.status(200).json({
               success: true,
@@ -201,10 +258,9 @@ ${context.knowledgeContext ? `\nConocimiento operacional de la sucursal:\n${cont
     }
   }
 
-  // Respuesta de fallback inteligente local cuando no hay API keys externas configuradas en el servidor
-  return res.status(200).json({
-    success: true,
-    response: `¡Hola! Soy Nyza. Estoy listo para ayudarte con la comanda de ${context.restaurantName || 'tu restaurante'}.`,
-    provider: 'local-fallback'
+  // Nunca devolver un saludo genérico como si Nyza hubiera procesado la
+  // consulta: eso ocultaba la causa real y hacía parecer funcional al chat.
+  return res.status(503).json({
+    error: 'Nyza no tiene un motor de IA configurado en el servidor. Configura GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY en el entorno de producción.'
   });
 }
