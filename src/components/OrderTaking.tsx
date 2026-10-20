@@ -24,6 +24,7 @@ import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
 import { printerService } from '../services/printerService';
 import { inventoryService } from '../services/inventoryService';
+import { getConfiguredOrRecommendedModifiers } from '../services/modifierRecommendationService';
 
 interface OrderTakingProps {
   table: Table;
@@ -537,22 +538,29 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     ? menuItems.find(m => m.name === lastOrdered.name)?.aiSuggestedPairing 
     : 'Maridaje sugerido: Café Geisha o Copa de Tinto Malbec.';
   const smartModifierSuggestions = lastOrdered
-    ? (() => {
-        const name = lastOrdered.name.toLocaleLowerCase('es-CR');
-        if (/rib eye|ribeye|entrecot|filete|steak|chuleta|lomo/.test(name)) {
-          return ['Término: medio', 'Término: 3/4', 'Término: bien cocido'];
-        }
-        if (/hamburgues|burger|cheeseburger/.test(name)) {
-          return ['Sin cebolla', 'Sin pepinillos', 'Agregar queso'];
-        }
-        if (/pizza/.test(name)) {
-          return ['Sin cebolla', 'Sin aceitunas', 'Agregar extra queso'];
-        }
-        if (/ensalada|ceviche|taco|burrito/.test(name)) {
-          return ['Sin cebolla', 'Aderezo aparte', 'Picante aparte'];
-        }
-        return [];
-      })()
+    ? getConfiguredOrRecommendedModifiers(menuItems.find(m => m.name === lastOrdered.name) || {
+        id: lastOrdered.id,
+        name: lastOrdered.name,
+        description: '',
+        price: lastOrdered.price,
+        category: lastOrdered.category,
+        station: lastOrdered.category === 'Bar' ? 'Bar' : 'Cocina',
+        cabysCode: lastOrdered.cabysCode,
+        taxRate: lastOrdered.taxRate,
+        available: true,
+        imageIcon: '',
+        ingredients: []
+      })
+    : [];
+
+  const selectedNoteItem = selectedItemForNotes
+    ? currentOrderItems.find(item => item.id === selectedItemForNotes)
+    : undefined;
+  const selectedNoteMenuItem = selectedNoteItem
+    ? menuItems.find(menuItem => menuItem.name === selectedNoteItem.name)
+    : undefined;
+  const noteModifierSuggestions = selectedNoteMenuItem
+    ? getConfiguredOrRecommendedModifiers(selectedNoteMenuItem)
     : [];
 
   return (
@@ -1030,7 +1038,11 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
                       {/* One-touch Quick Modifier Chips */}
                       <div className="flex flex-wrap gap-1 mt-1.5">
-                        {["Sin cebolla", "Término 3/4", "Salsa aparte", "Urgente", "Alérgico"].map((mod) => {
+                        {(() => {
+                          const menuItem = menuItems.find(menu => menu.name === item.name);
+                          if (!menuItem) return null;
+                          return getConfiguredOrRecommendedModifiers(menuItem).map((recommendation) => {
+                          const mod = recommendation.label;
                           const isApplied = (item.notes || '').includes(mod);
                           return (
                             <button
@@ -1042,12 +1054,13 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                                   ? 'bg-amber-100 border-amber-300 text-amber-900 shadow-2xs'
                                   : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100 hover:text-stone-800'
                               }`}
-                              title={`Tocar para ${isApplied ? 'remover' : 'agregar'} "${mod}"`}
+                              title={`${recommendation.reason}. Tocar para ${isApplied ? 'remover' : 'agregar'} "${mod}"`}
                             >
                               {mod}
                             </button>
                           );
-                        })}
+                          });
+                        })()}
                       </div>
                     </div>
 
@@ -1187,7 +1200,9 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
             <div className="space-y-1.5">
               <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Modificadores de un solo toque:</span>
               <div className="flex flex-wrap gap-1.5">
-                {["Sin cebolla", "Término 3/4", "Salsa aparte", "Urgente", "Alérgico"].map((chip) => (
+                {noteModifierSuggestions.map((recommendation) => {
+                  const chip = recommendation.label;
+                  return (
                   <button
                     key={chip}
                     type="button"
@@ -1207,7 +1222,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                   >
                     {chip}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
