@@ -71,14 +71,8 @@ async function parseWithGemini(
   resolvedMime: string
 ): Promise<{ data: any; model: string }> {
   const ai = new GoogleGenAI({ apiKey });
-  const preferredModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-
-  const candidateModels = [
-    preferredModel,
-    'gemini-2.5-flash',
-    'gemini-2.5-pro',
-    'gemini-flash-latest'
-  ].filter((m, idx, arr) => arr.indexOf(m) === idx);
+  // Mantener el analizador en el modelo vigente para proyectos nuevos.
+  const candidateModels = ['gemini-3.8-flash'];
 
   let lastError: any = null;
 
@@ -182,7 +176,7 @@ async function processMenuExtraction(params: {
   }
 
   let menuData: any = null;
-  let usedEngine = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+  let usedEngine = 'gemini-3.8-flash';
   const errors: string[] = [];
 
   try {

@@ -158,11 +158,9 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
     customApiKey && customApiKey.startsWith('AIza') ? customApiKey : undefined
   );
   if (geminiKey) {
-    const geminiModels = [
-      process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash'
-    ];
+    // El proyecto actual de Gemini ya no admite los modelos 1.5/2.5 para
+    // usuarios nuevos. Usar un único modelo vigente evita reintentos 404.
+    const geminiModels = ['gemini-3.8-flash'];
 
     try {
       const ai = new GoogleGenAI({ apiKey: geminiKey });
