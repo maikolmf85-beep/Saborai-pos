@@ -148,7 +148,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
 
       if (!apiRes.ok) {
         const errJson = await apiRes.json().catch(() => ({}));
-        throw new Error(errJson.error || 'No se pudo comunicar con el servicio de IA.');
+        throw new Error([errJson.error, errJson.details].filter(Boolean).join(' ') || 'No se pudo comunicar con el servicio de IA.');
       }
 
       const data = await apiRes.json();

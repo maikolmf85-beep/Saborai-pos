@@ -71,6 +71,11 @@ function getIntent(text: string): 'support' | 'learning' | 'menu' | 'order' | 'r
   return 'general';
 }
 
+function configuredSecret(...values: Array<string | undefined>): string {
+  const value = values.find(item => typeof item === 'string' && item.trim().length > 0)?.trim() || '';
+  return /^(tu_|your_|replace_|changeme)/i.test(value) ? '' : value;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -97,6 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const cleanUserText = userText.trim();
+  const providerErrors: string[] = [];
 
   // Los saludos no requieren razonamiento ni una llamada de red. Esta ruta
   // evita que una conversación básica espere la latencia del proveedor de IA.
@@ -146,8 +152,14 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   // 1. Motor Primario: Google Gemini
   const geminiKey = (customApiKey && customApiKey.startsWith('AIza'))
     ? customApiKey
-    : (process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || (customApiKey && !customApiKey.startsWith('sk-ant') ? customApiKey : ''));
-  if (geminiKey && geminiKey !== 'tu_gemini_api_key' && geminiKey !== 'tu_api_key_aqui') {
+    : configuredSecret(
+        process.env.GEMINI_API_KEY,
+        process.env.GEMINI_KEY,
+        process.env.GEMINI_API_TOKEN,
+        process.env.VITE_GEMINI_API_KEY,
+        customApiKey && !customApiKey.startsWith('sk-') ? customApiKey : undefined
+      );
+  if (geminiKey) {
     const geminiModels = [
       process.env.GEMINI_MODEL || 'gemini-3.8-flash',
       'gemini-2.5-flash',
@@ -186,17 +198,24 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
             });
           }
         } catch (mErr: any) {
+          providerErrors.push(`Gemini ${modelName}: ${String(mErr?.message || mErr).slice(0, 240)}`);
           console.warn(`[API AI Chat] Modelo ${modelName} no disponible:`, mErr?.message || mErr);
         }
       }
     } catch (gErr: any) {
+      providerErrors.push(`Gemini: ${String(gErr?.message || gErr).slice(0, 240)}`);
       console.warn('[API AI Chat] Error conectando a Gemini:', gErr?.message || gErr);
     }
   }
 
   // 2. Motor OpenAI-compatible del lado servidor. La clave nunca se envía
   // desde el navegador; también permite usar gateways compatibles.
-  const openAiKey = process.env.OPENAI_API_KEY || '';
+  const openAiKey = configuredSecret(
+    process.env.OPENAI_API_KEY,
+    process.env.OPENAI_KEY,
+    process.env.OPENAI_API_TOKEN,
+    process.env.AI_API_KEY
+  );
   const openAiBase = (process.env.OPENAI_API_BASE || 'https://api.openai.com/v1').replace(/\/$/, '');
   const openAiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
   if (openAiKey && openAiKey !== 'tu_openai_api_key') {
@@ -233,9 +252,11 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
           });
         }
       } else {
+        providerErrors.push(`OpenAI-compatible: ${String(openAiData?.error?.message || `HTTP ${openAiRes.status}`).slice(0, 240)}`);
         console.warn('[API AI Chat] OpenAI-compatible rechazó la solicitud:', openAiData?.error?.message || openAiRes.status);
       }
     } catch (openAiErr: any) {
+      providerErrors.push(`OpenAI-compatible: ${String(openAiErr?.message || openAiErr).slice(0, 240)}`);
       console.warn('[API AI Chat] Error conectando al proveedor OpenAI-compatible:', openAiErr?.message || openAiErr);
     }
   }
@@ -243,8 +264,8 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   // 3. Motor Fallback: Anthropic Claude
   const anthropicKey = (customApiKey && customApiKey.startsWith('sk-ant'))
     ? customApiKey
-    : (process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '');
-  if (anthropicKey && anthropicKey !== 'tu_api_key_aqui') {
+    : configuredSecret(process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_KEY, process.env.VITE_ANTHROPIC_API_KEY);
+  if (anthropicKey) {
     const claudeModels = [
       'claude-haiku-4-5-20251001',
       'claude-3-5-haiku-20241022',
@@ -279,16 +300,25 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
             });
           }
         } catch (cErr: any) {
+          providerErrors.push(`Anthropic ${modelName}: ${String(cErr?.message || cErr).slice(0, 240)}`);
           console.warn(`[API AI Chat] Falló Claude modelo ${modelName}:`, cErr?.message || cErr);
         }
       }
     } catch (aErr: any) {
+      providerErrors.push(`Anthropic: ${String(aErr?.message || aErr).slice(0, 240)}`);
       console.warn('[API AI Chat] Error conectando a Anthropic:', aErr?.message || aErr);
     }
   }
 
   // Nunca devolver un saludo genérico como si Nyza hubiera procesado la
   // consulta: eso ocultaba la causa real y hacía parecer funcional al chat.
+  if (providerErrors.length > 0) {
+    return res.status(502).json({
+      error: 'Nyza encontró las variables de IA, pero el proveedor rechazó o no pudo procesar la solicitud.',
+      details: providerErrors[providerErrors.length - 1]
+    });
+  }
+
   return res.status(503).json({
     error: 'Nyza no tiene un motor de IA configurado en el servidor. Configura GEMINI_API_KEY, ANTHROPIC_API_KEY u OPENAI_API_KEY en el entorno de producción.'
   });
