@@ -1436,6 +1436,52 @@ export function App() {
                  message: `Abrí los reportes de ${cmd.range || 'hoy'} para que revises las cifras reales.`,
                  timestamp: new Date()
                });
+            } else if (cmd.type === 'ADD_TABLE_RANGE' || cmd.type === 'ADD_TABLES' || cmd.type === 'CREATE_TABLES') {
+               const zoneName = String(cmd.zone || 'Salón Principal').trim();
+               const from = Number(cmd.from ?? cmd.start ?? cmd.startNumber);
+               const to = Number(cmd.to ?? cmd.end ?? cmd.endNumber);
+               const seats = Math.max(1, Number(cmd.seats ?? 2) || 2);
+               if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to < from || to - from > 200) {
+                 throw new Error('Rango de mesas inválido.');
+               }
+
+               const currentZones = tenant.zones || [];
+               const nextZones = currentZones.some(z => z.toLowerCase() === zoneName.toLowerCase())
+                 ? currentZones
+                 : [...currentZones, zoneName];
+               const nextTables = [...tables];
+               let created = 0;
+               for (let number = from; number <= to; number++) {
+                 const exists = nextTables.some(t => t.number === number || t.name.toLowerCase() === `mesa ${number}`.toLowerCase());
+                 if (exists) continue;
+                 const column = (number - from) % 5;
+                 const row = Math.floor((number - from) / 5);
+                 nextTables.push({
+                   id: `tbl_${Date.now()}_${number}_${Math.random().toString(36).slice(2, 6)}`,
+                   number,
+                   name: `Mesa ${number}`,
+                   seats,
+                   shape: 'square',
+                   status: 'AVAILABLE',
+                   zone: zoneName,
+                   x: 12 + column * 19,
+                   y: 18 + row * 18
+                 });
+                 created++;
+               }
+               if (nextZones.length !== currentZones.length) {
+                 handleUpdateTenant({ ...tenant, zones: nextZones });
+               }
+               if (created > 0) handleUpdateTables(nextTables);
+               addNotification({
+                 id: `nyza_tables_${Date.now()}`,
+                 type: created > 0 ? 'ORDER_READY' : 'NEW_ORDER',
+                 title: 'Nyza IA',
+                 message: created > 0
+                   ? `Configuró ${created} mesa(s) en ${zoneName}, para ${seats} persona(s).`
+                   : `Las mesas solicitadas ya existían en ${zoneName}.`,
+                 timestamp: new Date()
+               });
             } else if (cmd.type === 'ADD_TABLE') {
                const tableName = cmd.name || 'Nueva Mesa';
                const tableNumberStr = tableName.replace(/\D/g, '');

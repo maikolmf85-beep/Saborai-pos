@@ -162,7 +162,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       // Ejecutar comandos detectados en el bloque JSON o devueltos por el backend
       if (onQuickAction) {
         if (data.action) {
-          onQuickAction(JSON.stringify(data.action));
+          if (Array.isArray(data.action.actions)) {
+            data.action.actions.forEach((action: unknown) => onQuickAction(JSON.stringify(action)));
+          } else {
+            onQuickAction(JSON.stringify(data.action));
+          }
         } else if (rawText) {
           const match = rawText.match(/```json\n(\{.*?\})\n```/s);
           if (match && match[1]) {

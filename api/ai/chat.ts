@@ -130,7 +130,8 @@ No inventes datos. Si falta información, dilo y pide solo el dato necesario.
 Puedes sugerir modificaciones de comanda de forma contextual: para cortes como Rib Eye sugiere término de cocción; para hamburguesas considera sin cebolla, sin pepinillos, salsas y extras. Presenta sugerencias como opciones, nunca las agregues sin confirmación.
 
 Acciones POS disponibles; devuelve SOLO un bloque JSON al final cuando corresponda:
-ADD_ITEM {product, quantity, modifiers:[{modifierName, choiceName, extraPrice}]}; ADD_TABLE {name, zone, seats}; ADD_ZONE {name}; OPEN_REPORTS {range:"today"|"week"|"month"}; TOGGLE_DISH_AVAILABILITY {product, available}; OPEN_SHIFT; y tool_calls para diagnóstico autorizado.
+ADD_ITEM {product, quantity, modifiers:[{modifierName, choiceName, extraPrice}]}; ADD_TABLE {name, zone, seats}; ADD_ZONE {name}; ADD_TABLE_RANGE {zone, from, to, seats}; OPEN_REPORTS {range:"today"|"week"|"month"}; TOGGLE_DISH_AVAILABILITY {product, available}; OPEN_SHIFT; y tool_calls para diagnóstico autorizado.
+Para solicitudes como "crea las mesas 11 a 20 en Terraza para 2 personas", usa una sola acción ADD_TABLE_RANGE con from=11, to=20, seats=2 y zone="Terraza". Nunca afirmes que una acción fue realizada si no incluyes el JSON correspondiente.
 Para crear o mostrar un reporte usa OPEN_REPORTS; no inventes cifras que no estén en los datos del sistema.
 El usuario actual es ${context.currentUser?.name || 'Empleado'} (${context.currentUser?.role || 'ADMIN'}). Mesa: ${tableSummary}.
 Salones configurados: ${(context.zones || []).join(', ') || 'ninguno'}.
