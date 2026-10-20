@@ -265,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onOpenCashShift('status');
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 hover:border-emerald-500/40 text-stone-200 flex items-center justify-between transition-all"
+                  className="relative w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 hover:border-emerald-500/40 text-stone-200 flex items-center justify-between transition-all"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-emerald-400">
@@ -274,11 +274,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <div>
                       <div className="font-bold text-xs flex items-center gap-1.5">
                         <span>{isShiftOpen ? "Turno Abierto" : "Turno Cerrado"}</span>
-                        <span className={`w-2 h-2 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
                       </div>
                       <div className="text-[10px] text-stone-400">{activeRegisterName || 'Caja Principal'}</div>
                     </div>
                   </div>
+                  <span
+                    aria-label={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
+                    title={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
+                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse shadow-[0_0_7px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`}
+                  />
                   <span className="text-[10px] font-bold text-emerald-400 uppercase">Gestionar</span>
                 </button>
               )}
