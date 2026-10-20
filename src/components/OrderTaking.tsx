@@ -828,15 +828,16 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 Sugerencias de Nyza para {lastOrdered.name}:
               </span>
               {smartModifierSuggestions.map(suggestion => {
-                const active = (lastOrdered.notes || '').split(',').map(s => s.trim()).includes(suggestion);
+                const label = suggestion.label;
+                const active = (lastOrdered.notes || '').split(',').map(s => s.trim()).includes(label);
                 return (
                   <button
-                    key={suggestion}
+                    key={label}
                     type="button"
-                    onClick={() => handleToggleQuickModifier(lastOrdered.id, suggestion)}
+                    onClick={() => handleToggleQuickModifier(lastOrdered.id, label)}
                     className={`px-2.5 py-1 rounded-xl border font-semibold transition-colors ${active ? 'bg-emerald-700 text-white border-emerald-700' : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-100'}`}
                   >
-                    {suggestion}
+                    {label}
                   </button>
                 );
               })}
