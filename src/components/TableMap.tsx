@@ -38,6 +38,8 @@ interface TableMapProps {
   onQuickTakeaway?: () => void;
   activeShiftZone?: string;
   activeShiftZones?: string[];
+  hasActiveShift?: boolean;
+  onOpenCashShift?: () => void;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -51,7 +53,9 @@ export const TableMap: React.FC<TableMapProps> = ({
   onUpdateTenant,
   onUpdateTables,
   activeShiftZone,
-  activeShiftZones
+  activeShiftZones,
+  hasActiveShift = false,
+  onOpenCashShift
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -89,14 +93,15 @@ export const TableMap: React.FC<TableMapProps> = ({
     });
   }, [initialTablesList]);
 
-  // Allowed zones according to active shift (if linked to specific salons)
-  const shiftZones = activeShiftZones && activeShiftZones.length > 0
-    ? tenantZones.filter(z => activeShiftZones.includes(z))
-    : (activeShiftZone && tenantZones.includes(activeShiftZone) ? [activeShiftZone] : []);
-  // Si una caja conserva vínculos a salones renombrados/eliminados, no se debe
-  // dejar el mapa vacío: la configuración vigente del tenant sigue siendo la
-  // fuente de verdad para mostrar sus salones.
-  const effectiveZones = shiftZones.length > 0 ? shiftZones : tenantZones;
+  // El turno limita la operación de comandar, no la visibilidad ni la edición
+  // del plano. Todos los salones permanecen accesibles para configuración.
+  const restrictedShiftZones = activeShiftZones && activeShiftZones.length > 0
+    ? activeShiftZones
+    : (activeShiftZone ? [activeShiftZone] : []);
+  const effectiveZones = tenantZones;
+  const zoneHasActiveShift = (zone: string) => hasActiveShift && (
+    restrictedShiftZones.length === 0 || restrictedShiftZones.includes(zone)
+  );
 
   const [selectedZone, setSelectedZone] = useState<string>(() => {
     if (effectiveZones.length > 0) return effectiveZones[0];
@@ -108,6 +113,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
+  const selectedZoneHasActiveShift = zoneHasActiveShift(selectedZone);
 
   // Sync selectedZone when activeShiftZones change or tenantZones update
   useEffect(() => {
@@ -383,6 +389,21 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   const handleOpenTableOrder = (table: Table) => {
+    if (!selectedZoneHasActiveShift) {
+      setConfirmConfig({
+        isOpen: true,
+        title: `El salón "${selectedZone}" no tiene turno activo`,
+        message: 'Puedes consultar y configurar sus mesas, pero necesitas abrir un turno para tomar o modificar comandas en este salón.',
+        confirmLabel: onOpenCashShift ? 'Abrir turno' : 'Entendido',
+        cancelLabel: 'Seguir configurando',
+        type: 'warning',
+        onConfirm: () => {
+          setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+          onOpenCashShift?.();
+        }
+      });
+      return;
+    }
     if (table.status === 'AVAILABLE') {
       // Require server PIN selection before starting new order
       setTableForPinAuth(table);
@@ -482,14 +503,6 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           {/* Zone Filter Navigation Inline */}
           <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {effectiveZones.length < tenantZones.length && effectiveZones.length > 0 && (
-              <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-800 text-white rounded-lg text-[10px] font-black shrink-0">
-                <span>📍 Turno:</span>
-                <span className="text-[9px] bg-emerald-950/70 px-1 py-0.2 rounded text-emerald-200 uppercase font-bold">
-                  {effectiveZones.length === 1 ? '1 Salón' : `${effectiveZones.length} Salones`}
-                </span>
-              </div>
-            )}
             {effectiveZones.length === 0 ? (
               <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
                 Sin salones
@@ -505,7 +518,12 @@ export const TableMap: React.FC<TableMapProps> = ({
                       : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
                   }`}
                 >
-                  {zone}
+                  <span className="flex items-center gap-1.5">
+                    {zone}
+                    {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
+                      <Lock className="w-3 h-3 text-amber-600" aria-label="Sin turno activo" />
+                    )}
+                  </span>
                 </button>
               ))
             )}
@@ -521,6 +539,24 @@ export const TableMap: React.FC<TableMapProps> = ({
             )}
           </div>
         </div>
+
+        {!selectedZoneHasActiveShift && (
+          <div className="px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2">
+              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
+            </div>
+            {onOpenCashShift && (
+              <button
+                type="button"
+                onClick={onOpenCashShift}
+                className="px-2.5 py-1 bg-amber-900 text-white rounded-lg text-[11px] font-bold whitespace-nowrap hover:bg-amber-800"
+              >
+                Abrir turno
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Right Action Controls & Metrics & Fullscreen */}
         <div className="flex items-center gap-2">

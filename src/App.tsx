@@ -1172,6 +1172,11 @@ export function App() {
                   onQuickTakeaway={handleQuickTakeaway}
                   activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
                   activeShiftZones={cashShiftService.getActiveShift()?.linkedZones}
+                  hasActiveShift={Boolean(cashShiftService.getActiveShift())}
+                  onOpenCashShift={() => {
+                    setCashShiftInitialTab('status');
+                    setIsCashShiftModalOpen(true);
+                  }}
                 />
               )
             )}
