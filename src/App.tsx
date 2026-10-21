@@ -1322,6 +1322,10 @@ export function App() {
             )}
           </Suspense>
         </main>
+
+        <footer className="shrink-0 border-t border-stone-200/80 bg-white/80 px-4 py-2 text-center text-[10px] font-medium text-stone-400 backdrop-blur-sm">
+          Sistema diseñado por Maikol Matamoros
+        </footer>
       </div>
 
       {/* Unified Modals & Overlays wrapped in Suspense for Lazy Loading */}
