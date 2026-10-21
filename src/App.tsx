@@ -63,6 +63,27 @@ function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null
   }
 }
 
+function mergeTenantZones(...lists: Array<string[] | null | undefined>): string[] {
+  return Array.from(new Set(lists.flatMap(list => Array.isArray(list) ? list : [])
+    .map(zone => zone.trim())
+    .filter(Boolean)));
+}
+
+function syncTenantZonesWithServer(zones: string[]): void {
+  try {
+    const token = localStorage.getItem('saborai_token');
+    if (!token) return;
+    void fetch('/api/tenant/profile', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ zones })
+    }).catch(error => console.warn('[SaborAI] No se pudieron sincronizar los salones:', error));
+  } catch {}
+}
+
 export function App() {
   const [resetToken, setResetToken] = useState<string | null>(() => 
     new URLSearchParams(window.location.search).get('resetToken')
@@ -149,6 +170,7 @@ export function App() {
       // no depender únicamente del estado global de la sesión.
       setTenantItem('tenant_profile', updated, updated.id);
       setTenantItem('zones', updated.zones || [], updated.id);
+      syncTenantZonesWithServer(updated.zones || []);
       if (updated.haciendaConfig) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
@@ -251,7 +273,11 @@ export function App() {
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
             haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
-            zones: getTenantItem<string[]>('zones', data.tenant.id) || savedTenant?.zones || [],
+            zones: mergeTenantZones(
+              data.tenant.zones,
+              getTenantItem<string[]>('zones', data.tenant.id),
+              savedTenant?.zones
+            ),
             menuCategories: savedTenant?.menuCategories || []
           };
           const sub: SaboraiSubscription = { 
@@ -285,6 +311,7 @@ export function App() {
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
             setTenantItem('tenant_profile', tenantObj, tenantObj.id);
             setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
+            syncTenantZonesWithServer(tenantObj.zones || []);
           } catch {}
         } else {
           // Token invalid or expired
@@ -567,7 +594,7 @@ export function App() {
     const savedTenant = getTenantProfileWithLegacyFallback(loggedTenant.id);
     const restoredTenant: TenantInfo = {
       ...loggedTenant,
-      zones: savedTenant?.zones ?? loggedTenant.zones ?? [],
+      zones: mergeTenantZones(loggedTenant.zones, savedTenant?.zones),
       menuCategories: savedTenant?.menuCategories ?? loggedTenant.menuCategories ?? [],
       taxRegime: savedTenant?.taxRegime ?? loggedTenant.taxRegime,
       includeService10ByDefault: savedTenant?.includeService10ByDefault ?? loggedTenant.includeService10ByDefault,
@@ -588,6 +615,7 @@ export function App() {
       localStorage.setItem('saborai_tenant', JSON.stringify(restoredTenant));
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
       setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
+      syncTenantZonesWithServer(restoredTenant.zones || []);
     } catch {}
     // La suscripción se resuelve por tenant, nunca desde el estado de la cuenta anterior.
     const tenantSubscription = getTenantItem<SaboraiSubscription>('subscription', restoredTenant.id);
