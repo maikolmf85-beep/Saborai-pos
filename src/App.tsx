@@ -27,6 +27,7 @@ const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen'
 const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ default: m.GuidedTour })));
 import { cashShiftService } from './services/cashShiftService';
 import { printerService } from './services/printerService';
+import { nyzaUIAgent } from './services/nyzaUIAgent';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
@@ -683,6 +684,49 @@ export function App() {
 
   const handleSelectTable = (table: Table) => {
     setSelectedTableForOrder(table);
+  };
+
+  const handleNyzaCreateTable = async (salonName: string, tableNumber: number) => {
+    const zoneName = salonName.trim() || 'Principal';
+    const normalizedNumber = Math.max(1, Math.floor(tableNumber));
+    const exists = tables.some(table => table.number === normalizedNumber || table.name.toLowerCase() === `mesa ${normalizedNumber}`.toLowerCase());
+    setActiveTab('pos');
+    setSelectedTableForOrder(null);
+
+    if (exists) {
+      addNotification({
+        id: `nyza_table_exists_${Date.now()}`,
+        type: 'NEW_ORDER',
+        title: 'Nyza IA',
+        message: `La Mesa ${normalizedNumber} ya existe en el restaurante.`,
+        timestamp: new Date()
+      });
+      return;
+    }
+
+    const currentZones = tenant.zones || [];
+    if (!currentZones.some(zone => zone.toLowerCase() === zoneName.toLowerCase())) {
+      handleUpdateTenant({ ...tenant, zones: [...currentZones, zoneName] });
+    }
+    const newTable: Table = {
+      id: `tbl_nyza_${Date.now()}_${normalizedNumber}`,
+      number: normalizedNumber,
+      name: `Mesa ${normalizedNumber}`,
+      seats: 4,
+      shape: 'square',
+      status: 'AVAILABLE',
+      zone: zoneName,
+      x: 18 + ((tables.length * 17) % 68),
+      y: 20 + ((tables.length * 19) % 58)
+    };
+    handleUpdateTables([...tables, newTable]);
+    addNotification({
+      id: `nyza_table_${Date.now()}`,
+      type: 'ORDER_READY',
+      title: 'Nyza IA',
+      message: `Creó la Mesa ${normalizedNumber} en ${zoneName}.`,
+      timestamp: new Date()
+    });
   };
 
   const handleOpenOrder = (table: Table) => {
@@ -1364,6 +1408,21 @@ export function App() {
         onQuickAction={(action) => {
           try {
             const cmd = JSON.parse(action);
+            const autonomousAction = nyzaUIAgent.normalizeAction(cmd);
+            if (autonomousAction) {
+              void nyzaUIAgent.execute(autonomousAction, {
+                createTable: handleNyzaCreateTable,
+                navigateTo: (view) => {
+                  setActiveTab(view === 'tables' ? 'pos' : view);
+                  setSelectedTableForOrder(null);
+                },
+                openCashRegister: () => {
+                  handleOpenCashShift('status');
+                  setIsCopilotOpen(false);
+                }
+              });
+              return;
+            }
             if (cmd.type === 'OPEN_LEARNING_HUB' || cmd.type === 'NYZA_HUB') {
                setIsNyzaHubOpen(true);
             } else if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {

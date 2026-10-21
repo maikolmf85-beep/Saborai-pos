@@ -49,6 +49,48 @@ function parseAction(rawText: string): { action: any | null; display: string } {
   };
 }
 
+const nyzaUITools = [{
+  functionDeclarations: [
+    {
+      name: 'createTable',
+      description: 'Crea una mesa disponible en un salón del mapa de mesas.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          salonName: { type: 'STRING', description: 'Nombre exacto del salón o zona.' },
+          tableNumber: { type: 'NUMBER', description: 'Número de la mesa que se desea crear.' }
+        },
+        required: ['salonName', 'tableNumber']
+      }
+    },
+    {
+      name: 'navigateTo',
+      description: 'Navega a una sección del POS.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          view: { type: 'STRING', enum: ['tables', 'billing', 'kds', 'menu'], description: 'Sección destino.' }
+        },
+        required: ['view']
+      }
+    },
+    {
+      name: 'openCashRegister',
+      description: 'Abre el control de turno y caja para iniciar o gestionar el turno.',
+      parameters: { type: 'OBJECT', properties: {} }
+    }
+  ]
+}];
+
+function functionCallToAction(call: any): any | null {
+  const name = call?.name;
+  const args = call?.args || call?.arguments || {};
+  if (name === 'createTable') return { type: 'CREATE_TABLE', params: args };
+  if (name === 'navigateTo') return { type: 'NAVIGATE_TO', params: args };
+  if (name === 'openCashRegister') return { type: 'OPEN_CASH_REGISTER', params: {} };
+  return null;
+}
+
 function isSimpleGreeting(text: string): boolean {
   const normalized = text
     .toLocaleLowerCase('es-CR')
@@ -134,6 +176,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 Responde en español costarricense, con precisión y máximo 4 oraciones salvo que el usuario solicite un reporte detallado.
 No inventes datos. Si falta información, dilo y pide solo el dato necesario.
 Puedes sugerir modificaciones de comanda de forma contextual: para cortes como Rib Eye sugiere término de cocción; para hamburguesas considera sin cebolla, sin pepinillos, salsas y extras. Presenta sugerencias como opciones, nunca las agregues sin confirmación.
+Cuando el usuario pida crear una mesa, cambiar de sección o abrir la caja, usa Function Calling con createTable, navigateTo u openCashRegister. No afirmes que la acción fue realizada hasta devolver la llamada de función.
 
 Acciones POS disponibles; devuelve SOLO un bloque JSON al final cuando corresponda:
 ADD_ITEM {product, quantity, modifiers:[{modifierName, choiceName, extraPrice}]}; ADD_TABLE {name, zone, seats}; ADD_ZONE {name}; ADD_TABLE_RANGE {zone, from, to, seats}; OPEN_REPORTS {range:"today"|"week"|"month"}; TOGGLE_DISH_AVAILABILITY {product, available}; OPEN_SHIFT; y tool_calls para diagnóstico autorizado.
@@ -172,10 +215,22 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
               contents: [{
                 role: 'user',
                 parts: [{ text: `${systemInstruction}\n\n${fullPrompt}` }]
-              }]
+              }],
+              config: { tools: nyzaUITools }
             });
 
             const rawText = response.text || '';
+            const functionAction = functionCallToAction(response.functionCalls?.[0]);
+            if (functionAction) {
+              return res.status(200).json({
+                success: true,
+                response: rawText || 'Entendido. Voy a ejecutar esa acción en SaborAI POS.',
+                rawResponse: rawText,
+                action: functionAction,
+                provider: 'gemini-function-calling',
+                model: modelName
+              });
+            }
             if (rawText) {
               const parsed = parseAction(rawText);
               return res.status(200).json({

@@ -647,6 +647,7 @@ export const TableMap: React.FC<TableMapProps> = ({
               </button>
 
               <button
+                data-nyza-target="create-table"
                 onClick={() => {
                   setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
                   setShowAddModal(true);
