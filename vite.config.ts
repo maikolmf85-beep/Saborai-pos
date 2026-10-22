@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
 function apiDevPlugin(): Plugin {
   return {
@@ -80,7 +81,55 @@ function apiDevPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), apiDevPlugin()],
+  plugins: [
+    react(),
+    apiDevPlugin(),
+    VitePWA({
+      registerType: 'prompt',
+      filename: 'sw.js',
+      manifestFilename: 'manifest.json',
+      includeAssets: ['favicon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable.png', 'icons/apple-touch-icon.png'],
+      manifest: {
+        name: 'Saborai POS - Gastronomía Inteligente',
+        short_name: 'Saborai POS',
+        description: 'Punto de venta gastronómico inteligente para restaurantes.',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'any',
+        background_color: '#fcfeff',
+        theme_color: '#3b3733',
+        lang: 'es-CR',
+        categories: ['business', 'food', 'productivity'],
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/icon-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+        ]
+      },
+      workbox: {
+        cleanupOutdatedCaches: true,
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'saborai-fonts',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] }
+            }
+          },
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly'
+          }
+        ]
+      },
+      devOptions: { enabled: false }
+    })
+  ],
   build: {
     chunkSizeWarningLimit: 800,
     rollupOptions: {
@@ -114,5 +163,4 @@ export default defineConfig({
     },
   },
 })
-
 
