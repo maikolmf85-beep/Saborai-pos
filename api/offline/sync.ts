@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -145,6 +145,70 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
   return { tableId: tableResult.data.id, orderId };
 }
 
+async function syncPayment(tenantId: string, userId: string, operationId: string, payload: any) {
+  const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
+  const payments = Array.isArray(payload?.payments) ? payload.payments : [];
+  if (!orderNumber || payments.length === 0) throw new Error('El pago no contiene una orden y un desglose válido.');
+
+  const orderResult = await supabaseAdmin
+    .from('pos_orders')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('idempotency_key', `order:${tenantId}:${orderNumber}`)
+    .maybeSingle();
+  if (orderResult.error || !orderResult.data) {
+    throw new Error('La orden aún no existe en la nube; se reintentará después de sincronizar la comanda.');
+  }
+
+  const allowedMethods = new Set(['CASH', 'CARD', 'SINPE', 'MIXED', 'CREDIT']);
+  const inserted: string[] = [];
+  for (const [index, payment] of payments.entries()) {
+    const amount = safeNumber(payment?.amount, 0);
+    if (amount <= 0) continue;
+    const method = allowedMethods.has(payment?.method) ? payment.method : 'CASH';
+    const idempotencyKey = `${operationId}:${index}`;
+    const existing = await supabaseAdmin
+      .from('pos_payments')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    if (existing.data) {
+      inserted.push(existing.data.id);
+      continue;
+    }
+
+    const paymentResult = await supabaseAdmin
+      .from('pos_payments')
+      .insert({
+        tenant_id: tenantId,
+        order_id: orderResult.data.id,
+        amount,
+        method,
+        provider: typeof payment?.provider === 'string' ? payment.provider.slice(0, 80) : 'POS_OFFLINE_SYNC',
+        provider_transaction_id: typeof payment?.reference === 'string' ? payment.reference.slice(0, 160) : null,
+        status: 'PENDING',
+        idempotency_key: idempotencyKey
+      })
+      .select('id')
+      .single();
+    if (paymentResult.error || !paymentResult.data) throw new Error('No se pudo registrar el pago pendiente.');
+    inserted.push(paymentResult.data.id);
+  }
+
+  await supabaseAdmin.from('pos_audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: userId,
+    action: 'OFFLINE_SYNC',
+    entity_type: 'PAYMENT',
+    entity_id: orderResult.data.id,
+    request_id: operationId,
+    metadata: { paymentIds: inserted, orderNumber, status: 'PENDING', source: 'pwa' }
+  });
+
+  return { orderId: orderResult.data.id, paymentIds: inserted, status: 'PENDING' };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -179,7 +243,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (existingAudit.data) return res.status(200).json({ success: true, alreadyApplied: true, result: existingAudit.data.metadata });
 
   try {
-    const result = await syncTable(tenantId, auth.userId, operationId, body.payload);
+    const result = action === 'PAYMENT'
+      ? await syncPayment(tenantId, auth.userId, operationId, body.payload)
+      : await syncTable(tenantId, auth.userId, operationId, body.payload);
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);

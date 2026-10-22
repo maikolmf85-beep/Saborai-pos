@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import forge from 'node-forge';
 import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
+import { supabaseAdmin } from './_utils/supabase.js';
 
 const require = createRequire(import.meta.url);
 
@@ -107,6 +108,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const auth = await requireAuth(req, res);
   if (!auth) return;
+  const tenantId = auth.tenantId;
+  if (!tenantId) return res.status(403).json({ error: 'La sesión no tiene un restaurante asociado.' });
 
   try {
     const { 
@@ -114,6 +117,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       xmlString, 
       xmlBase64, 
       clave, 
+      consecutivo,
+      documentType,
+      total,
       fecha, 
       emisor, 
       receptor,
@@ -244,6 +250,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch { /* ignore */ }
       }
       const errorCause = statusRes.headers.get('x-error-cause') || undefined;
+      const normalizedStatus = indEstado === 'aceptado' ? 'ACCEPTED' : indEstado === 'rechazado' ? 'REJECTED' : 'PROCESSING';
+      await supabaseAdmin.from('pos_invoices').update({
+        hacienda_status: normalizedStatus,
+        error_message: normalizedStatus === 'REJECTED' ? (detalle || null) : null,
+        accepted_at: normalizedStatus === 'ACCEPTED' ? new Date().toISOString() : null
+      }).eq('tenant_id', tenantId).eq('clave', clave);
+
       return res.status(200).json({
         success: statusRes.ok,
         httpStatus: statusRes.status,
@@ -258,6 +271,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ==========================================
     if (!clave || !emisor) {
       return res.status(400).json({ error: 'Faltan datos requeridos (clave, emisor)' });
+    }
+
+    const existingInvoice = await supabaseAdmin
+      .from('pos_invoices')
+      .select('hacienda_status, signed_xml_content, error_message')
+      .eq('tenant_id', tenantId)
+      .eq('clave', clave)
+      .maybeSingle();
+    if (existingInvoice.data && ['PROCESSING', 'ACCEPTED'].includes(existingInvoice.data.hacienda_status)) {
+      return res.status(200).json({
+        success: true,
+        estado: existingInvoice.data.hacienda_status === 'ACCEPTED' ? 'ACEPTADO' : 'PROCESANDO',
+        clave,
+        signedXmlBase64: existingInvoice.data.signed_xml_content || undefined,
+        mensaje: 'Este comprobante ya fue recibido anteriormente; no se reenvía para evitar duplicarlo.'
+      });
     }
 
     let finalXmlBase64 = xmlBase64;
@@ -351,6 +380,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (recepcionRes.status === 202) {
+      const branch = await supabaseAdmin
+        .from('pos_branches')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (branch.data) {
+        const invoiceRecord = await supabaseAdmin.from('pos_invoices').upsert({
+          tenant_id: tenantId,
+          branch_id: branch.data.id,
+          clave,
+          consecutivo: String(consecutivo || clave).slice(0, 20),
+          document_type: String(documentType || 'TE').slice(0, 2),
+          hacienda_status: 'PROCESSING',
+          total: Number(total || 0),
+          signed_xml_content: finalXmlBase64,
+          submitted_at: new Date().toISOString()
+        }, { onConflict: 'tenant_id,clave' });
+        if (invoiceRecord.error) console.warn('[Hacienda] No se pudo persistir el comprobante:', invoiceRecord.error.message);
+      }
       return res.status(200).json({ 
         success: true, 
         estado: 'PROCESANDO', 

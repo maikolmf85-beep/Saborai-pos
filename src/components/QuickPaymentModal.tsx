@@ -19,6 +19,7 @@ import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
 import { getTenantItem } from '../services/tenantStorage';
+import { localDB } from '../services/db';
 import { PosNotification } from './NotificationToast';
 
 interface QuickPaymentModalProps {
@@ -202,6 +203,31 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     e.preventDefault();
     if (!canSubmit()) return;
 
+    const isOffline = !localDB.isOnline();
+    const includesExternallyVerifiedMethod = paymentMode === 'single'
+      ? singleMethod === 'Tarjeta' || singleMethod === 'SINPE Móvil'
+      : mixedCard > 0 || mixedSinpe > 0;
+    if (isOffline && includesExternallyVerifiedMethod) {
+      onNotify?.({
+        id: `offline_payment_blocked_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Pago requiere conexión',
+        message: 'No se puede confirmar Tarjeta o SINPE Móvil sin conexión. Usa efectivo o restablece Internet.',
+        timestamp: new Date()
+      });
+      return;
+    }
+    if (isOffline && emitToHacienda && !isSimplified) {
+      onNotify?.({
+        id: `offline_invoice_blocked_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Facturación electrónica pausada',
+        message: 'La emisión oficial a Hacienda requiere conexión. Desactiva la emisión para generar un ticket local.',
+        timestamp: new Date()
+      });
+      return;
+    }
+
     setIsProcessing(true);
 
     const emissionDate = new Date();
@@ -297,6 +323,39 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       estadoHacienda: 'PROCESANDO',
       fechaEmision: emissionDate.toISOString()
     };
+
+    const paymentRows = paymentMode === 'single'
+      ? [{
+          amount: total,
+          method: singleMethod === 'Tarjeta' ? 'CARD' : singleMethod === 'SINPE Móvil' ? 'SINPE' : singleMethod === 'Crédito Funcionario' ? 'CREDIT' : 'CASH',
+          reference: sinpeRef || undefined,
+          provider: singleMethod === 'Crédito Funcionario' ? 'STAFF_CREDIT' : 'POS'
+        }]
+      : [
+          { amount: mixedCash, method: 'CASH', provider: 'POS' },
+          { amount: mixedCard, method: 'CARD', provider: 'POS' },
+          { amount: mixedSinpe, method: 'SINPE', reference: sinpeRef || undefined, provider: 'POS' }
+        ].filter(payment => payment.amount > 0);
+
+    // Se registra como PENDING en el backend; nunca se marca como autorizado desde el cliente.
+    void localDB.enqueueOfflineAction(
+      'UPDATE_TABLE',
+      table,
+      `Mesa ${table.name}: preparar orden antes de registrar el pago`,
+      tenant.id
+    ).then(() => localDB.enqueueOfflineAction(
+      'PAYMENT',
+      {
+        orderNumber: table.activeOrder?.orderNumber,
+        tableNumber: table.number,
+        payments: paymentRows,
+        total,
+        currency: 'CRC',
+        occurredAt: emissionDate.toISOString()
+      },
+      `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
+      tenant.id
+    )).then(() => localDB.syncAllPending());
     
     if (emitToHacienda && !isSimplified) {
       const xml = generateHaciendaXmlV44(invoiceObj, tenant);
