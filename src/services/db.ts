@@ -1,7 +1,18 @@
 // IndexedDB Native Service for Offline-First POS Operation in Costa Rica
 
 const DB_NAME = 'saborai_pos_local_db';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+
+export interface TenantOfflineSnapshot {
+  tenantId: string;
+  version: 1;
+  updatedAt: string;
+  tenant: any;
+  menuItems: any[];
+  tables: any[];
+  staff: any[];
+  kdsOrders: any[];
+}
 
 export interface OfflineSyncQueueItem {
   id: string;
@@ -37,6 +48,9 @@ export class SaboraiLocalDB {
         }
         if (!db.objectStoreNames.contains('sync_queue')) {
           db.createObjectStore('sync_queue', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('tenant_snapshots')) {
+          db.createObjectStore('tenant_snapshots', { keyPath: 'tenantId' });
         }
       };
 
@@ -143,6 +157,53 @@ export class SaboraiLocalDB {
     this.notify(this.isOnline(), count);
   }
 
+  async saveTenantSnapshot(snapshot: TenantOfflineSnapshot): Promise<void> {
+    if (!snapshot.tenantId) return;
+    const safeTenant = snapshot.tenant
+      ? {
+          ...snapshot.tenant,
+          haciendaConfig: snapshot.tenant.haciendaConfig
+            ? {
+                ...snapshot.tenant.haciendaConfig,
+                atvPassword: undefined,
+                pinP12: undefined,
+                p12Base64: undefined
+              }
+            : undefined
+        }
+      : null;
+    const safeSnapshot: TenantOfflineSnapshot = {
+      ...snapshot,
+      tenant: safeTenant
+    };
+
+    await this.saveItem('tenant_snapshots', safeSnapshot);
+  }
+
+  async getTenantSnapshot(tenantId: string): Promise<TenantOfflineSnapshot | null> {
+    if (!tenantId) return null;
+    if (!this.db) await this.init();
+    if (!this.db) {
+      try {
+        const raw = localStorage.getItem(`saborai_tenant_snapshots_${tenantId}`);
+        return raw ? JSON.parse(raw) as TenantOfflineSnapshot : null;
+      } catch {
+        return null;
+      }
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db!.transaction('tenant_snapshots', 'readonly');
+        const request = tx.objectStore('tenant_snapshots').get(tenantId);
+        request.onsuccess = () => resolve((request.result as TenantOfflineSnapshot | undefined) || null);
+        request.onerror = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
   async getPendingCount(): Promise<number> {
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
     return all.filter(item => !item.synced).length;
@@ -155,17 +216,10 @@ export class SaboraiLocalDB {
 
   async syncAllPending(): Promise<{ syncedCount: number }> {
     const pending = await this.getPendingItems();
-    if (pending.length === 0) return { syncedCount: 0 };
-
-    for (const item of pending) {
-      // Mark as synced
-      item.synced = true;
-      await this.saveItem('sync_queue', item);
-    }
-
-    const count = await this.getPendingCount();
-    this.notify(this.isOnline(), count);
-    return { syncedCount: pending.length };
+    // La entrega al backend requiere idempotencia y pertenece a la fase 3.
+    // Nunca marcar operaciones como sincronizadas solo por estar online.
+    if (pending.length > 0) this.notify(this.isOnline(), pending.length);
+    return { syncedCount: 0 };
   }
 }
 

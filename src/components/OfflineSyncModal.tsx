@@ -16,7 +16,6 @@ interface OfflineSyncModalProps {
   onClose: () => void;
   isOnline: boolean;
   pendingCount: number;
-  onSyncComplete: (syncedCount: number) => void;
   onToggleSimulatedOffline: () => void;
 }
 
@@ -25,7 +24,6 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
   onClose,
   isOnline,
   pendingCount,
-  onSyncComplete,
   onToggleSimulatedOffline
 }) => {
   const [items, setItems] = useState<OfflineSyncQueueItem[]>([]);
@@ -41,18 +39,11 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
   if (!isOpen) return null;
 
   const handleSyncNow = async () => {
-    if (!isOnline) {
-      alert('Actualmente no hay conexión a Internet. Conéctate a la red o desactiva la simulación para sincronizar con la nube.');
-      return;
-    }
-
     setIsSyncing(true);
-    const { syncedCount } = await localDB.syncAllPending();
+    await localDB.syncAllPending();
     setIsSyncing(false);
-    setItems([]);
-    setSyncSuccessMsg(`¡${syncedCount} operaciones sincronizadas exitosamente con la nube! ✓`);
-    onSyncComplete(syncedCount);
-    setTimeout(() => setSyncSuccessMsg(null), 3000);
+    setSyncSuccessMsg('Las operaciones siguen protegidas en este dispositivo. El envío a la nube se habilitará en la fase 3.');
+    setTimeout(() => setSyncSuccessMsg(null), 4500);
   };
 
   return (
@@ -105,8 +96,8 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
 
           <p className="text-[11px] leading-relaxed opacity-90">
             {isOnline
-              ? 'Todas las comandas, mesas y facturas están sincronizadas. Si se interrumpe el Internet en el restaurante, SaborAI continúa operando sin parar.'
-              : 'El restaurante sigue operando normalmente: puedes tomar comandas, mover mesas y cobrar. Las facturas se emiten en contingencia local y se enviarán automáticamente a Hacienda cuando vuelva la red.'}
+              ? 'Los datos operativos guardados localmente están disponibles. Las operaciones pendientes se conservarán hasta que exista un sincronizador de nube idempotente.'
+              : 'El menú, las mesas y los datos operativos disponibles localmente siguen accesibles. Los cobros y la facturación electrónica requieren conexión.'}
           </p>
         </div>
 
@@ -167,11 +158,11 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
             <button
               type="button"
               onClick={handleSyncNow}
-              disabled={isSyncing || pendingCount === 0 || !isOnline}
+              disabled={isSyncing || pendingCount === 0}
               className="flex-1 sm:flex-initial px-4 py-2.5 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-[#a9b994] ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Ahora'}</span>
+              <span>{isSyncing ? 'Revisando cola...' : 'Preparar sincronización (Fase 3)'}</span>
             </button>
           </div>
         </div>

@@ -535,6 +535,7 @@ export function App() {
   // Network & Sync state
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
+  const [localDbReady, setLocalDbReady] = useState(false);
 
   // Sound & Notifications state
   const [notifications, setNotifications] = useState<PosNotification[]>([]);
@@ -578,13 +579,74 @@ export function App() {
 
   // Initialize DB and subscribe to offline/online events
   useEffect(() => {
-    localDB.init();
+    let mounted = true;
+    void localDB.init().then(() => {
+      if (mounted) setLocalDbReady(true);
+    });
     const unsubscribe = localDB.subscribe((online, pending) => {
       setIsOnline(online);
       setPendingSyncCount(pending);
     });
-    return unsubscribe;
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, []);
+
+  // IndexedDB es el respaldo del POS cuando localStorage fue limpiado o no está disponible.
+  // Solo hidrata campos ausentes para no reemplazar cambios locales más recientes.
+  useEffect(() => {
+    if (!localDbReady || !tenant.id) return;
+    let cancelled = false;
+
+    void localDB.getTenantSnapshot(tenant.id).then(snapshot => {
+      if (cancelled || !snapshot) return;
+
+      if (!hasTenantItem('menu', tenant.id) && snapshot.menuItems.length > 0) {
+        setMenuItems(snapshot.menuItems as MenuItem[]);
+        setTenantItem('menu', snapshot.menuItems, tenant.id);
+      }
+      if (!hasTenantItem('tables', tenant.id) && snapshot.tables.length > 0) {
+        setTables(snapshot.tables as Table[]);
+        setTenantItem('tables', snapshot.tables, tenant.id);
+      }
+      if (!hasTenantItem('staff', tenant.id) && snapshot.staff.length > 0) {
+        setStaffList(snapshot.staff as UserProfile[]);
+        setTenantItem('staff', snapshot.staff, tenant.id);
+      }
+      if (snapshot.kdsOrders.length > 0) {
+        setKdsOrders(current => current.length > 0 ? current : snapshot.kdsOrders as KDSOrder[]);
+      }
+      if (snapshot.tenant && !hasTenantItem('tenant_profile', tenant.id)) {
+        setTenant(snapshot.tenant as TenantInfo);
+        setTenantItem('tenant_profile', snapshot.tenant, tenant.id);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [localDbReady, tenant.id]);
+
+  // Mantiene un snapshot local coherente para poder arrancar y consultar el POS offline.
+  // Las credenciales sensibles se eliminan dentro de localDB antes de persistir.
+  useEffect(() => {
+    if (!localDbReady || !tenant.id) return;
+    const timer = window.setTimeout(() => {
+      void localDB.saveTenantSnapshot({
+        tenantId: tenant.id,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        tenant,
+        menuItems,
+        tables,
+        staff: staffList,
+        kdsOrders
+      });
+    }, 350);
+
+    return () => window.clearTimeout(timer);
+  }, [localDbReady, tenant, menuItems, tables, staffList, kdsOrders]);
 
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
     // El endpoint de login devuelve la identidad del tenant, pero los ajustes
@@ -919,21 +981,6 @@ export function App() {
     await localDB.toggleSimulatedOffline();
   };
 
-  const handleSyncComplete = (_syncedCount: number) => {
-    // Re-broadcast all state to ensure other devices get the offline changes
-    broadcastTables(tables);
-    broadcastKdsOrders(kdsOrders);
-    broadcastShifts(cashShiftService.getAllActiveShiftsMap());
-    
-    addNotification({
-      id: `sync_p2p_${Date.now()}`,
-      type: 'HACIENDA_UPDATE',
-      title: 'Sincronización P2P Completada',
-      message: 'Las comandas creadas offline han sido enviadas a Cocina y Bar.',
-      timestamp: new Date()
-    });
-  };
-
   // If LANDING domain, completely bypass auth and POS UI
   if (appDomain === 'LANDING') {
     return (
@@ -1166,7 +1213,7 @@ export function App() {
             <div className="flex items-center gap-2 max-w-5xl">
               <WifiOff className="w-4 h-4 text-amber-900 shrink-0" />
               <span>
-                <strong>Modo Local Offline Activo:</strong> Sin conexión a Internet. El restaurante sigue operando con normalidad. Todas las comandas, cobros e impresión térmica están activos localmente y se sincronizarán al reconectar.
+                <strong>Modo Local Offline Activo:</strong> Sin conexión a Internet. Menú, mesas, personal y datos operativos guardados localmente siguen disponibles. Los cobros y la facturación electrónica requieren conexión y las operaciones pendientes no se enviarán hasta completar la sincronización de la fase 3.
               </span>
             </div>
             <button
@@ -1350,7 +1397,6 @@ export function App() {
         onClose={() => setIsOfflineModalOpen(false)}
         isOnline={isOnline}
         pendingCount={pendingSyncCount}
-        onSyncComplete={handleSyncComplete}
         onToggleSimulatedOffline={handleToggleSimulatedOffline}
       />
 
