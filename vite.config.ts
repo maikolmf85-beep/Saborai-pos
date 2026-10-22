@@ -26,6 +26,8 @@ function apiDevPlugin(): Plugin {
           targetModule = '/api/tenant/onboarding.ts';
         } else if (cleanPath === '/api/admin/metrics') {
           targetModule = '/api/admin/metrics.ts';
+        } else if (cleanPath === '/api/offline/sync') {
+          targetModule = '/api/offline/sync.ts';
         }
 
         if (targetModule) {
@@ -163,4 +165,3 @@ export default defineConfig({
     },
   },
 })
-

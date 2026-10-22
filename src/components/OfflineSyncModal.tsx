@@ -39,10 +39,19 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
   if (!isOpen) return null;
 
   const handleSyncNow = async () => {
+    if (!isOnline) {
+      setSyncSuccessMsg('No hay conexión. Las operaciones permanecen guardadas en este dispositivo.');
+      return;
+    }
     setIsSyncing(true);
-    await localDB.syncAllPending();
+    const result = await localDB.syncAllPending();
     setIsSyncing(false);
-    setSyncSuccessMsg('Las operaciones siguen protegidas en este dispositivo. El envío a la nube se habilitará en la fase 3.');
+    setItems(await localDB.getPendingItems());
+    setSyncSuccessMsg(
+      result.failedCount > 0
+        ? `${result.syncedCount} sincronizadas, ${result.failedCount} con error. Quedan ${result.remainingCount} pendientes.`
+        : `${result.syncedCount} operaciones sincronizadas. Quedan ${result.remainingCount} pendientes.`
+    );
     setTimeout(() => setSyncSuccessMsg(null), 4500);
   };
 
@@ -60,7 +69,7 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-stone-900">
-                {isOnline ? 'Conexión Activa (Sincronizado)' : 'Modo Offline (Operación Local)'}
+                {isOnline ? 'Conexión Activa' : 'Modo Offline (Operación Local)'}
               </h3>
               <p className="text-xs text-stone-500">
                 {isOnline 
@@ -131,9 +140,14 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
                       <Clock className="w-2.5 h-2.5" />
                       <span>{new Date(it.timestamp).toLocaleTimeString('es-CR')}</span>
                     </span>
+                    {it.lastError && (
+                      <span className="block max-w-[280px] truncate text-[10px] text-red-600" title={it.lastError}>
+                        {it.lastError}
+                      </span>
+                    )}
                   </div>
-                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold shrink-0">
-                    Pendiente
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${it.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {it.status === 'FAILED' ? 'Error / reintento' : 'Pendiente'}
                   </span>
                 </div>
               ))
@@ -162,7 +176,7 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
               className="flex-1 sm:flex-initial px-4 py-2.5 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 disabled:opacity-40 flex items-center justify-center gap-1.5 transition-all shadow-xs"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-[#a9b994] ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Revisando cola...' : 'Preparar sincronización (Fase 3)'}</span>
+              <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar Ahora'}</span>
             </button>
           </div>
         </div>

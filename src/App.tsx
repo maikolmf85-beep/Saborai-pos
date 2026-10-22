@@ -593,6 +593,16 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!localDbReady) return;
+    const syncWhenOnline = () => {
+      if (localDB.isOnline()) void localDB.syncAllPending();
+    };
+    window.addEventListener('online', syncWhenOnline);
+    syncWhenOnline();
+    return () => window.removeEventListener('online', syncWhenOnline);
+  }, [localDbReady]);
+
   // IndexedDB es el respaldo del POS cuando localStorage fue limpiado o no está disponible.
   // Solo hidrata campos ausentes para no reemplazar cambios locales más recientes.
   useEffect(() => {
@@ -964,7 +974,8 @@ export function App() {
       localDB.enqueueOfflineAction(
         'UPDATE_TABLE',
         updatedTable,
-        `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`
+        `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`,
+        tenant.id
       );
     }
   };

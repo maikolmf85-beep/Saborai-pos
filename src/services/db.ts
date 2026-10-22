@@ -19,7 +19,12 @@ export interface OfflineSyncQueueItem {
   action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'PAYMENT';
   payload: any;
   timestamp: string;
+  tenantId?: string;
   synced: boolean;
+  status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
+  attemptCount?: number;
+  nextAttemptAt?: string;
+  lastError?: string;
   description: string;
 }
 
@@ -142,13 +147,17 @@ export class SaboraiLocalDB {
     });
   }
 
-  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string): Promise<void> {
+  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
+    const operationId = `sync_${Date.now()}_${crypto.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const item: OfflineSyncQueueItem = {
-      id: `sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      id: operationId,
       action,
       payload,
       timestamp: new Date().toISOString(),
+      tenantId: tenantId || (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') || undefined : undefined),
       synced: false,
+      status: 'PENDING',
+      attemptCount: 0,
       description: description || `Operación ${action} almacenada en memoria local`
     };
 
@@ -206,20 +215,86 @@ export class SaboraiLocalDB {
 
   async getPendingCount(): Promise<number> {
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
-    return all.filter(item => !item.synced).length;
+    return all.filter(item => item.status !== 'SYNCED' && !item.synced).length;
   }
 
   async getPendingItems(): Promise<OfflineSyncQueueItem[]> {
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
-    return all.filter(item => !item.synced);
+    return all
+      .filter(item => item.status !== 'SYNCED' && !item.synced)
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
 
-  async syncAllPending(): Promise<{ syncedCount: number }> {
+  private async updateQueueItem(item: OfflineSyncQueueItem): Promise<void> {
+    await this.saveItem('sync_queue', item);
+  }
+
+  private async markFailed(item: OfflineSyncQueueItem, message: string): Promise<void> {
+    const attemptCount = (item.attemptCount || 0) + 1;
+    const delayMs = Math.min(15 * 60 * 1000, 2 ** Math.min(attemptCount, 8) * 1000);
+    await this.updateQueueItem({
+      ...item,
+      status: 'FAILED',
+      synced: false,
+      attemptCount,
+      nextAttemptAt: new Date(Date.now() + delayMs).toISOString(),
+      lastError: message
+    });
+  }
+
+  async syncAllPending(): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
     const pending = await this.getPendingItems();
-    // La entrega al backend requiere idempotencia y pertenece a la fase 3.
-    // Nunca marcar operaciones como sincronizadas solo por estar online.
-    if (pending.length > 0) this.notify(this.isOnline(), pending.length);
-    return { syncedCount: 0 };
+    if (!this.isOnline() || pending.length === 0) {
+      return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
+    }
+
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
+    if (!token) {
+      for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada para sincronizar.');
+      const remainingCount = await this.getPendingCount();
+      this.notify(this.isOnline(), remainingCount);
+      return { syncedCount: 0, failedCount: pending.length, remainingCount };
+    }
+
+    let syncedCount = 0;
+    let failedCount = 0;
+    for (const originalItem of pending) {
+      if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
+
+      const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
+      await this.updateQueueItem(processingItem);
+      try {
+        const response = await fetch('/api/offline/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            operationId: processingItem.id,
+            tenantId: processingItem.tenantId,
+            action: processingItem.action,
+            payload: processingItem.payload,
+            occurredAt: processingItem.timestamp
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status}`);
+
+        await this.updateQueueItem({
+          ...processingItem,
+          status: 'SYNCED',
+          synced: true,
+          lastError: undefined,
+          nextAttemptAt: undefined
+        });
+        syncedCount += 1;
+      } catch (error: any) {
+        await this.markFailed(processingItem, error?.message || 'No se pudo sincronizar la operación.');
+        failedCount += 1;
+      }
+    }
+
+    const remainingCount = await this.getPendingCount();
+    this.notify(this.isOnline(), remainingCount);
+    return { syncedCount, failedCount, remainingCount };
   }
 }
 
