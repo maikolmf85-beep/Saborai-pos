@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 try {
   dotenv.config();
@@ -84,6 +85,20 @@ async function sendWhatsAppText(to: string, text: string): Promise<void> {
   }
 }
 
+function hasValidMetaSignature(req: VercelRequest): boolean {
+  const appSecret = process.env.META_APP_SECRET?.trim();
+  if (!appSecret) return true;
+
+  const signature = String(req.headers['x-hub-signature-256'] || '');
+  const rawBody = (req as VercelRequest & { rawBody?: Buffer }).rawBody;
+  if (!signature || !rawBody) return false;
+
+  const expected = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+  const providedBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
     const mode = String(req.query['hub.mode'] || '');
@@ -97,6 +112,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método no permitido.' });
+  }
+
+  if (!hasValidMetaSignature(req)) {
+    return res.status(401).json({ error: 'Firma de Meta inválida.' });
   }
 
   // Meta espera una respuesta rápida; el procesamiento continúa antes de cerrar
