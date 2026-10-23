@@ -1,5 +1,6 @@
 export type PrinterConnectionType = 'network' | 'usb' | 'bluetooth';
 export type PrinterRole = 'caja' | 'cocina' | 'bar';
+export type PrintDeliveryStatus = 'accepted' | 'confirmed' | 'unconfirmed' | 'failed';
 
 export interface PrinterConfig {
   id: string;
@@ -53,6 +54,12 @@ export interface PrintResult {
   success: boolean;
   printerId?: string;
   error?: string;
+  /** The transport accepted the bytes; this does not mean the paper was printed. */
+  accepted?: boolean;
+  /** True only when the relay explicitly confirms delivery to the printer. */
+  confirmed?: boolean;
+  deliveryStatus?: PrintDeliveryStatus;
+  warning?: string;
   /** True when the browser fallback needs an operator to verify the physical ticket. */
   confirmationRequired?: boolean;
   methodUsed?: 'network' | 'usb' | 'bluetooth' | 'relay' | 'silent-iframe';

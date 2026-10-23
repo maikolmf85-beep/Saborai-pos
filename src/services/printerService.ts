@@ -495,7 +495,18 @@ export class PrinterService {
       });
 
       if (response.ok) {
-        return { success: true, printerId: printer.id, methodUsed: 'relay' };
+        const confirmed = await this.hasRelayPrintConfirmation(response);
+        return {
+          success: true,
+          accepted: true,
+          confirmed,
+          deliveryStatus: confirmed ? 'confirmed' : 'accepted',
+          printerId: printer.id,
+          methodUsed: 'relay',
+          warning: confirmed
+            ? undefined
+            : 'El relay aceptó el trabajo, pero no devolvió confirmación de que la impresora terminó de procesarlo. Verifica el ticket.'
+        };
       }
     } catch {
       // El relay no está disponible; no cambiar silenciosamente de impresora.
@@ -503,9 +514,28 @@ export class PrinterService {
 
     return {
       success: false,
+      accepted: false,
+      confirmed: false,
+      deliveryStatus: 'failed',
       printerId: printer.id,
       error: `No se pudo conectar con la impresora de red "${printer.name}" en ${ip}:${port}. Se evitó enviarlo a la impresora predeterminada del navegador. Verifica que el relay local esté activo y que la impresora esté disponible.`
     };
+  }
+
+  /**
+   * Un HTTP 2xx solo confirma que el relay recibió la solicitud. La confirmación
+   * física debe venir explícitamente en el cuerpo del relay.
+   */
+  private async hasRelayPrintConfirmation(response: Response): Promise<boolean> {
+    try {
+      const payload = await response.clone().json() as Record<string, unknown>;
+      return payload.printed === true
+        || payload.delivered === true
+        || payload.status === 'printed'
+        || payload.status === 'delivered';
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -545,7 +575,15 @@ export class PrinterService {
 
         // @ts-ignore
         await device.transferOut(endpointNumber, rawData);
-        return { success: true, printerId: printer.id, methodUsed: 'usb' };
+        return {
+          success: true,
+          accepted: true,
+          confirmed: false,
+          deliveryStatus: 'accepted',
+          printerId: printer.id,
+          methodUsed: 'usb',
+          warning: 'USB aceptó los bytes, pero no devuelve confirmación de que la impresora terminó de imprimir. Verifica el ticket.'
+        };
       }
 
       // Si no hay permiso WebUSB aún, abrir el fallback sin confirmar éxito.
@@ -559,6 +597,9 @@ export class PrinterService {
       } catch (fallbackError: any) {
         return {
           success: false,
+          accepted: false,
+          confirmed: false,
+          deliveryStatus: 'failed',
           printerId: printer.id,
           methodUsed: 'silent-iframe',
           error: fallbackError.message || err.message || 'No se pudo imprimir por USB.'
@@ -607,7 +648,15 @@ export class PrinterService {
               await writeChar.writeValue(chunk);
             }
           }
-          return { success: true, printerId: printer.id, methodUsed: 'bluetooth' };
+          return {
+            success: true,
+            accepted: true,
+            confirmed: false,
+            deliveryStatus: 'accepted',
+            printerId: printer.id,
+            methodUsed: 'bluetooth',
+            warning: 'Bluetooth aceptó los bytes, pero no devuelve confirmación de que la impresora terminó de imprimir. Verifica el ticket.'
+          };
         }
       }
 
@@ -622,6 +671,9 @@ export class PrinterService {
       } catch (fallbackError: any) {
         return {
           success: false,
+          accepted: false,
+          confirmed: false,
+          deliveryStatus: 'failed',
           printerId: printer.id,
           methodUsed: 'silent-iframe',
           error: fallbackError.message || err.message || 'No se pudo imprimir por Bluetooth.'
@@ -638,6 +690,9 @@ export class PrinterService {
   private unconfirmedBrowserPrintResult(printer: PrinterConfig, triggered: boolean): PrintResult {
     return {
       success: false,
+      accepted: false,
+      confirmed: false,
+      deliveryStatus: 'unconfirmed',
       printerId: printer.id,
       methodUsed: 'silent-iframe',
       confirmationRequired: true,

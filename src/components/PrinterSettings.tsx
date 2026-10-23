@@ -193,8 +193,10 @@ export const PrinterSettings: React.FC = () => {
       setTestResult({
         id: printer.id,
         success: res.success,
-        message: res.success 
-          ? `¡Ticket de prueba enviado exitosamente vía ${res.methodUsed?.toUpperCase()}!` 
+        message: res.success
+          ? res.confirmed
+            ? `¡Ticket de prueba confirmado por la impresora vía ${res.methodUsed?.toUpperCase()}!`
+            : (res.warning || `Solicitud aceptada vía ${res.methodUsed?.toUpperCase()}, pero la impresión física aún no está confirmada. Verifica el ticket.`)
           : (res.error || 'Error al enviar a la impresora')
       });
     } catch (err: any) {
