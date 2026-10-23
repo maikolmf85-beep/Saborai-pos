@@ -452,7 +452,7 @@ export class PrinterService {
 
     // 1. Red (Network / Ethernet / Wi-Fi)
     if (printer.connectionType === 'network') {
-      return this.printNetwork(printer, rawEscPos, receiptData);
+      return this.printNetwork(printer, rawEscPos);
     }
 
     // 2. USB (WebUSB nativo o Bridge)
@@ -470,11 +470,12 @@ export class PrinterService {
 
   /**
    * Impresión por Red / Ethernet / IP
-   * Intenta enviar el socket o ePOS HTTP directo. Si el navegador bloquea sockets TCP raw por CORS/seguridad,
-   * envía la carga útil a la pasarela local SaborAI Print Relay (http://127.0.0.1:8080/print)
-   * o abre el diálogo de impresión del navegador como fallback no confirmable.
+   * Envía la carga útil a la pasarela local SaborAI Print Relay
+   * (http://127.0.0.1:8080/print). Si la pasarela no está disponible, falla de forma
+   * explícita: nunca se debe enviar una comanda IP a la impresora predeterminada
+   * del navegador.
    */
-  private async printNetwork(printer: PrinterConfig, rawData: Uint8Array, fallbackData: PrintReceiptData): Promise<PrintResult> {
+  private async printNetwork(printer: PrinterConfig, rawData: Uint8Array): Promise<PrintResult> {
     const ip = printer.ipAddress || '192.168.1.200';
     const port = printer.port || 9100;
 
@@ -497,21 +498,14 @@ export class PrinterService {
         return { success: true, printerId: printer.id, methodUsed: 'relay' };
       }
     } catch {
-      // Print relay no disponible, intentar ePOS Epson / Star directo por HTTP
+      // El relay no está disponible; no cambiar silenciosamente de impresora.
     }
 
-    // Intento 2: Fallback del navegador. La aplicación no puede confirmar el resultado.
-    try {
-      const triggered = await this.printSilentIframe(fallbackData, printer);
-      return this.unconfirmedBrowserPrintResult(printer, triggered);
-    } catch (err: any) {
-      return {
-        success: false,
-        printerId: printer.id,
-        methodUsed: 'silent-iframe',
-        error: err.message || 'No se pudo abrir el fallback de impresión del navegador.'
-      };
-    }
+    return {
+      success: false,
+      printerId: printer.id,
+      error: `No se pudo conectar con la impresora de red "${printer.name}" en ${ip}:${port}. Se evitó enviarlo a la impresora predeterminada del navegador. Verifica que el relay local esté activo y que la impresora esté disponible.`
+    };
   }
 
   /**
@@ -844,7 +838,7 @@ export class PrinterService {
           const result = await this.printBluetooth(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
           anySuccess = anySuccess || result.success;
         } else if (printer.connectionType === 'network') {
-          const result = await this.printNetwork(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          const result = await this.printNetwork(printer, rawBytes);
           anySuccess = anySuccess || result.success;
         }
       } catch (err) {
