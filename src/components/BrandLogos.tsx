@@ -12,6 +12,7 @@ export const BrandLogo: React.FC<LogoProps> = ({
   size = 'md' 
 }) => {
   const logoUrl = '/assets/logos/saborai-logo.png';
+  const fullLogoUrl = '/assets/logos/Saborailogocompletoprincipal.png';
 
   const iconSizes = {
     sm: 'w-8 h-8',
@@ -70,7 +71,26 @@ export const BrandLogo: React.FC<LogoProps> = ({
     );
   }
 
-  // 3. Full / Wordmark (Icono oficial + Tipografía SaborAI POS en línea)
+  // 3. Full / Wordmark: logotipo completo entregado por la marca.
+  if (variant === 'full' || variant === 'wordmark') {
+    const fullLogoSizes = {
+      sm: 'w-32 sm:w-40',
+      md: 'w-44 sm:w-56',
+      lg: 'w-56 sm:w-72',
+      xl: 'w-72 sm:w-96'
+    };
+
+    return (
+      <img
+        src={fullLogoUrl}
+        alt="SaborAI POS"
+        className={`${fullLogoSizes[size]} h-auto max-w-full object-contain select-none ${className}`}
+        loading="eager"
+      />
+    );
+  }
+
+  // 4. Fallback compacto para variantes no horizontales.
   return (
     <div className={`inline-flex items-center select-none gap-2.5 ${className}`}>
       <div className={`relative flex items-center justify-center ${iconSizes[size]} shrink-0`}>
