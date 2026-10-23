@@ -389,7 +389,7 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
         <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-[#a9b994]/8 rounded-full blur-3xl pointer-events-none" />
 
         <div className="mb-10 p-3 rounded-2xl bg-white/8 border border-white/15 backdrop-blur-sm">
-          <BrandLogo variant="full" size="lg" />
+          <BrandLogo variant="full" size="lg" tone="light" />
         </div>
 
         <h1 className="text-3xl sm:text-5xl font-black text-white text-center mb-4 tracking-tight leading-tight">

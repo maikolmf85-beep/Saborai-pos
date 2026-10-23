@@ -4,15 +4,18 @@ interface LogoProps {
   className?: string;
   variant?: 'full' | 'wordmark' | 'stacked' | 'isotype';
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  tone?: 'default' | 'light';
 }
 
 export const BrandLogo: React.FC<LogoProps> = ({ 
   className = '', 
   variant = 'full',
-  size = 'md' 
+  size = 'md',
+  tone = 'default'
 }) => {
   const logoUrl = '/assets/logos/saborai-logo.png';
   const fullLogoUrl = '/assets/logos/Saborailogocompletoprincipal.png';
+  const lightLogoUrl = '/assets/logos/Saborai_logo_claro.png';
 
   const iconSizes = {
     sm: 'w-8 h-8',
@@ -82,7 +85,7 @@ export const BrandLogo: React.FC<LogoProps> = ({
 
     return (
       <img
-        src={fullLogoUrl}
+        src={tone === 'light' ? lightLogoUrl : fullLogoUrl}
         alt="SaborAI POS"
         className={`${fullLogoSizes[size]} h-auto max-w-full object-contain select-none ${className}`}
         loading="eager"
