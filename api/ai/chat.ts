@@ -216,7 +216,7 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
                 role: 'user',
                 parts: [{ text: `${systemInstruction}\n\n${fullPrompt}` }]
               }],
-              config: { tools: nyzaUITools }
+              config: { tools: nyzaUITools as any }
             });
 
             const rawText = response.text || '';

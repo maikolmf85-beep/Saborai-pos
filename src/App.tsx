@@ -38,7 +38,7 @@ import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
-import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat } from 'lucide-react';
+import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat, MessageCircle } from 'lucide-react';
 
 function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null {
   const scopedTenant = getTenantItem<TenantInfo>('tenant_profile', tenantId);
@@ -1787,6 +1787,19 @@ export function App() {
         isMuted={isMuted}
         onToggleMute={handleToggleMute}
       />
+
+      {import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER && (
+        <a
+          href={`https://wa.me/${String(import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER).replace(/\D/g, '')}?text=${encodeURIComponent('Hola, necesito soporte con Saborai POS.')}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Abrir soporte de Saborai por WhatsApp"
+          className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 flex items-center gap-2 rounded-full bg-[#25D366] px-4 py-3 text-sm font-bold text-white shadow-xl shadow-emerald-900/25 transition-transform hover:scale-105 hover:bg-[#20bd5a]"
+        >
+          <MessageCircle className="h-5 w-5" />
+          <span className="hidden sm:inline">Soporte por WhatsApp</span>
+        </a>
+      )}
 
     </div>
   );
