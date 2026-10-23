@@ -993,6 +993,15 @@ export function App() {
     await localDB.toggleSimulatedOffline();
   };
 
+  const publicPath = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (publicPath === '/privacy-policy' || publicPath === '/terms-of-service') {
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#fcfeff] text-[#588157]">Cargando...</div>}>
+        <LegalPage document={publicPath === '/privacy-policy' ? 'privacy' : 'terms'} />
+      </Suspense>
+    );
+  }
+
   // If LANDING domain, completely bypass auth and POS UI
   if (appDomain === 'LANDING') {
     return (
@@ -1027,15 +1036,6 @@ export function App() {
             onOpenNotion={() => setIsNotionModalOpen(true)}
           />
         </div>
-      </Suspense>
-    );
-  }
-
-  const publicPath = window.location.pathname.replace(/\/+$/, '') || '/';
-  if (publicPath === '/privacy-policy' || publicPath === '/terms-of-service') {
-    return (
-      <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#fcfeff] text-[#588157]">Cargando...</div>}>
-        <LegalPage document={publicPath === '/privacy-policy' ? 'privacy' : 'terms'} />
       </Suspense>
     );
   }
