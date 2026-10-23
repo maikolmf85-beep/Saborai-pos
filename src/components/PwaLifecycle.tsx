@@ -7,6 +7,9 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function PwaLifecycle() {
+  const isPosHost = window.location.hostname === 'pos.saborai.site'
+    || window.location.hostname === 'localhost'
+    || window.location.hostname === '127.0.0.1';
   const [updateReady, setUpdateReady] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [offlineReady, setOfflineReady] = useState(false);
@@ -14,6 +17,8 @@ export function PwaLifecycle() {
   const updateServiceWorker = useRef<((reloadPage?: boolean) => Promise<void>) | null>(null);
 
   useEffect(() => {
+    if (!isPosHost) return;
+
     updateServiceWorker.current = registerSW({
       immediate: true,
       onNeedRefresh() {
@@ -34,7 +39,7 @@ export function PwaLifecycle() {
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-  }, []);
+  }, [isPosHost]);
 
   const update = async () => {
     if (!updateServiceWorker.current || isUpdating) return;
@@ -55,6 +60,8 @@ export function PwaLifecycle() {
     await installEvent.userChoice;
     setInstallEvent(null);
   };
+
+  if (!isPosHost) return null;
 
   return (
     <>
