@@ -28,9 +28,14 @@ function apiDevPlugin(): Plugin {
           targetModule = '/api/admin/metrics.ts';
         } else if (cleanPath === '/api/offline/sync') {
           targetModule = '/api/offline/sync.ts';
+        } else if (cleanPath === '/api/whatsapp/webhook') {
+          targetModule = '/api/whatsapp/webhook.ts';
         }
 
         if (targetModule) {
+          const requestUrl = new URL(req.url || '/', 'http://localhost');
+          (req as any).query = Object.fromEntries(requestUrl.searchParams.entries());
+
           if (req.method === 'OPTIONS') {
             res.statusCode = 200;
             res.setHeader('Access-Control-Allow-Origin', '*');
@@ -43,6 +48,7 @@ function apiDevPlugin(): Plugin {
           let rawBody = '';
           req.on('data', chunk => { rawBody += chunk; });
           req.on('end', async () => {
+            (req as any).rawBody = Buffer.from(rawBody);
             try {
               (req as any).body = rawBody ? JSON.parse(rawBody) : {};
             } catch {
@@ -63,6 +69,7 @@ function apiDevPlugin(): Plugin {
                   res.end(JSON.stringify(data));
                   return resAdapter;
                 },
+                send: (data: any) => res.end(data),
                 end: (data?: any) => res.end(data)
               };
 
