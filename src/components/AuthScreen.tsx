@@ -187,7 +187,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
       
       {/* Top Brand Bar */}
       <div className="max-w-6xl w-full mx-auto flex items-center justify-between">
-        <BrandLogo variant="wordmark" size="md" />
+        <BrandLogo variant="wordmark" size="md" tone="mono" />
         <div className="flex items-center gap-2 text-xs text-stone-500 font-medium">
           <ShieldCheck className="w-4 h-4 text-[#588157]" />
           <span>Acceso Seguro POS Costa Rica</span>

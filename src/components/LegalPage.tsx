@@ -28,7 +28,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ document }) => {
       <header className="border-b border-[#a9b994]/25 bg-white/90 px-4 py-4 backdrop-blur sm:px-8">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <a href="/" aria-label="Volver al inicio de Saborai">
-            <BrandLogo variant="full" size="sm" />
+            <BrandLogo variant="full" size="sm" tone="mono" />
           </a>
           <a href="/" className="inline-flex items-center gap-2 rounded-full border border-[#a9b994]/50 px-4 py-2 text-xs font-bold text-[#588157] transition-colors hover:bg-[#f4f7f0]">
             <ArrowLeft className="h-4 w-4" /> Volver a Saborai
