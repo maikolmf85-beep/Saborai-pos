@@ -20,7 +20,7 @@ export function PwaLifecycle() {
       onOfflineReady() {
         setOfflineReady(true);
       },
-      onRegisterError(error) {
+      onRegisterError(error: unknown) {
         console.warn('[SaborAI] No se pudo registrar el Service Worker:', error);
       }
     });

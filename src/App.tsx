@@ -25,6 +25,7 @@ const ReportsDashboard = lazy(() => import('./components/ReportsDashboard').then
 const WelcomeGate = lazy(() => import('./components/WelcomeGate').then(m => ({ default: m.WelcomeGate })));
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then(m => ({ default: m.ResetPasswordScreen })));
 const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ default: m.GuidedTour })));
+const LegalPage = lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 import { cashShiftService } from './services/cashShiftService';
 import { printerService } from './services/printerService';
 import { nyzaUIAgent } from './services/nyzaUIAgent';
@@ -1026,6 +1027,15 @@ export function App() {
             onOpenNotion={() => setIsNotionModalOpen(true)}
           />
         </div>
+      </Suspense>
+    );
+  }
+
+  const publicPath = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (publicPath === '/privacy-policy' || publicPath === '/terms-of-service') {
+    return (
+      <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#fcfeff] text-[#588157]">Cargando...</div>}>
+        <LegalPage document={publicPath === '/privacy-policy' ? 'privacy' : 'terms'} />
       </Suspense>
     );
   }

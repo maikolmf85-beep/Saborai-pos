@@ -819,6 +819,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       <footer className="py-12 bg-[#fcfeff] border-t border-[#a9b994]/20 text-center text-sm text-[#6b686d]">
         <BrandLogo variant="full" size="sm" />
         <p className="mt-4 max-w-md mx-auto">Software de Punto de Venta con IA para Restaurantes en Costa Rica. Facturación Hacienda y Tilopay Integrado.</p>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-bold text-[#588157]">
+          <a href="/privacy-policy" className="hover:underline">Política de Privacidad</a>
+          <a href="/terms-of-service" className="hover:underline">Condiciones de Servicio</a>
+        </div>
         <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
       </footer>
       
