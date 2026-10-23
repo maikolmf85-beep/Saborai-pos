@@ -177,9 +177,18 @@ export class PrinterService {
   private usbDeviceCache: Map<string, USBDevice> = new Map();
   // Conexiones activas WebBluetooth
   private bluetoothDeviceCache: Map<string, BluetoothDevice> = new Map();
+  // Deduplicación de solicitudes concurrentes por impresora y trabajo lógico.
+  private inFlightPrints: Map<string, Promise<PrintResult>> = new Map();
 
   constructor() {
     this.printers = [];
+  }
+
+  private createPrintJobId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `print_${crypto.randomUUID()}`;
+    }
+    return `print_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   }
 
   public setTenantContext(tenantId: string): void {
@@ -444,15 +453,32 @@ export class PrinterService {
    * Enviar a imprimir directamente a través de una impresora configurada
    */
   public async printToConfig(printer: PrinterConfig, receiptData: PrintReceiptData): Promise<PrintResult> {
+    const printJobId = receiptData.printJobId || this.createPrintJobId();
+    const printData = { ...receiptData, printJobId };
+    const requestKey = `${printer.id}:${printJobId}`;
+    const inFlight = this.inFlightPrints.get(requestKey);
+    if (inFlight) return inFlight;
+
+    const request = this.printToConfigInternal(printer, printData);
+    this.inFlightPrints.set(requestKey, request);
+    void request.finally(() => {
+      if (this.inFlightPrints.get(requestKey) === request) {
+        this.inFlightPrints.delete(requestKey);
+      }
+    }).catch(() => {});
+    return request;
+  }
+
+  private async printToConfigInternal(printer: PrinterConfig, receiptData: PrintReceiptData): Promise<PrintResult> {
     if (!printer.enabled) {
-      return { success: false, error: 'La impresora está deshabilitada en la configuración.' };
+      return { success: false, printJobId: receiptData.printJobId, error: 'La impresora está deshabilitada en la configuración.' };
     }
 
     const rawEscPos = this.buildReceiptEscPos(receiptData, printer);
 
     // 1. Red (Network / Ethernet / Wi-Fi)
     if (printer.connectionType === 'network') {
-      return this.printNetwork(printer, rawEscPos);
+      return this.printNetwork(printer, rawEscPos, receiptData.printJobId!);
     }
 
     // 2. USB (WebUSB nativo o Bridge)
@@ -465,7 +491,7 @@ export class PrinterService {
       return this.printBluetooth(printer, rawEscPos, receiptData);
     }
 
-    return { success: false, error: 'Tipo de conexión no reconocido.' };
+    return { success: false, printJobId: receiptData.printJobId, error: 'Tipo de conexión no reconocido.' };
   }
 
   /**
@@ -475,9 +501,10 @@ export class PrinterService {
    * explícita: nunca se debe enviar una comanda IP a la impresora predeterminada
    * del navegador.
    */
-  private async printNetwork(printer: PrinterConfig, rawData: Uint8Array): Promise<PrintResult> {
+  private async printNetwork(printer: PrinterConfig, rawData: Uint8Array, printJobId: string): Promise<PrintResult> {
     const ip = printer.ipAddress || '192.168.1.200';
     const port = printer.port || 9100;
+    const attempt = 1;
 
     // Intento 1: Saborai Print Relay local / bridge ePOS
     try {
@@ -488,6 +515,9 @@ export class PrinterService {
         body: JSON.stringify({
           ip,
           port,
+          printJobId,
+          idempotencyKey: `${printJobId}:${printer.id}`,
+          attempt,
           data: base64Data,
           paperWidth: printer.paperWidth
         }),
@@ -498,6 +528,8 @@ export class PrinterService {
         const confirmed = await this.hasRelayPrintConfirmation(response);
         return {
           success: true,
+          printJobId,
+          attempt,
           accepted: true,
           confirmed,
           deliveryStatus: confirmed ? 'confirmed' : 'accepted',
@@ -514,6 +546,8 @@ export class PrinterService {
 
     return {
       success: false,
+      printJobId,
+      attempt,
       accepted: false,
       confirmed: false,
       deliveryStatus: 'failed',
@@ -577,6 +611,7 @@ export class PrinterService {
         await device.transferOut(endpointNumber, rawData);
         return {
           success: true,
+          printJobId: fallbackData.printJobId,
           accepted: true,
           confirmed: false,
           deliveryStatus: 'accepted',
@@ -588,15 +623,16 @@ export class PrinterService {
 
       // Si no hay permiso WebUSB aún, abrir el fallback sin confirmar éxito.
       const triggered = await this.printSilentIframe(fallbackData, printer);
-      return this.unconfirmedBrowserPrintResult(printer, triggered);
+      return this.unconfirmedBrowserPrintResult(printer, triggered, fallbackData.printJobId);
     } catch (err: any) {
-      // Fallback sin confirmar que el ticket fue impreso.
+      // Fallback USB sin confirmar que el ticket fue impreso.
       try {
         const triggered = await this.printSilentIframe(fallbackData, printer);
-        return this.unconfirmedBrowserPrintResult(printer, triggered);
+        return this.unconfirmedBrowserPrintResult(printer, triggered, fallbackData.printJobId);
       } catch (fallbackError: any) {
         return {
           success: false,
+          printJobId: fallbackData.printJobId,
           accepted: false,
           confirmed: false,
           deliveryStatus: 'failed',
@@ -650,6 +686,7 @@ export class PrinterService {
           }
           return {
             success: true,
+            printJobId: fallbackData.printJobId,
             accepted: true,
             confirmed: false,
             deliveryStatus: 'accepted',
@@ -660,17 +697,18 @@ export class PrinterService {
         }
       }
 
-      // Fallback del navegador sin confirmar que el ticket fue impreso.
+      // Fallback Bluetooth sin confirmar que el ticket fue impreso.
       const triggered = await this.printSilentIframe(fallbackData, printer);
-      return this.unconfirmedBrowserPrintResult(printer, triggered);
+      return this.unconfirmedBrowserPrintResult(printer, triggered, fallbackData.printJobId);
     } catch (err: any) {
-      // Fallback sin confirmar que el ticket fue impreso.
+      // Fallback Bluetooth sin confirmar que el ticket fue impreso.
       try {
         const triggered = await this.printSilentIframe(fallbackData, printer);
-        return this.unconfirmedBrowserPrintResult(printer, triggered);
+        return this.unconfirmedBrowserPrintResult(printer, triggered, fallbackData.printJobId);
       } catch (fallbackError: any) {
         return {
           success: false,
+          printJobId: fallbackData.printJobId,
           accepted: false,
           confirmed: false,
           deliveryStatus: 'failed',
@@ -687,9 +725,10 @@ export class PrinterService {
    * usuario imprimió el ticket. Por eso este resultado siempre es un fallo no
    * confirmado y debe mostrarse como tal en caja.
    */
-  private unconfirmedBrowserPrintResult(printer: PrinterConfig, triggered: boolean): PrintResult {
+  private unconfirmedBrowserPrintResult(printer: PrinterConfig, triggered: boolean, printJobId?: string): PrintResult {
     return {
       success: false,
+      printJobId,
       accepted: false,
       confirmed: false,
       deliveryStatus: 'unconfirmed',
@@ -882,6 +921,7 @@ export class PrinterService {
     const builder = new EscPosBuilder();
     builder.openCashDrawer();
     const rawBytes = builder.build();
+    const printJobId = this.createPrintJobId();
 
     let anySuccess = false;
     for (const printer of targetPrinters) {
@@ -893,7 +933,7 @@ export class PrinterService {
           const result = await this.printBluetooth(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
           anySuccess = anySuccess || result.success;
         } else if (printer.connectionType === 'network') {
-          const result = await this.printNetwork(printer, rawBytes);
+          const result = await this.printNetwork(printer, rawBytes, `${printJobId}:${printer.id}`);
           anySuccess = anySuccess || result.success;
         }
       } catch (err) {
@@ -908,6 +948,7 @@ export class PrinterService {
    * Envío térmico formateado de comanda a Cocina y Bar
    */
   public async printKitchenBarOrder(order: {
+    printJobId?: string;
     orderNumber: string;
     tableName: string;
     server: string;
@@ -917,10 +958,12 @@ export class PrinterService {
     const kitchenItems = order.items.filter(i => i.station === 'Cocina' || i.category === 'Cocina' || (!i.station && i.category !== 'Bar'));
     const barItems = order.items.filter(i => i.station === 'Bar' || i.category === 'Bar');
     const nowTime = order.date || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const printJobId = order.printJobId || this.createPrintJobId();
 
     if (kitchenItems.length > 0) {
       await this.printToRole('cocina', {
         title: '*** COMANDA COCINA ***',
+        printJobId: `${printJobId}:cocina`,
         orderNumber: order.orderNumber,
         tableName: order.tableName,
         waiterName: order.server,
@@ -932,6 +975,7 @@ export class PrinterService {
     if (barItems.length > 0) {
       await this.printToRole('bar', {
         title: '*** COMANDA BAR ***',
+        printJobId: `${printJobId}:bar`,
         orderNumber: order.orderNumber,
         tableName: order.tableName,
         waiterName: order.server,

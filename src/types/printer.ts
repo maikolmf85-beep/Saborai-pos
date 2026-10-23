@@ -22,6 +22,8 @@ export interface PrinterConfig {
 }
 
 export interface PrintReceiptData {
+  /** Stable idempotency key for one logical print job. */
+  printJobId?: string;
   title?: string;
   subtitle?: string;
   orderNumber?: string | number;
@@ -52,6 +54,8 @@ export interface PrintReceiptData {
 
 export interface PrintResult {
   success: boolean;
+  printJobId?: string;
+  attempt?: number;
   printerId?: string;
   error?: string;
   /** The transport accepted the bytes; this does not mean the paper was printed. */

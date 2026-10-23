@@ -443,6 +443,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     // Thermal printing (80mm/58mm) to kitchen and bar printers
     try {
       printerService.printKitchenBarOrder({
+        printJobId: `order_${updatedTable.activeOrder?.orderNumber || 'ORD-001'}_${Date.now()}`,
         tableName: table.name,
         orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
         server: updatedTable.activeOrder?.server || 'Mesero General',
