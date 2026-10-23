@@ -13,7 +13,7 @@ export const BrandLogo: React.FC<LogoProps> = ({
   size = 'md',
   tone = 'default'
 }) => {
-  const logoUrl = '/assets/logos/saborai-logo.png';
+  const logoUrl = '/assets/logos/Saborai_icono_app.png';
   const fullLogoUrl = '/assets/logos/Saborailogocompletoprincipal.png';
   const lightLogoUrl = '/assets/logos/Saborai_logo_claro.png';
 
