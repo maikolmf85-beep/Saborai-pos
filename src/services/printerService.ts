@@ -472,7 +472,7 @@ export class PrinterService {
    * Impresión por Red / Ethernet / IP
    * Intenta enviar el socket o ePOS HTTP directo. Si el navegador bloquea sockets TCP raw por CORS/seguridad,
    * envía la carga útil a la pasarela local SaborAI Print Relay (http://127.0.0.1:8080/print)
-   * o realiza un silencioso fallback.
+   * o abre el diálogo de impresión del navegador como fallback no confirmable.
    */
   private async printNetwork(printer: PrinterConfig, rawData: Uint8Array, fallbackData: PrintReceiptData): Promise<PrintResult> {
     const ip = printer.ipAddress || '192.168.1.200';
@@ -500,12 +500,17 @@ export class PrinterService {
       // Print relay no disponible, intentar ePOS Epson / Star directo por HTTP
     }
 
-    // Intento 2: Impresión silenciosa por iFrame invisible (zero-dialogs)
+    // Intento 2: Fallback del navegador. La aplicación no puede confirmar el resultado.
     try {
-      await this.printSilentIframe(fallbackData, printer);
-      return { success: true, printerId: printer.id, methodUsed: 'silent-iframe' };
+      const triggered = await this.printSilentIframe(fallbackData, printer);
+      return this.unconfirmedBrowserPrintResult(printer, triggered);
     } catch (err: any) {
-      return { success: false, error: err.message || 'Error en impresión de red' };
+      return {
+        success: false,
+        printerId: printer.id,
+        methodUsed: 'silent-iframe',
+        error: err.message || 'No se pudo abrir el fallback de impresión del navegador.'
+      };
     }
   }
 
@@ -549,13 +554,22 @@ export class PrinterService {
         return { success: true, printerId: printer.id, methodUsed: 'usb' };
       }
 
-      // Si no hay permiso WebUSB aún, fallback a iFrame silencioso
-      await this.printSilentIframe(fallbackData, printer);
-      return { success: true, printerId: printer.id, methodUsed: 'silent-iframe' };
+      // Si no hay permiso WebUSB aún, abrir el fallback sin confirmar éxito.
+      const triggered = await this.printSilentIframe(fallbackData, printer);
+      return this.unconfirmedBrowserPrintResult(printer, triggered);
     } catch (err: any) {
-      // Fallback
-      await this.printSilentIframe(fallbackData, printer);
-      return { success: true, printerId: printer.id, methodUsed: 'silent-iframe' };
+      // Fallback sin confirmar que el ticket fue impreso.
+      try {
+        const triggered = await this.printSilentIframe(fallbackData, printer);
+        return this.unconfirmedBrowserPrintResult(printer, triggered);
+      } catch (fallbackError: any) {
+        return {
+          success: false,
+          printerId: printer.id,
+          methodUsed: 'silent-iframe',
+          error: fallbackError.message || err.message || 'No se pudo imprimir por USB.'
+        };
+      }
     }
   }
 
@@ -603,14 +617,40 @@ export class PrinterService {
         }
       }
 
-      // Fallback a iframe silencioso
-      await this.printSilentIframe(fallbackData, printer);
-      return { success: true, printerId: printer.id, methodUsed: 'silent-iframe' };
+      // Fallback del navegador sin confirmar que el ticket fue impreso.
+      const triggered = await this.printSilentIframe(fallbackData, printer);
+      return this.unconfirmedBrowserPrintResult(printer, triggered);
     } catch (err: any) {
-      // Fallback
-      await this.printSilentIframe(fallbackData, printer);
-      return { success: true, printerId: printer.id, methodUsed: 'silent-iframe' };
+      // Fallback sin confirmar que el ticket fue impreso.
+      try {
+        const triggered = await this.printSilentIframe(fallbackData, printer);
+        return this.unconfirmedBrowserPrintResult(printer, triggered);
+      } catch (fallbackError: any) {
+        return {
+          success: false,
+          printerId: printer.id,
+          methodUsed: 'silent-iframe',
+          error: fallbackError.message || err.message || 'No se pudo imprimir por Bluetooth.'
+        };
+      }
     }
+  }
+
+  /**
+   * El navegador puede abrir el diálogo, pero no expone una confirmación de que el
+   * usuario imprimió el ticket. Por eso este resultado siempre es un fallo no
+   * confirmado y debe mostrarse como tal en caja.
+   */
+  private unconfirmedBrowserPrintResult(printer: PrinterConfig, triggered: boolean): PrintResult {
+    return {
+      success: false,
+      printerId: printer.id,
+      methodUsed: 'silent-iframe',
+      confirmationRequired: true,
+      error: triggered
+        ? 'Se abrió el fallback de impresión del navegador, pero SaborAI no puede confirmar que el ticket fue impreso. Verifica el ticket antes de continuar.'
+        : 'No se pudo abrir el fallback de impresión del navegador.'
+    };
   }
 
   /**
@@ -710,10 +750,11 @@ export class PrinterService {
   }
 
   /**
-   * Impresión silenciosa en segundo plano utilizando iFrame invisible.
-   * Evita interferir con la navegación del usuario.
+   * Solicita una impresión mediante un iFrame invisible.
+   * Devuelve true únicamente si se pudo invocar window.print(); esto no confirma
+   * que el usuario haya aceptado el diálogo ni que la impresora haya procesado el ticket.
    */
-  public async printSilentIframe(data: PrintReceiptData, config: PrinterConfig): Promise<void> {
+  public async printSilentIframe(data: PrintReceiptData, config: PrinterConfig): Promise<boolean> {
     return new Promise((resolve) => {
       const iframeId = 'saborai_silent_print_frame';
       let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
@@ -733,7 +774,7 @@ export class PrinterService {
 
       const doc = iframe.contentWindow?.document || iframe.contentDocument;
       if (!doc) {
-        resolve();
+        resolve(false);
         return;
       }
 
@@ -746,10 +787,11 @@ export class PrinterService {
         try {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
+          resolve(true);
         } catch (e) {
           console.warn('Silent print invocation error:', e);
+          resolve(false);
         }
-        resolve();
       }, 250);
     });
   }
@@ -796,14 +838,14 @@ export class PrinterService {
     for (const printer of targetPrinters) {
       try {
         if (printer.connectionType === 'usb') {
-          await this.printUsb(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
-          anySuccess = true;
+          const result = await this.printUsb(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = anySuccess || result.success;
         } else if (printer.connectionType === 'bluetooth') {
-          await this.printBluetooth(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
-          anySuccess = true;
+          const result = await this.printBluetooth(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = anySuccess || result.success;
         } else if (printer.connectionType === 'network') {
-          await this.printNetwork(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
-          anySuccess = true;
+          const result = await this.printNetwork(printer, rawBytes, { title: 'APERTURA_CAJON', items: [] });
+          anySuccess = anySuccess || result.success;
         }
       } catch (err) {
         console.warn(`Error al abrir gaveta en "${printer.name}":`, err);

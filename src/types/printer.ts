@@ -53,5 +53,7 @@ export interface PrintResult {
   success: boolean;
   printerId?: string;
   error?: string;
+  /** True when the browser fallback needs an operator to verify the physical ticket. */
+  confirmationRequired?: boolean;
   methodUsed?: 'network' | 'usb' | 'bluetooth' | 'relay' | 'silent-iframe';
 }
