@@ -93,6 +93,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await linkLegacyUserToAuth(user.id, email, password);
       }
 
+      const supabaseLogin = await supabase.auth.signInWithPassword({
+        email: email.toLowerCase(),
+        password
+      });
+
       // 3. Fetch related tenant and subscription
       const { data: tenant } = await supabase
         .from('tenants')
@@ -113,6 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         token,
+        supabaseSession: supabaseLogin.data.session || null,
         user,
         tenant,
         subscription
@@ -167,6 +173,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       await linkLegacyUserToAuth(newUser.id, newUser.email, password);
 
+      const supabaseRegister = await supabase.auth.signInWithPassword({
+        email: newUser.email,
+        password
+      });
+
       // 4. Create tenant
       const { data: newTenant, error: tenantError } = await supabase
         .from('tenants')
@@ -213,6 +224,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         token,
+        supabaseSession: supabaseRegister.data.session || null,
         user: newUser,
         tenant: newTenant,
         subscription: newSubscription

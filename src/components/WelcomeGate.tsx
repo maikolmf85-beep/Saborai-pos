@@ -8,6 +8,7 @@ import { tilopayService } from '../services/tilopayService';
 import { UserProfile, TenantInfo } from '../types';
 import { notionService } from '../services/notionService';
 import { startCleanDemoSession } from '../services/tenantStorage';
+import { supabaseClient } from '../lib/supabaseClient';
 
 export interface SaboraiSubscription {
   mode: 'DEMO' | 'TRIAL' | 'ACTIVE';
@@ -161,6 +162,12 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
             }
             
             localStorage.setItem('saborai_token', regData.token);
+            if (supabaseClient && regData.supabaseSession?.access_token && regData.supabaseSession?.refresh_token) {
+              await supabaseClient.auth.setSession({
+                access_token: regData.supabaseSession.access_token,
+                refresh_token: regData.supabaseSession.refresh_token
+              });
+            }
             localStorage.removeItem('saborai_user');
             localStorage.removeItem('saborai_tenant');
             
@@ -328,6 +335,12 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
 
       // Credenciales correctas ✅
       localStorage.setItem('saborai_token', data.token);
+      if (supabaseClient && data.supabaseSession?.access_token && data.supabaseSession?.refresh_token) {
+        await supabaseClient.auth.setSession({
+          access_token: data.supabaseSession.access_token,
+          refresh_token: data.supabaseSession.refresh_token
+        });
+      }
       try {
         localStorage.setItem('saborai_user', JSON.stringify(user));
         localStorage.setItem('saborai_tenant', JSON.stringify(tenant));
