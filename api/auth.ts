@@ -20,10 +20,24 @@ async function ensureSupabaseAuthIdentity(email: string, password: string): Prom
     const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
     return existing?.id || null;
   } catch (error) {
-    const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
-    if (existing?.id) return existing.id;
+    try {
+      const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
+      if (existing?.id) return existing.id;
+    } catch (lookupError) {
+      console.warn('[Auth Bridge] No se pudo consultar la identidad Supabase:', lookupError);
+    }
     console.warn('[Auth Bridge] No se pudo vincular la identidad Supabase:', error);
+    return null;
+  }
+}
+
+async function getSupabaseSession(email: string, password: string) {
+  try {
+    const result = await supabase.auth.signInWithPassword({ email: email.toLowerCase(), password });
+    return result.data.session || null;
+  } catch (error) {
+    console.warn('[Auth Bridge] No se pudo obtener sesión Supabase:', error);
     return null;
   }
 }
@@ -93,10 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await linkLegacyUserToAuth(user.id, email, password);
       }
 
-      const supabaseLogin = await supabase.auth.signInWithPassword({
-        email: email.toLowerCase(),
-        password
-      });
+      const supabaseSession = await getSupabaseSession(email, password);
 
       // 3. Fetch related tenant and subscription
       const { data: tenant } = await supabase
@@ -118,7 +129,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         token,
-        supabaseSession: supabaseLogin.data.session || null,
+        supabaseSession,
         user,
         tenant,
         subscription
@@ -173,10 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       await linkLegacyUserToAuth(newUser.id, newUser.email, password);
 
-      const supabaseRegister = await supabase.auth.signInWithPassword({
-        email: newUser.email,
-        password
-      });
+      const supabaseSession = await getSupabaseSession(newUser.email, password);
 
       // 4. Create tenant
       const { data: newTenant, error: tenantError } = await supabase
@@ -224,7 +232,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true,
         token,
-        supabaseSession: supabaseRegister.data.session || null,
+        supabaseSession,
         user: newUser,
         tenant: newTenant,
         subscription: newSubscription
