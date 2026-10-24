@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || '';
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
 if (!supabaseUrl || !supabaseKey) {
   console.warn('Supabase credentials are not set in environment variables.');
@@ -9,6 +10,17 @@ if (!supabaseUrl || !supabaseKey) {
 
 // Cliente base con permisos de administrador (Úsalo solo en Auth/Login/Register o donde sea explícitamente necesario)
 export const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
+
+// Cliente aislado para signInWithPassword. Nunca usarlo para consultas administrativas.
+export const supabaseAuth = supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    })
+  : null;
 
 // Cliente Seguro para el resto de endpoints
 export function getSafeSupabase(tenantId: string) {

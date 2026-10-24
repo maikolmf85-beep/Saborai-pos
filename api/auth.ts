@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
-import { supabaseAdmin as supabase } from './_utils/supabase.js';
+import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
 import { allowedOriginForRedirect, getJwtSecret, handleOptions, setCorsHeaders } from './_utils/security.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
@@ -42,8 +42,9 @@ async function ensureSupabaseAuthIdentity(email: string, password: string): Prom
 }
 
 async function getSupabaseSession(email: string, password: string) {
+  if (!supabaseAuth) return null;
   try {
-    const result = await supabase.auth.signInWithPassword({ email: email.toLowerCase(), password });
+    const result = await supabaseAuth.auth.signInWithPassword({ email: email.toLowerCase(), password });
     return result.data.session || null;
   } catch (error) {
     console.warn('[Auth Bridge] No se pudo obtener sesión Supabase:', error);
