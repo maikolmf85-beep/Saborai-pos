@@ -1,0 +1,237 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const blogPosts = (await getCollection('blog')).sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()).slice(0, 3);
+const guias = (await getCollection('guias')).sort((a, b) => a.data.order - b.data.order).slice(0, 4);
+const changelog = (await getCollection('changelog')).sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()).slice(0, 2);
+
+const categoryIcons: Record<string, string> = {
+  'primeros-pasos': '🚀',
+  'facturacion': '🧾',
+  'inventario': '📦',
+  'mesas': '🪑',
+  'caja': '💰',
+  'cocina': '👨‍🍳',
+  'ia': '🤖',
+  'configuracion': '⚙️',
+};
+---
+
+<BaseLayout
+  title="SaborAI Blog — Recursos, Guías y Ayuda para tu Restaurante"
+  description="Blog oficial de SaborAI POS. Encuentra guías, tutoriales, tips de la industria gastronómica y novedades del software POS con IA más avanzado de Costa Rica."
+>
+  <!-- Hero Section -->
+  <section class="relative overflow-hidden bg-gradient-to-br from-primary via-stone-800 to-primary">
+    <div class="absolute inset-0 opacity-10">
+      <div class="absolute inset-0" style="background-image: radial-gradient(circle at 20% 50%, rgba(169,185,148,0.3) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(169,185,148,0.2) 0%, transparent 40%);"></div>
+    </div>
+    <div class="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-28">
+      <div class="text-center">
+        <span class="inline-flex items-center gap-2 px-4 py-1.5 bg-accent/20 text-accent rounded-full text-sm font-bold mb-6 border border-accent/30">
+          🇨🇷 Blog Oficial de SaborAI POS
+        </span>
+        <h1 class="text-4xl md:text-6xl font-black font-heading text-white leading-tight mb-6">
+          Recursos para hacer <br class="hidden sm:block" />
+          <span class="text-accent">crecer tu restaurante</span>
+        </h1>
+        <p class="text-lg md:text-xl text-white/70 max-w-2xl mx-auto mb-10 leading-relaxed">
+          Guías paso a paso, tips de la industria gastronómica, tutoriales del POS y las últimas novedades de SaborAI.
+        </p>
+        <div class="flex flex-wrap items-center justify-center gap-3">
+          <a href="/guias" class="btn-accent">
+            📖 Ver Guías
+          </a>
+          <a href="/ayuda" class="inline-flex items-center gap-2 px-6 py-3 bg-white/10 text-white font-bold rounded-xl hover:bg-white/20 transition-all border border-white/20">
+            💬 Centro de Ayuda
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Latest Blog Posts -->
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div class="flex items-center justify-between mb-10">
+      <div>
+        <h2 class="text-3xl font-black font-heading text-primary">Últimos artículos</h2>
+        <p class="text-neutral mt-2">Tips, noticias y conocimiento para restauranteros.</p>
+      </div>
+      <a href="/blog" class="hidden sm:inline-flex items-center gap-1 text-sm font-bold text-sage-600 hover:text-sage-800 transition-colors">
+        Ver todos →
+      </a>
+    </div>
+
+    {blogPosts.length > 0 ? (
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {blogPosts.map((post) => (
+          <a href={`/blog/${post.slug}`} class="group bg-white rounded-2xl border border-stone-200/80 overflow-hidden card-hover shadow-sm">
+            {post.data.heroImage && (
+              <div class="aspect-video bg-sage-50 overflow-hidden">
+                <img
+                  src={post.data.heroImage}
+                  alt={post.data.title}
+                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading="lazy"
+                />
+              </div>
+            )}
+            <div class="p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="badge-sage text-[10px]">{post.data.category}</span>
+                <span class="text-xs text-neutral">
+                  {post.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
+              <h3 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors leading-snug mb-2">
+                {post.data.title}
+              </h3>
+              <p class="text-sm text-neutral line-clamp-2">{post.data.description}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <div class="text-center py-12 bg-sage-50/50 rounded-2xl border border-sage-100">
+        <span class="text-4xl mb-4 block">📝</span>
+        <p class="text-neutral font-medium">Próximamente nuevos artículos</p>
+      </div>
+    )}
+  </section>
+
+  <!-- Guides Section -->
+  <section class="bg-stone-50/50 border-y border-stone-200/50">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      <div class="flex items-center justify-between mb-10">
+        <div>
+          <h2 class="text-3xl font-black font-heading text-primary">Guías de uso</h2>
+          <p class="text-neutral mt-2">Aprende a sacar el máximo provecho de SaborAI POS.</p>
+        </div>
+        <a href="/guias" class="hidden sm:inline-flex items-center gap-1 text-sm font-bold text-sage-600 hover:text-sage-800 transition-colors">
+          Ver todas →
+        </a>
+      </div>
+
+      {guias.length > 0 ? (
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {guias.map((guia) => (
+            <a href={`/guias/${guia.slug}`} class="group bg-white rounded-2xl border border-stone-200/80 p-5 card-hover shadow-sm">
+              <div class="text-3xl mb-3">{guia.data.icon || categoryIcons[guia.data.category] || '📖'}</div>
+              <h3 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors leading-snug mb-1.5 text-sm">
+                {guia.data.title}
+              </h3>
+              <p class="text-xs text-neutral line-clamp-2">{guia.data.description}</p>
+              <div class="mt-3 flex items-center gap-2">
+                <span class="badge-sage text-[9px]">{guia.data.difficulty}</span>
+                <span class="badge-sage text-[9px]">{guia.data.category}</span>
+              </div>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <div class="text-center py-12 bg-white rounded-2xl border border-stone-200">
+          <span class="text-4xl mb-4 block">📖</span>
+          <p class="text-neutral font-medium">Guías en preparación</p>
+        </div>
+      )}
+    </div>
+  </section>
+
+  <!-- Help Center CTA -->
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+    <div class="bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-3xl p-8 md:p-12 border border-sage-200/50 shadow-sm">
+      <div class="grid md:grid-cols-2 gap-8 items-center">
+        <div>
+          <h2 class="text-3xl font-black font-heading text-primary mb-4">¿Necesitas ayuda?</h2>
+          <p class="text-neutral leading-relaxed mb-6">
+            Nuestro centro de ayuda tiene respuestas a las preguntas más frecuentes sobre facturación, pagos, impresión, configuración y más.
+          </p>
+          <a href="/ayuda" class="btn-primary">
+            💬 Ir al Centro de Ayuda
+          </a>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          {[
+            { icon: '🧾', label: 'Facturación', desc: 'Hacienda v4.3' },
+            { icon: '💳', label: 'Pagos', desc: 'Tilopay y efectivo' },
+            { icon: '🖨️', label: 'Impresión', desc: 'Térmica y tickets' },
+            { icon: '⚙️', label: 'Configuración', desc: 'Inicio y ajustes' },
+          ].map((item) => (
+            <div class="bg-white rounded-xl p-4 border border-sage-200/50 text-center shadow-xs">
+              <span class="text-2xl block mb-1">{item.icon}</span>
+              <span class="text-xs font-bold text-primary block">{item.label}</span>
+              <span class="text-[10px] text-neutral">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Changelog Preview -->
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h2 class="text-3xl font-black font-heading text-primary">Novedades</h2>
+        <p class="text-neutral mt-2">Las últimas actualizaciones y mejoras de SaborAI POS.</p>
+      </div>
+      <a href="/changelog" class="hidden sm:inline-flex items-center gap-1 text-sm font-bold text-sage-600 hover:text-sage-800 transition-colors">
+        Ver historial →
+      </a>
+    </div>
+
+    {changelog.length > 0 ? (
+      <div class="space-y-4">
+        {changelog.map((entry) => (
+          <a href={`/changelog/${entry.slug}`} class="block bg-white rounded-2xl border border-stone-200/80 p-6 card-hover shadow-sm group">
+            <div class="flex items-start gap-4">
+              <div class="shrink-0">
+                <span class={`inline-flex items-center justify-center w-10 h-10 rounded-xl text-white font-black text-sm ${
+                  entry.data.type === 'major' ? 'bg-emerald-600' :
+                  entry.data.type === 'minor' ? 'bg-blue-600' : 'bg-stone-500'
+                }`}>
+                  {entry.data.version}
+                </span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <h3 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors mb-1">
+                  {entry.data.title}
+                </h3>
+                <p class="text-sm text-neutral mb-3">{entry.data.description}</p>
+                {entry.data.highlights.length > 0 && (
+                  <ul class="flex flex-wrap gap-2">
+                    {entry.data.highlights.slice(0, 3).map((h) => (
+                      <li class="badge-sage text-[10px]">✨ {h}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <span class="text-xs text-neutral shrink-0">
+                {entry.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <div class="text-center py-12 bg-stone-50 rounded-2xl border border-stone-200">
+        <span class="text-4xl mb-4 block">🚀</span>
+        <p class="text-neutral font-medium">Novedades próximamente</p>
+      </div>
+    )}
+  </section>
+
+  <!-- Newsletter / CTA Final -->
+  <section class="bg-primary text-white">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+      <h2 class="text-3xl font-black font-heading mb-4">¿Listo para transformar tu restaurante?</h2>
+      <p class="text-white/70 max-w-xl mx-auto mb-8">
+        Prueba SaborAI POS gratis por 14 días. Sin tarjeta de crédito, sin compromisos.
+      </p>
+      <a href="https://pos.saborai.site" target="_blank" rel="noopener" class="btn-accent text-lg">
+        🚀 Iniciar Prueba Gratis
+      </a>
+    </div>
+  </section>
+</BaseLayout>

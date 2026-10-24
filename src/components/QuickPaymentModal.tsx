@@ -278,7 +278,10 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         subtotal,
         tax: iva13,
         service10: servicio10,
-        registerId: currentRegister.id
+        registerId: currentRegister.id,
+        tenantId: tenant.id,
+        actor: staffList.find(staff => staff.id === selectedEmployeeId) || staffList[0],
+        reference: generatedClave
       });
     }
 

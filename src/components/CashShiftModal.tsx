@@ -43,6 +43,7 @@ import {
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
+import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -55,7 +56,7 @@ interface CashShiftModalProps {
   staffList: UserProfile[];
   onOpenZReport: (report: ZReportData) => void;
   onOpenConsolidatedZReport?: (report: ConsolidatedZReportData) => void;
-  initialTab?: 'status' | 'movements' | 'close' | 'history' | 'registers';
+  initialTab?: 'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers';
 }
 
 export const CashShiftModal: React.FC<CashShiftModalProps> = ({
@@ -69,12 +70,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   onOpenConsolidatedZReport,
   initialTab
 }) => {
-  const [activeTab, setActiveTab] = useState<'status' | 'movements' | 'close' | 'history' | 'registers'>('status');
+  const [activeTab, setActiveTab] = useState<'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers'>('status');
   const [activeShift, setActiveShift] = useState<CashShift | null>(null);
   const [shiftsHistory, setShiftsHistory] = useState<CashShift[]>([]);
   const [registers, setRegisters] = useState<CashRegister[]>([]);
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>('');
   const [historyFilterRegisterId, setHistoryFilterRegisterId] = useState<string>('ALL');
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
 
   // Opening form state
   const [initialFloatInput, setInitialFloatInput] = useState<number>(50000);
@@ -201,6 +203,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         : (matchedReg?.linkedZone ? [matchedReg.linkedZone] : []);
       setOpeningZones(initialZones);
       refreshData(curRegId);
+      setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
       if (currentUser) {
         setOpeningCashier(currentUser);
       } else if (staffList.length > 0) {
@@ -640,6 +643,18 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           >
             <History className="w-4 h-4 text-stone-500" />
             <span>Historial de Turnos</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('audit')}
+            className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
+              activeTab === 'audit'
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-amber-600" />
+            <span>Auditoría ({auditEvents.length})</span>
           </button>
 
           <button
@@ -1442,6 +1457,53 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           {/* ======================================================== */}
           {/* STATE B4: TAB "HISTORY" - TURNOS ANTERIORES              */}
           {/* ======================================================== */}
+          {activeTab === 'audit' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">Libro de auditoría</h3>
+                  <p className="text-xs text-stone-500">Registro de acciones sensibles del restaurante. Los eventos se conservan por tenant.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAuditEvents(auditService.get(tenant.id, { limit: 250 }))}
+                  className="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold"
+                >Actualizar
+                </button>
+              </div>
+              {auditEvents.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-stone-300 p-10 text-center text-sm text-stone-500">
+                  No hay acciones auditadas todavía.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-2xl border border-stone-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-stone-50 text-stone-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-3 py-3">Fecha</th>
+                        <th className="px-3 py-3">Acción</th>
+                        <th className="px-3 py-3">Usuario</th>
+                        <th className="px-3 py-3">Monto</th>
+                        <th className="px-3 py-3">Motivo / referencia</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 bg-white">
+                      {auditEvents.map(event => (
+                        <tr key={event.id} className="hover:bg-stone-50">
+                          <td className="px-3 py-3 whitespace-nowrap text-stone-500">{new Date(event.timestamp).toLocaleString('es-CR')}</td>
+                          <td className="px-3 py-3 font-bold text-stone-800">{event.action.replaceAll('_', ' ')}</td>
+                          <td className="px-3 py-3 text-stone-700">{event.actor.userName}<br /><span className="text-[10px] text-stone-400">{event.actor.role || 'Sistema'}</span></td>
+                          <td className="px-3 py-3 font-semibold text-stone-800">{event.amount !== undefined ? `₡${event.amount.toLocaleString('es-CR')}` : '—'}</td>
+                          <td className="px-3 py-3 text-stone-600">{event.reason || '—'}{event.reference ? <><br /><span className="font-mono text-[10px]">Ref: {event.reference}</span></> : null}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'history' && (
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,0 +1,332 @@
+---
+export interface Props {
+  title: string;
+  description: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedTime?: string;
+  modifiedTime?: string;
+  author?: string;
+  tags?: string[];
+  canonicalUrl?: string;
+  noindex?: boolean;
+}
+
+const {
+  title,
+  description,
+  image = '/assets/logos/saborai-logo.png',
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+  author = 'Equipo SaborAI',
+  tags = [],
+  canonicalUrl,
+  noindex = false,
+} = Astro.props;
+
+const siteTitle = 'SaborAI Blog';
+const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
+const canonical = canonicalUrl || Astro.url.href;
+const ogImage = new URL(image, Astro.site).href;
+
+// Google Analytics Measurement ID - Replace with your actual GA4 ID
+const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
+---
+
+<!doctype html>
+<html lang="es-CR" class="scroll-smooth">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+    <!-- ══════ SEO Core ══════ -->
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <meta name="author" content={author} />
+    {tags.length > 0 && <meta name="keywords" content={tags.join(', ')} />}
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, nofollow" />}
+    {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
+    <meta name="googlebot" content="index, follow" />
+
+    <!-- ══════ Geo & Language ══════ -->
+    <meta name="geo.region" content="CR" />
+    <meta name="geo.placename" content="Costa Rica" />
+    <meta name="language" content="es-CR" />
+    <meta name="content-language" content="es-CR" />
+
+    <!-- ══════ Open Graph / Facebook ══════ -->
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:site_name" content="SaborAI Blog" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={title} />
+    <meta property="og:locale" content="es_CR" />
+    {publishedTime && <meta property="article:published_time" content={publishedTime} />}
+    {modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
+    {author && <meta property="article:author" content={author} />}
+    {tags.map((tag) => <meta property="article:tag" content={tag} />)}
+
+    <!-- ══════ Twitter / X Cards ══════ -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@SaboraiPOS" />
+    <meta name="twitter:creator" content="@SaboraiPOS" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={title} />
+
+    <!-- ══════ Favicons ══════ -->
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    <meta name="theme-color" content="#3b3733" />
+
+    <!-- ══════ Fonts ══════ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- ══════ Google Analytics (GA4) ══════ -->
+    <script is:inline define:vars={{ GA_ID }}>
+      // Only load in production
+      if (GA_ID && GA_ID !== 'G-XXXXXXXXXX') {
+        const script = document.createElement('script');
+        script.async = true;
+        script.src = `https://www.googletagmanager.com/gtag/js?id=${GA_ID}`;
+        document.head.appendChild(script);
+
+        window.dataLayer = window.dataLayer || [];
+        function gtag() { dataLayer.push(arguments); }
+        gtag('js', new Date());
+        gtag('config', GA_ID, {
+          page_title: document.title,
+          page_location: window.location.href,
+          send_page_view: true,
+          cookie_flags: 'SameSite=None;Secure',
+        });
+        window.gtag = gtag;
+      }
+    </script>
+
+    <!-- ══════ Structured Data - Organization ══════ -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "SaborAI POS",
+      "url": "https://saborai.site",
+      "logo": "https://blog.saborai.site/assets/logos/saborai-logo.png",
+      "sameAs": [
+        "https://twitter.com/SaboraiPOS"
+      ],
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "availableLanguage": "Spanish",
+        "areaServed": "CR"
+      }
+    })} />
+
+    <!-- ══════ Structured Data - WebSite (Search) ══════ -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": "SaborAI Blog",
+      "url": "https://blog.saborai.site",
+      "description": "Blog oficial, Centro de Ayuda y Guías de SaborAI POS - Software gastronómico con IA para Costa Rica",
+      "publisher": {
+        "@type": "Organization",
+        "name": "SaborAI POS",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://blog.saborai.site/assets/logos/saborai-logo.png"
+        }
+      },
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {
+          "@type": "EntryPoint",
+          "urlTemplate": "https://blog.saborai.site/buscar?q={search_term_string}"
+        },
+        "query-input": "required name=search_term_string"
+      },
+      "inLanguage": "es-CR"
+    })} />
+
+    <!-- ══════ RSS Feed ══════ -->
+    <link rel="alternate" type="application/rss+xml" title="SaborAI Blog RSS" href="/rss.xml" />
+
+    <!-- ══════ Global Styles ══════ -->
+    <style is:global>
+      @import '../styles/global.css';
+    </style>
+
+    <slot name="head" />
+  </head>
+  <body class="min-h-screen flex flex-col bg-main text-primary antialiased">
+    <!-- Skip to content -->
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-primary focus:text-white focus:rounded-lg focus:font-bold"
+    >
+      Saltar al contenido
+    </a>
+
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-stone-200/50 shadow-sm">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-16">
+          <!-- Logo -->
+          <a href="/" class="flex items-center gap-3 group">
+            <img
+              src="/assets/logos/saborai-icon.png"
+              alt="SaborAI"
+              class="h-9 w-9 rounded-xl shadow-sm group-hover:shadow-md transition-shadow"
+              width="36"
+              height="36"
+              loading="eager"
+            />
+            <div class="flex flex-col">
+              <span class="text-lg font-black font-heading text-primary leading-tight">SaborAI</span>
+              <span class="text-[10px] font-bold text-accent uppercase tracking-widest -mt-0.5">Blog & Ayuda</span>
+            </div>
+          </a>
+
+          <!-- Desktop Nav -->
+          <div class="hidden md:flex items-center gap-1">
+            <a href="/blog" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
+              📝 Blog
+            </a>
+            <a href="/guias" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
+              📖 Guías
+            </a>
+            <a href="/ayuda" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
+              💬 Centro de Ayuda
+            </a>
+            <a href="/changelog" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
+              🚀 Novedades
+            </a>
+            <div class="w-px h-6 bg-stone-200 mx-2"></div>
+            <a
+              href="https://pos.saborai.site"
+              target="_blank"
+              rel="noopener"
+              class="btn-primary text-xs py-2 px-4"
+            >
+              Ir al POS →
+            </a>
+          </div>
+
+          <!-- Mobile Menu Button -->
+          <button
+            id="mobile-menu-btn"
+            class="md:hidden p-2 rounded-lg hover:bg-sage-50 transition-colors"
+            aria-label="Abrir menú"
+            aria-expanded="false"
+          >
+            <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Mobile Nav -->
+        <div id="mobile-menu" class="hidden md:hidden pb-4 border-t border-stone-100 mt-2 pt-3">
+          <div class="flex flex-col gap-1">
+            <a href="/blog" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">📝 Blog</a>
+            <a href="/guias" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">📖 Guías</a>
+            <a href="/ayuda" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">💬 Centro de Ayuda</a>
+            <a href="/changelog" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">🚀 Novedades</a>
+            <a href="https://pos.saborai.site" target="_blank" rel="noopener" class="btn-primary text-xs py-2.5 px-4 text-center mt-2">Ir al POS →</a>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-1">
+      <slot />
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-primary text-white/80 mt-auto">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <!-- Brand -->
+          <div class="md:col-span-1">
+            <div class="flex items-center gap-2 mb-4">
+              <img src="/assets/logos/saborai-icon.png" alt="SaborAI" class="h-8 w-8 rounded-lg" width="32" height="32" />
+              <span class="text-lg font-black text-white font-heading">SaborAI</span>
+            </div>
+            <p class="text-sm text-white/60 leading-relaxed">
+              Software gastronómico inteligente con IA para restaurantes en Costa Rica.
+            </p>
+          </div>
+
+          <!-- Blog -->
+          <div>
+            <h3 class="font-bold text-white text-sm uppercase tracking-wider mb-4">Blog</h3>
+            <ul class="space-y-2 text-sm">
+              <li><a href="/blog" class="hover:text-accent transition-colors">Artículos</a></li>
+              <li><a href="/blog/categoria/tips" class="hover:text-accent transition-colors">Tips</a></li>
+              <li><a href="/blog/categoria/noticias" class="hover:text-accent transition-colors">Noticias</a></li>
+              <li><a href="/blog/categoria/industria" class="hover:text-accent transition-colors">Industria</a></li>
+            </ul>
+          </div>
+
+          <!-- Recursos -->
+          <div>
+            <h3 class="font-bold text-white text-sm uppercase tracking-wider mb-4">Recursos</h3>
+            <ul class="space-y-2 text-sm">
+              <li><a href="/guias" class="hover:text-accent transition-colors">Guías de Uso</a></li>
+              <li><a href="/ayuda" class="hover:text-accent transition-colors">Centro de Ayuda</a></li>
+              <li><a href="/changelog" class="hover:text-accent transition-colors">Novedades</a></li>
+              <li><a href="/rss.xml" class="hover:text-accent transition-colors">RSS Feed</a></li>
+            </ul>
+          </div>
+
+          <!-- Producto -->
+          <div>
+            <h3 class="font-bold text-white text-sm uppercase tracking-wider mb-4">Producto</h3>
+            <ul class="space-y-2 text-sm">
+              <li><a href="https://pos.saborai.site" target="_blank" rel="noopener" class="hover:text-accent transition-colors">SaborAI POS</a></li>
+              <li><a href="https://saborai.site" target="_blank" rel="noopener" class="hover:text-accent transition-colors">Sitio Principal</a></li>
+              <li><a href="https://pos.saborai.site" target="_blank" rel="noopener" class="hover:text-accent transition-colors">Prueba Gratis 14 Días</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="border-t border-white/10 mt-10 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p class="text-xs text-white/40">
+            © {new Date().getFullYear()} SaborAI POS. Todos los derechos reservados. Costa Rica 🇨🇷
+          </p>
+          <div class="flex items-center gap-4 text-xs text-white/40">
+            <a href="/politica-privacidad" class="hover:text-white/70 transition-colors">Privacidad</a>
+            <a href="/terminos" class="hover:text-white/70 transition-colors">Términos</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Mobile Menu Script -->
+    <script is:inline>
+      const btn = document.getElementById('mobile-menu-btn');
+      const menu = document.getElementById('mobile-menu');
+      if (btn && menu) {
+        btn.addEventListener('click', () => {
+          const isOpen = !menu.classList.contains('hidden');
+          menu.classList.toggle('hidden');
+          btn.setAttribute('aria-expanded', String(!isOpen));
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,94 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const articles = await getCollection('ayuda');
+  return articles.map((article) => ({
+    params: { slug: article.slug },
+    props: article,
+  }));
+}
+
+type Props = CollectionEntry<'ayuda'>;
+
+const article = Astro.props;
+const { Content } = await article.render();
+
+const relatedArticles = (await getCollection('ayuda'))
+  .filter((a) => a.slug !== article.slug && a.data.category === article.data.category)
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 4);
+---
+
+<BaseLayout
+  title={article.data.title}
+  description={article.data.description}
+  type="article"
+  publishedTime={article.data.pubDate.toISOString()}
+>
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm mb-8">
+      <a href="/" class="text-neutral hover:text-primary transition-colors">Inicio</a>
+      <span class="text-stone-300">›</span>
+      <a href="/ayuda" class="text-neutral hover:text-primary transition-colors">Centro de Ayuda</a>
+      <span class="text-stone-300">›</span>
+      <span class="text-primary font-medium truncate">{article.data.title}</span>
+    </nav>
+
+    <!-- Header -->
+    <div class="flex items-start gap-4 mb-8">
+      <span class="text-4xl">❓</span>
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <span class="badge-sage text-[10px]">{article.data.category}</span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-black font-heading text-primary leading-tight">
+          {article.data.title}
+        </h1>
+        <p class="text-neutral mt-2">{article.data.description}</p>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <article class="prose-saborai">
+      <Content />
+    </article>
+
+    <!-- Was this helpful? -->
+    <div class="mt-10 p-5 bg-stone-50 rounded-2xl border border-stone-200">
+      <p class="text-sm font-bold text-primary mb-3">¿Este artículo fue útil?</p>
+      <div class="flex items-center gap-3">
+        <button class="px-4 py-2 text-xs font-bold bg-emerald-100 text-emerald-700 rounded-xl hover:bg-emerald-200 transition-colors border border-emerald-200">
+          👍 Sí, me ayudó
+        </button>
+        <button class="px-4 py-2 text-xs font-bold bg-stone-100 text-neutral rounded-xl hover:bg-stone-200 transition-colors border border-stone-200">
+          👎 Necesito más ayuda
+        </button>
+        <a href="mailto:soporte@saborai.site" class="ml-auto text-xs text-sage-600 hover:text-sage-800 font-medium transition-colors">
+          Contactar soporte →
+        </a>
+      </div>
+    </div>
+
+    <!-- Related -->
+    {relatedArticles.length > 0 && (
+      <div class="mt-8">
+        <h2 class="text-lg font-black font-heading text-primary mb-4">Artículos relacionados</h2>
+        <div class="bg-white rounded-xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
+          {relatedArticles.map((rel) => (
+            <a href={`/ayuda/${rel.slug}`} class="flex items-center gap-3 p-4 hover:bg-sage-50 transition-colors group">
+              <span class="text-lg">❓</span>
+              <span class="text-sm font-medium text-primary group-hover:text-sage-700 transition-colors flex-1">
+                {rel.data.title}
+              </span>
+              <span class="text-sage-400 group-hover:text-sage-600 transition-colors">→</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+</BaseLayout>

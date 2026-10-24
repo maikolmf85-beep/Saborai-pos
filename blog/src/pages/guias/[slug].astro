@@ -1,0 +1,118 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const guias = await getCollection('guias');
+  return guias.map((guia) => ({
+    params: { slug: guia.slug },
+    props: guia,
+  }));
+}
+
+type Props = CollectionEntry<'guias'>;
+
+const guia = Astro.props;
+const { Content } = await guia.render();
+
+const difficultyColors: Record<string, string> = {
+  basico: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  intermedio: 'bg-amber-100 text-amber-700 border-amber-200',
+  avanzado: 'bg-red-100 text-red-700 border-red-200',
+};
+
+const categoryNames: Record<string, string> = {
+  'primeros-pasos': 'Primeros Pasos',
+  'facturacion': 'Facturación',
+  'inventario': 'Inventario',
+  'mesas': 'Mesas y Órdenes',
+  'caja': 'Caja y Cobros',
+  'cocina': 'Módulo Cocina',
+  'ia': 'Inteligencia Artificial',
+  'configuracion': 'Configuración',
+};
+
+// Related guides from same category
+const allGuias = (await getCollection('guias'))
+  .filter((g) => g.slug !== guia.slug && g.data.category === guia.data.category)
+  .sort((a, b) => a.data.order - b.data.order)
+  .slice(0, 3);
+---
+
+<BaseLayout
+  title={guia.data.title}
+  description={guia.data.description}
+  type="article"
+  publishedTime={guia.data.pubDate.toISOString()}
+  modifiedTime={guia.data.updatedDate?.toISOString()}
+>
+  <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm mb-8">
+      <a href="/" class="text-neutral hover:text-primary transition-colors">Inicio</a>
+      <span class="text-stone-300">›</span>
+      <a href="/guias" class="text-neutral hover:text-primary transition-colors">Guías</a>
+      <span class="text-stone-300">›</span>
+      <span class="text-primary font-medium truncate">{guia.data.title}</span>
+    </nav>
+
+    <!-- Header -->
+    <div class="bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-3xl p-8 mb-8 border border-sage-200/50">
+      <div class="text-5xl mb-4">{guia.data.icon}</div>
+      <div class="flex flex-wrap items-center gap-2 mb-4">
+        <span class="badge text-[10px] border {difficultyColors[guia.data.difficulty]}">
+          {guia.data.difficulty}
+        </span>
+        <span class="badge-sage text-[10px]">
+          {categoryNames[guia.data.category] || guia.data.category}
+        </span>
+        <span class="text-xs text-neutral ml-auto">
+          Actualizado: {guia.data.updatedDate
+            ? guia.data.updatedDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })
+            : guia.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })}
+        </span>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-black font-heading text-primary mb-3">
+        {guia.data.title}
+      </h1>
+      <p class="text-neutral text-lg leading-relaxed">
+        {guia.data.description}
+      </p>
+    </div>
+
+    <!-- Content -->
+    <article class="prose-saborai">
+      <Content />
+    </article>
+
+    <!-- Help CTA -->
+    <div class="mt-10 p-5 bg-stone-50 rounded-2xl border border-stone-200 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+      <span class="text-3xl">💬</span>
+      <div class="flex-1">
+        <h3 class="font-bold text-primary text-sm">¿La guía no resolvió tu duda?</h3>
+        <p class="text-xs text-neutral mt-0.5">Visita el Centro de Ayuda o contacta a nuestro soporte técnico local.</p>
+      </div>
+      <a href="/ayuda" class="btn-primary text-xs py-2 px-4 whitespace-nowrap">
+        Centro de Ayuda
+      </a>
+    </div>
+
+    <!-- Related -->
+    {allGuias.length > 0 && (
+      <div class="mt-10">
+        <h2 class="text-xl font-black font-heading text-primary mb-4">Guías relacionadas</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {allGuias.map((g) => (
+            <a href={`/guias/${g.slug}`} class="group bg-white rounded-xl border border-stone-200 p-4 card-hover">
+              <div class="text-2xl mb-2">{g.data.icon}</div>
+              <h3 class="font-bold text-sm text-primary group-hover:text-sage-700 transition-colors leading-snug">
+                {g.data.title}
+              </h3>
+            </a>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+</BaseLayout>

@@ -1,0 +1,117 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const ayuda = (await getCollection('ayuda')).sort((a, b) => a.data.order - b.data.order);
+
+const categoryLabels: Record<string, string> = {
+  general: '🌐 General',
+  facturacion: '🧾 Facturación',
+  pagos: '💳 Pagos',
+  impresion: '🖨️ Impresión',
+  cuenta: '👤 Cuenta',
+  tecnico: '🔧 Técnico',
+};
+
+const grouped = ayuda.reduce((acc, item) => {
+  const cat = item.data.category;
+  if (!acc[cat]) acc[cat] = [];
+  acc[cat].push(item);
+  return acc;
+}, {} as Record<string, typeof ayuda>);
+---
+
+<BaseLayout
+  title="Centro de Ayuda — SaborAI POS"
+  description="Encuentra respuestas rápidas a tus preguntas sobre SaborAI POS. Facturación, pagos, impresión, cuenta y más."
+>
+  <!-- Hero -->
+  <section class="bg-gradient-to-br from-primary via-stone-800 to-primary py-14 md:py-20">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <span class="inline-flex items-center gap-2 px-4 py-1.5 bg-accent/20 text-accent rounded-full text-sm font-bold mb-5 border border-accent/30">
+        💬 Centro de Ayuda
+      </span>
+      <h1 class="text-4xl md:text-5xl font-black font-heading text-white mb-4">
+        ¿En qué podemos <span class="text-accent">ayudarte?</span>
+      </h1>
+      <p class="text-white/70 text-lg max-w-xl mx-auto">
+        Respuestas rápidas a las preguntas más frecuentes sobre SaborAI POS.
+      </p>
+    </div>
+  </section>
+
+  <!-- Category Cards -->
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-12">
+      {Object.entries(categoryLabels).filter(([key]) => grouped[key]).map(([key, label]) => {
+        const [icon, ...words] = label.split(' ');
+        return (
+          <a
+            href={`#${key}`}
+            class="flex flex-col items-center gap-2 p-4 bg-white rounded-2xl border border-stone-200 hover:border-sage-300 hover:bg-sage-50 transition-all text-center group card-hover"
+          >
+            <span class="text-2xl">{icon}</span>
+            <span class="text-xs font-bold text-primary group-hover:text-sage-700 transition-colors leading-tight">
+              {words.join(' ')}
+            </span>
+            <span class="text-[10px] text-neutral">
+              {grouped[key]?.length || 0} {(grouped[key]?.length || 0) === 1 ? 'artículo' : 'artículos'}
+            </span>
+          </a>
+        );
+      })}
+    </div>
+
+    <!-- Articles by Category -->
+    <div class="space-y-10">
+      {Object.entries(grouped).map(([cat, items]) => (
+        <div id={cat}>
+          <h2 class="text-xl font-black font-heading text-primary mb-4 flex items-center gap-2">
+            {categoryLabels[cat] || cat}
+          </h2>
+          <div class="bg-white rounded-2xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
+            {items.map((item) => (
+              <a
+                href={`/ayuda/${item.slug}`}
+                class="flex items-center gap-4 p-4 hover:bg-sage-50 transition-colors group"
+              >
+                <span class="text-xl shrink-0">❓</span>
+                <div class="flex-1 min-w-0">
+                  <h3 class="font-bold text-primary text-sm group-hover:text-sage-700 transition-colors">
+                    {item.data.title}
+                  </h3>
+                  <p class="text-xs text-neutral line-clamp-1 mt-0.5">{item.data.description}</p>
+                </div>
+                <span class="text-sage-400 group-hover:text-sage-600 transition-colors shrink-0">→</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {ayuda.length === 0 && (
+        <div class="text-center py-20 bg-stone-50 rounded-2xl border border-stone-200">
+          <span class="text-5xl mb-4 block">💬</span>
+          <p class="text-neutral font-medium text-lg">Artículos de ayuda próximamente</p>
+        </div>
+      )}
+    </div>
+
+    <!-- Contact CTA -->
+    <div class="mt-12 p-8 bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-3xl border border-sage-200/50 text-center">
+      <h2 class="text-2xl font-black font-heading text-primary mb-2">¿No encontraste tu respuesta?</h2>
+      <p class="text-neutral mb-6">Nuestro equipo de soporte en Costa Rica está listo para ayudarte.</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a
+          href="mailto:soporte@saborai.site"
+          class="btn-primary text-sm"
+        >
+          ✉️ Contactar Soporte
+        </a>
+        <a href="/guias" class="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-primary font-bold text-sm rounded-xl border border-stone-200 hover:bg-stone-50 transition-colors">
+          📖 Ver Guías
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

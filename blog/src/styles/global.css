@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-main text-primary font-sans;
+  }
+
+  ::selection {
+    @apply bg-accent/30;
+  }
+}
+
+@layer components {
+  .prose-saborai {
+    @apply prose prose-lg max-w-none;
+    @apply prose-headings:font-heading prose-headings:font-bold;
+    @apply prose-a:text-sage-600 prose-a:no-underline hover:prose-a:text-sage-800 hover:prose-a:underline;
+    @apply prose-img:rounded-2xl prose-img:shadow-lg;
+    @apply prose-blockquote:border-accent prose-blockquote:bg-sage-50/50 prose-blockquote:rounded-r-xl prose-blockquote:py-1;
+    @apply prose-code:text-sage-800 prose-code:bg-sage-50 prose-code:rounded-md prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm;
+    @apply prose-pre:rounded-2xl prose-pre:shadow-md;
+  }
+
+  .card-hover {
+    @apply transition-all duration-300 hover:-translate-y-1 hover:shadow-xl;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider;
+  }
+
+  .badge-sage {
+    @apply badge bg-sage-100 text-sage-700 border border-sage-200;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary/10 text-primary border border-primary/20;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center gap-2 px-6 py-3 bg-primary text-white font-bold rounded-xl;
+    @apply hover:bg-primary/90 transition-all duration-200 shadow-lg hover:shadow-xl;
+  }
+
+  .btn-accent {
+    @apply inline-flex items-center gap-2 px-6 py-3 bg-accent text-primary font-bold rounded-xl;
+    @apply hover:bg-sage-500 transition-all duration-200 shadow-lg hover:shadow-xl;
+  }
+}

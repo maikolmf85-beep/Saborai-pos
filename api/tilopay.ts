@@ -1,16 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
 import { handleOptions, setCorsHeaders } from './_utils/security.js';
+import { supabaseAdmin } from './_utils/supabase.js';
 
 // Tipos requeridos
-interface TilopayCardData {
-  cardNumber: string;
-  expMonth: string;
-  expYear: string;
-  cvv: string;
-  cardholderName: string;
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -48,39 +41,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({ error: 'Invalid HMAC Signature' });
     }
 
-    const { event, tenant_id, amount, currency, transaction_id } = req.body || {};
+    const { event, tenant_id, amount, currency, transaction_id, event_id } = req.body || {};
+    const eventId = String(event_id || transaction_id || crypto
+      .createHash('sha256')
+      .update(rawBody)
+      .digest('hex'));
     console.log(`[Tilopay Webhook] Received ${event} for tenant ${tenant_id} - Tx: ${transaction_id} (${currency} ${amount})`);
 
-    switch (event) {
-      case 'transaction.success':
-        return res.status(200).json({
-          success: true,
-          status: 'ACTIVE',
-          message: 'Subscription renewed for 30 days. Electronic Invoice generated.',
-          transaction_id
-        });
+    // Registrar primero el evento: la restricción UNIQUE evita renovar dos veces
+    // una suscripción cuando TiloPay reintenta el webhook.
+    const { error: eventError } = await supabaseAdmin
+      .from('subscription_webhook_events')
+      .insert({
+        event_id: eventId,
+        event_type: String(event || 'unknown'),
+        tenant_id: tenant_id || null,
+        transaction_id: transaction_id || null,
+        amount: Number.isFinite(Number(amount)) ? Number(amount) : null,
+        currency: currency || null,
+        payload: req.body || {},
+        processing_status: 'RECEIVED'
+      });
 
-      case 'transaction.failed':
-        return res.status(200).json({
-          success: true,
-          status: 'PAST_DUE',
-          grace_period_days: 7,
-          message: 'Payment failed. Grace period active for 7 days.'
-        });
-
-      case 'subscription_cancelled':
-        return res.status(200).json({
-          success: true,
-          status: 'CANCELLED',
-          message: 'Subscription cancelled. Tenant suspended.'
-        });
-
-      default:
-        return res.status(200).json({
-          received: true,
-          event
-        });
+    if (eventError?.code === '23505') {
+      return res.status(200).json({ success: true, duplicate: true, event_id: eventId });
     }
+    if (eventError) {
+      console.error('[Tilopay Webhook] No se pudo registrar el evento:', eventError);
+      return res.status(500).json({ error: 'No se pudo registrar el webhook.' });
+    }
+
+    let subscriptionMode: 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | null = null;
+    if (event === 'transaction.success') subscriptionMode = 'ACTIVE';
+    if (event === 'transaction.failed') subscriptionMode = 'PAST_DUE';
+    if (event === 'subscription_cancelled') subscriptionMode = 'CANCELLED';
+
+    if (subscriptionMode && tenant_id) {
+      const { error: subscriptionError } = await supabaseAdmin
+        .from('subscriptions')
+        .update({
+          mode: subscriptionMode,
+          ...(subscriptionMode === 'ACTIVE'
+            ? { activated_at: new Date().toISOString(), trial_ends_at: null }
+            : {})
+        })
+        .eq('tenant_id', tenant_id);
+
+      if (subscriptionError) {
+        await supabaseAdmin
+          .from('subscription_webhook_events')
+          .update({ processing_status: 'FAILED', error_message: subscriptionError.message })
+          .eq('event_id', eventId);
+        console.error('[Tilopay Webhook] Error actualizando suscripción:', subscriptionError);
+        return res.status(500).json({ error: 'No se pudo actualizar la suscripción.' });
+      }
+    }
+
+    const { error: processedError } = await supabaseAdmin
+      .from('subscription_webhook_events')
+      .update({ processing_status: 'PROCESSED', processed_at: new Date().toISOString() })
+      .eq('event_id', eventId);
+
+    if (processedError) {
+      console.error('[Tilopay Webhook] Error marcando evento procesado:', processedError);
+      return res.status(500).json({ error: 'El webhook fue aplicado pero no pudo cerrarse.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: subscriptionMode || 'RECEIVED',
+      event_id: eventId,
+      transaction_id
+    });
   }
 
   // Leer variables de entorno (Nunca expuestas al frontend)

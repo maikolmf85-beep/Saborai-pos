@@ -1,0 +1,111 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+const posts = (await getCollection('blog')).sort(
+  (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf()
+);
+
+const categories = [...new Set(posts.map((p) => p.data.category))];
+
+const categoryLabels: Record<string, string> = {
+  noticias: '📰 Noticias',
+  tips: '💡 Tips',
+  actualizaciones: '🔄 Actualizaciones',
+  industria: '🏪 Industria',
+  'recetas-exito': '⭐ Recetas de Éxito',
+};
+---
+
+<BaseLayout
+  title="Blog — SaborAI POS"
+  description="Artículos, tips y noticias sobre gestión de restaurantes, facturación electrónica y la industria gastronómica en Costa Rica."
+>
+  <!-- Hero -->
+  <section class="bg-gradient-to-br from-primary via-stone-800 to-primary py-14 md:py-20">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <span class="inline-flex items-center gap-2 px-4 py-1.5 bg-accent/20 text-accent rounded-full text-sm font-bold mb-5 border border-accent/30">
+        📝 Blog Oficial
+      </span>
+      <h1 class="text-4xl md:text-5xl font-black font-heading text-white mb-4">
+        Artículos para <span class="text-accent">restauranteros</span>
+      </h1>
+      <p class="text-white/70 text-lg max-w-2xl mx-auto">
+        Tips, noticias y conocimiento para hacer crecer tu negocio gastronómico en Costa Rica.
+      </p>
+    </div>
+  </section>
+
+  <!-- Filters -->
+  <section class="border-b border-stone-200 bg-white sticky top-16 z-30">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-2 overflow-x-auto">
+      <a href="/blog" class="whitespace-nowrap px-3 py-1.5 text-xs font-bold bg-primary text-white rounded-full">
+        Todos
+      </a>
+      {categories.map((cat) => (
+        <a
+          href={`/blog/categoria/${cat}`}
+          class="whitespace-nowrap px-3 py-1.5 text-xs font-bold text-neutral bg-stone-100 hover:bg-sage-100 hover:text-sage-700 rounded-full transition-colors"
+        >
+          {categoryLabels[cat] || cat}
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <!-- Posts Grid -->
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-14">
+    {posts.length > 0 ? (
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {posts.map((post) => (
+          <a
+            href={`/blog/${post.slug}`}
+            class="group bg-white rounded-2xl border border-stone-200/80 overflow-hidden card-hover shadow-sm"
+          >
+            {post.data.heroImage && (
+              <div class="aspect-video bg-sage-50 overflow-hidden">
+                <img
+                  src={post.data.heroImage}
+                  alt={post.data.title}
+                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  loading="lazy"
+                />
+              </div>
+            )}
+            {!post.data.heroImage && (
+              <div class="aspect-video bg-gradient-to-br from-sage-100 to-sage-200 flex items-center justify-center">
+                <span class="text-5xl opacity-40">📝</span>
+              </div>
+            )}
+            <div class="p-5">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="badge-sage text-[10px]">{post.data.category}</span>
+                <span class="text-xs text-neutral">
+                  {post.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+                {post.data.readingTime && (
+                  <span class="text-xs text-neutral ml-auto">⏱ {post.data.readingTime} min</span>
+                )}
+              </div>
+              <h2 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors leading-snug mb-2">
+                {post.data.title}
+              </h2>
+              <p class="text-sm text-neutral line-clamp-3">{post.data.description}</p>
+              <div class="mt-4 flex items-center gap-2">
+                <span class="text-xs text-neutral">Por {post.data.author}</span>
+                <span class="ml-auto text-xs font-bold text-sage-600 group-hover:text-sage-800 transition-colors">
+                  Leer →
+                </span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <div class="text-center py-20 bg-stone-50 rounded-2xl border border-stone-200">
+        <span class="text-5xl mb-4 block">📝</span>
+        <p class="text-neutral font-medium text-lg">Próximamente nuevos artículos</p>
+      </div>
+    )}
+  </section>
+</BaseLayout>

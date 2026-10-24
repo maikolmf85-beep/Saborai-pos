@@ -1,0 +1,23 @@
+{
+  "name": "saborai-blog",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Blog, Centro de Ayuda y Guías de SaborAI POS - Software Gastronómico con IA para Costa Rica",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^5.8.0",
+    "@astrojs/sitemap": "^3.3.0",
+    "@astrojs/tailwind": "^6.0.2",
+    "@astrojs/mdx": "^4.2.0",
+    "@astrojs/rss": "^4.0.0",
+    "tailwindcss": "^3.4.17",
+    "@tailwindcss/typography": "^0.5.15",
+    "sharp": "^0.33.5"
+  }
+}

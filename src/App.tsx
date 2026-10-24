@@ -288,18 +288,9 @@ export function App() {
             trialEndsAt: data.subscription?.trial_ends_at
           };
           
-          // Preservar el colaborador seleccionado actualmente (por ejemplo, Rafael) si ya existe en localStorage
-          const savedActiveUserRaw = localStorage.getItem('saborai_user');
-          let effectiveUser = user;
-          if (savedActiveUserRaw) {
-            try {
-              const parsedSavedUser = JSON.parse(savedActiveUserRaw);
-              if (parsedSavedUser && parsedSavedUser.name) {
-                effectiveUser = parsedSavedUser;
-              }
-            } catch {}
-          }
-
+          // La identidad y el rol efectivo vienen del JWT/backend. No aceptar
+          // un usuario o rol alternativo desde localStorage.
+          const effectiveUser = user;
           setCurrentUser(effectiveUser);
           setTenant(tenantObj);
           setMenuItems(getTenantItem<MenuItem[]>('menu', tenantObj.id) || []);

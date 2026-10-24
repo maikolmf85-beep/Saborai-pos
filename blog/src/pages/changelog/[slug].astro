@@ -1,0 +1,96 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const entries = await getCollection('changelog');
+  return entries.map((entry) => ({
+    params: { slug: entry.slug },
+    props: entry,
+  }));
+}
+
+type Props = CollectionEntry<'changelog'>;
+
+const entry = Astro.props;
+const { Content } = await entry.render();
+
+const typeColors: Record<string, string> = {
+  major: 'bg-emerald-600',
+  minor: 'bg-blue-600',
+  patch: 'bg-stone-500',
+};
+
+const typeLabels: Record<string, string> = {
+  major: 'Actualización Mayor',
+  minor: 'Actualización Menor',
+  patch: 'Parche / Corrección',
+};
+---
+
+<BaseLayout
+  title={`${entry.data.title} — Novedades SaborAI`}
+  description={entry.data.description}
+  type="article"
+  publishedTime={entry.data.pubDate.toISOString()}
+>
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <!-- Breadcrumb -->
+    <nav class="flex items-center gap-2 text-sm mb-8">
+      <a href="/" class="text-neutral hover:text-primary transition-colors">Inicio</a>
+      <span class="text-stone-300">›</span>
+      <a href="/changelog" class="text-neutral hover:text-primary transition-colors">Novedades</a>
+      <span class="text-stone-300">›</span>
+      <span class="text-primary font-medium">{entry.data.version}</span>
+    </nav>
+
+    <!-- Header -->
+    <div class="flex items-start gap-5 mb-8">
+      <span class={`inline-flex items-center justify-center w-16 h-16 rounded-2xl text-white font-black text-sm shrink-0 ${typeColors[entry.data.type]} shadow-lg`}>
+        {entry.data.version}
+      </span>
+      <div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <span class="badge text-[10px] border bg-stone-100 text-stone-700 border-stone-200">
+            {typeLabels[entry.data.type]}
+          </span>
+          <span class="text-xs text-neutral">
+            {entry.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}
+          </span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-black font-heading text-primary leading-tight">
+          {entry.data.title}
+        </h1>
+        <p class="text-neutral mt-2">{entry.data.description}</p>
+      </div>
+    </div>
+
+    <!-- Highlights -->
+    {entry.data.highlights.length > 0 && (
+      <div class="bg-sage-50 rounded-2xl border border-sage-200/50 p-5 mb-8">
+        <h2 class="text-sm font-black font-heading text-primary mb-3">Lo más destacado:</h2>
+        <ul class="flex flex-wrap gap-2">
+          {entry.data.highlights.map((h) => (
+            <li class="badge-sage text-xs">✨ {h}</li>
+          ))}
+        </ul>
+      </div>
+    )}
+
+    <!-- Content -->
+    <article class="prose-saborai">
+      <Content />
+    </article>
+
+    <!-- Navigation -->
+    <div class="mt-10 flex items-center justify-between">
+      <a href="/changelog" class="text-sm font-bold text-sage-600 hover:text-sage-800 transition-colors">
+        ← Ver todas las versiones
+      </a>
+      <a href="https://pos.saborai.site" target="_blank" rel="noopener" class="btn-primary text-sm">
+        🚀 Probar SaborAI POS
+      </a>
+    </div>
+  </div>
+</BaseLayout>

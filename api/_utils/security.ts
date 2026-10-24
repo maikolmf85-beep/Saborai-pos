@@ -67,6 +67,7 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
     .maybeSingle();
 
   if (error || !user || user.active === false) return null;
+  if (String(user.email).toLowerCase() !== String(decoded.email).toLowerCase()) return null;
 
   const { data: tenant } = await supabaseAdmin
     .from('tenants')

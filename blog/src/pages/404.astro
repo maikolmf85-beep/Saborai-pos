@@ -1,0 +1,29 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+
+<BaseLayout
+  title="Página no encontrada — SaborAI Blog"
+  description="La página que buscas no existe. Explora nuestro blog, guías o centro de ayuda."
+  noindex={true}
+>
+  <section class="min-h-[60vh] flex items-center justify-center px-4 py-20">
+    <div class="text-center max-w-lg">
+      <div class="text-8xl mb-6">🍽️</div>
+      <h1 class="text-6xl font-black font-heading text-primary mb-4">404</h1>
+      <h2 class="text-2xl font-bold text-primary mb-4">Esta página no está en el menú</h2>
+      <p class="text-neutral leading-relaxed mb-8">
+        La página que buscas no existe o fue movida. Prueba volver al inicio o explorar nuestras secciones.
+      </p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a href="/" class="btn-primary">🏠 Ir al Inicio</a>
+        <a href="/blog" class="inline-flex items-center gap-2 px-6 py-3 bg-white text-primary font-bold rounded-xl border border-stone-200 hover:bg-stone-50 transition-colors">
+          📝 Ver Blog
+        </a>
+        <a href="/ayuda" class="inline-flex items-center gap-2 px-6 py-3 bg-white text-primary font-bold rounded-xl border border-stone-200 hover:bg-stone-50 transition-colors">
+          💬 Centro de Ayuda
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

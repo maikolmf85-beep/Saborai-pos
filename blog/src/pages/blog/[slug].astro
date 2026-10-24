@@ -1,0 +1,126 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  return posts.map((post) => ({
+    params: { slug: post.slug },
+    props: post,
+  }));
+}
+
+type Props = CollectionEntry<'blog'>;
+
+const post = Astro.props;
+const { Content } = await post.render();
+
+const allPosts = (await getCollection('blog'))
+  .filter((p) => p.slug !== post.slug && p.data.category === post.data.category)
+  .sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf())
+  .slice(0, 3);
+---
+
+<BaseLayout
+  title={post.data.title}
+  description={post.data.description}
+  image={post.data.heroImage}
+  type="article"
+  publishedTime={post.data.pubDate.toISOString()}
+  modifiedTime={post.data.updatedDate?.toISOString()}
+  author={post.data.author}
+  tags={post.data.tags}
+>
+  <!-- Hero Image -->
+  {post.data.heroImage && (
+    <div class="w-full aspect-[21/9] overflow-hidden bg-sage-100">
+      <img
+        src={post.data.heroImage}
+        alt={post.data.title}
+        class="w-full h-full object-cover"
+        loading="eager"
+      />
+    </div>
+  )}
+
+  <!-- Article Container -->
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+    <!-- Meta -->
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+      <a href="/blog" class="text-sm text-sage-600 hover:text-sage-800 font-medium transition-colors">
+        ← Blog
+      </a>
+      <span class="text-stone-300">|</span>
+      <span class="badge-sage text-[10px]">{post.data.category}</span>
+      <span class="text-xs text-neutral">
+        {post.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'long', year: 'numeric' })}
+      </span>
+      {post.data.readingTime && (
+        <span class="text-xs text-neutral">⏱ {post.data.readingTime} min de lectura</span>
+      )}
+    </div>
+
+    <!-- Title -->
+    <h1 class="text-3xl md:text-4xl font-black font-heading text-primary leading-tight mb-4">
+      {post.data.title}
+    </h1>
+
+    <p class="text-lg text-neutral leading-relaxed mb-8 border-b border-stone-100 pb-8">
+      {post.data.description}
+    </p>
+
+    <!-- Author -->
+    <div class="flex items-center gap-3 mb-10">
+      <div class="w-10 h-10 rounded-full bg-gradient-to-br from-sage-400 to-sage-600 flex items-center justify-center text-white font-black text-sm">
+        SA
+      </div>
+      <div>
+        <span class="block text-sm font-bold text-primary">{post.data.author}</span>
+        <span class="block text-xs text-neutral">Equipo SaborAI POS</span>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <article class="prose-saborai">
+      <Content />
+    </article>
+
+    <!-- Tags -->
+    {post.data.tags.length > 0 && (
+      <div class="mt-10 pt-6 border-t border-stone-100 flex flex-wrap gap-2">
+        {post.data.tags.map((tag) => (
+          <span class="badge-sage text-xs">{tag}</span>
+        ))}
+      </div>
+    )}
+
+    <!-- CTA -->
+    <div class="mt-10 p-6 bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-2xl border border-sage-200/50">
+      <h3 class="font-bold font-heading text-primary mb-2">¿Listo para transformar tu restaurante?</h3>
+      <p class="text-sm text-neutral mb-4">Prueba SaborAI POS gratis por 14 días. Sin tarjeta de crédito.</p>
+      <a href="https://pos.saborai.site" target="_blank" rel="noopener" class="btn-primary text-sm">
+        🚀 Iniciar Prueba Gratis
+      </a>
+    </div>
+  </div>
+
+  <!-- Related Posts -->
+  {allPosts.length > 0 && (
+    <section class="bg-stone-50 border-t border-stone-200 py-12">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <h2 class="text-2xl font-black font-heading text-primary mb-6">Artículos relacionados</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {allPosts.map((related) => (
+            <a href={`/blog/${related.slug}`} class="group bg-white rounded-xl border border-stone-200 p-5 card-hover">
+              <span class="badge-sage text-[10px] mb-3 block w-fit">{related.data.category}</span>
+              <h3 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors text-sm leading-snug">
+                {related.data.title}
+              </h3>
+            </a>
+          ))}
+        </div>
+      </div>
+    </section>
+  )}
+</BaseLayout>

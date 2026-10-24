@@ -1,0 +1,77 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import { getCollection } from 'astro:content';
+
+export async function getStaticPaths() {
+  const posts = await getCollection('blog');
+  const categories = [...new Set(posts.map((p) => p.data.category))];
+  return categories.map((category) => ({
+    params: { category },
+    props: { posts: posts.filter((p) => p.data.category === category) },
+  }));
+}
+
+const { category } = Astro.params;
+const { posts } = Astro.props as { posts: Awaited<ReturnType<typeof getCollection<'blog'>>> };
+
+const sortedPosts = posts.sort((a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf());
+
+const categoryLabels: Record<string, string> = {
+  noticias: 'Noticias',
+  tips: 'Tips',
+  actualizaciones: 'Actualizaciones',
+  industria: 'Industria',
+  'recetas-exito': 'Recetas de Éxito',
+};
+---
+
+<BaseLayout
+  title={`${categoryLabels[category as string] || category} — Blog SaborAI`}
+  description={`Artículos sobre ${categoryLabels[category as string] || category} en el blog de SaborAI POS.`}
+>
+  <section class="bg-gradient-to-br from-primary via-stone-800 to-primary py-14">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <a href="/blog" class="text-accent/80 hover:text-accent text-sm font-bold transition-colors mb-4 block">
+        ← Volver al Blog
+      </a>
+      <h1 class="text-3xl md:text-4xl font-black font-heading text-white">
+        {categoryLabels[category as string] || category}
+      </h1>
+      <p class="text-white/60 mt-2 text-sm">{sortedPosts.length} artículos</p>
+    </div>
+  </section>
+
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+    {sortedPosts.length > 0 ? (
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {sortedPosts.map((post) => (
+          <a href={`/blog/${post.slug}`} class="group bg-white rounded-2xl border border-stone-200/80 overflow-hidden card-hover shadow-sm">
+            {post.data.heroImage ? (
+              <div class="aspect-video bg-sage-50 overflow-hidden">
+                <img src={post.data.heroImage} alt={post.data.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+              </div>
+            ) : (
+              <div class="aspect-video bg-gradient-to-br from-sage-100 to-sage-200 flex items-center justify-center">
+                <span class="text-5xl opacity-40">📝</span>
+              </div>
+            )}
+            <div class="p-5">
+              <span class="text-xs text-neutral">
+                {post.data.pubDate.toLocaleDateString('es-CR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+              <h2 class="font-bold font-heading text-primary group-hover:text-sage-700 transition-colors leading-snug mb-2 mt-2">
+                {post.data.title}
+              </h2>
+              <p class="text-sm text-neutral line-clamp-2">{post.data.description}</p>
+            </div>
+          </a>
+        ))}
+      </div>
+    ) : (
+      <div class="text-center py-16">
+        <p class="text-neutral">No hay artículos en esta categoría todavía.</p>
+        <a href="/blog" class="mt-4 inline-block text-sage-600 font-bold hover:underline">← Volver al blog</a>
+      </div>
+    )}
+  </section>
+</BaseLayout>

@@ -1,8 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
-import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
-import { handleOptions, getJwtSecret, setCorsHeaders } from '../_utils/security.js';
+import { authenticateRequest, handleOptions, setCorsHeaders } from '../_utils/security.js';
 
 try {
   dotenv.config();
@@ -126,18 +125,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Método no permitido. Utiliza POST.' });
   }
 
-  // El modo demo puede usar el fallback local, pero cualquier JWT enviado debe ser válido.
+  // El modo demo puede usar el fallback local, pero cualquier JWT enviado debe
+  // ser válido. Las llamadas a proveedores externos requieren sesión real.
   const authHeader = req.headers.authorization;
+  let authenticatedUser: Awaited<ReturnType<typeof authenticateRequest>> = null;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
     try {
-      jwt.verify(token, getJwtSecret());
+      authenticatedUser = await authenticateRequest(req);
+      if (!authenticatedUser) throw new Error('invalid-session');
     } catch {
       return res.status(401).json({ error: 'Sesión inválida o expirada.' });
     }
   }
 
-  const { userText, messages = [], context = {}, customApiKey } = (req.body || {}) as ChatRequestBody & { customApiKey?: string };
+  const { userText, messages = [], context = {} } = (req.body || {}) as ChatRequestBody;
 
   if (!userText || typeof userText !== 'string' || !userText.trim()) {
     return res.status(400).json({ error: 'El campo userText es requerido.' });
@@ -172,6 +173,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const tableSummary = context.selectedTable
     ? `${context.selectedTable.name || 'Sin nombre'} (${context.selectedTable.status || 'AVAILABLE'})`
     : 'sin mesa seleccionada';
+  const authenticatedUserSummary = authenticatedUser
+    ? `${authenticatedUser.email} (${authenticatedUser.role || 'USER'})`
+    : 'modo demostración sin sesión autenticada';
   const baseInstruction = `Eres Nyza, la inteligencia operativa de Saborai POS para restaurantes de Costa Rica.
 Responde en español costarricense, con precisión y máximo 4 oraciones salvo que el usuario solicite un reporte detallado.
 No inventes datos. Si falta información, dilo y pide solo el dato necesario.
@@ -182,7 +186,7 @@ Acciones POS disponibles; devuelve SOLO un bloque JSON al final cuando correspon
 ADD_ITEM {product, quantity, modifiers:[{modifierName, choiceName, extraPrice}]}; ADD_TABLE {name, zone, seats}; ADD_ZONE {name}; ADD_TABLE_RANGE {zone, from, to, seats}; OPEN_REPORTS {range:"today"|"week"|"month"}; TOGGLE_DISH_AVAILABILITY {product, available}; OPEN_SHIFT; y tool_calls para diagnóstico autorizado.
 Para solicitudes como "crea las mesas 11 a 20 en Terraza para 2 personas", usa una sola acción ADD_TABLE_RANGE con from=11, to=20, seats=2 y zone="Terraza". Nunca afirmes que una acción fue realizada si no incluyes el JSON correspondiente.
 Para crear o mostrar un reporte usa OPEN_REPORTS; no inventes cifras que no estén en los datos del sistema.
-El usuario actual es ${context.currentUser?.name || 'Empleado'} (${context.currentUser?.role || 'ADMIN'}). Mesa: ${tableSummary}.
+El usuario autenticado es ${authenticatedUserSummary}. Mesa: ${tableSummary}.
 Salones configurados: ${(context.zones || []).join(', ') || 'ninguno'}.
 ${needsMenu ? `Menú relevante:\n${menuSummary || 'catálogo vacío'}` : 'No es necesario enviar el menú para esta consulta.'}
 ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendizaje:\n${context.knowledgeContext}` : ''}`;
@@ -193,13 +197,11 @@ ${intent === 'learning' && context.knowledgeContext ? `\nConocimiento de aprendi
   const fullPrompt = `${recentHistory ? `${recentHistory}\n` : ''}[Usuario]: ${cleanUserText}`;
 
   // 1. Motor Primario: Google Gemini
-  const geminiKey = configuredSecret(
+  const geminiKey = authenticatedUser ? configuredSecret(
     process.env.GEMINI_API_KEY,
     process.env.GEMINI_KEY,
-    process.env.GEMINI_API_TOKEN,
-    process.env.VITE_GEMINI_API_KEY,
-    customApiKey && customApiKey.startsWith('AIza') ? customApiKey : undefined
-  );
+    process.env.GEMINI_API_TOKEN
+  ) : '';
   if (geminiKey) {
     // 3.8 es el modelo principal; 3.5 Flash-Lite es un respaldo vigente,
     // multimodal y disponible en el nivel gratuito.

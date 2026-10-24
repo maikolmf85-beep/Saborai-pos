@@ -24,7 +24,7 @@ import {
   MessageCircle,
   WifiOff
 } from 'lucide-react';
-import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount } from '../types';
+import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount, UserProfile } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
@@ -35,6 +35,7 @@ import { PosNotification } from './NotificationToast';
 
 interface BillingHaciendaProps {
   tenant: TenantInfo;
+  currentUser?: UserProfile | null;
   selectedTable?: Table | null;
   onEmitInvoice?: (invoice: ElectronicInvoiceCR) => void;
   onSaveTable?: (updatedTable: Table) => void;
@@ -46,6 +47,7 @@ interface BillingHaciendaProps {
 
 export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   tenant,
+  currentUser,
   selectedTable,
   onEmitInvoice,
   onSaveTable,
@@ -439,7 +441,10 @@ Medio de Pago: ${paymentMethod}
       subtotal,
       tax: iva13,
       service10: servicio10,
-      registerId: currentRegister.id
+      registerId: currentRegister.id,
+      tenantId: tenant.id,
+      actor: currentUser || undefined,
+      reference: clave50Digitos
     });
 
     // Deducción automática de insumos e ingredientes del inventario (escandallo)
