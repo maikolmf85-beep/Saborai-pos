@@ -98,7 +98,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // 2. Check password
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      let isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      if (!isPasswordValid) {
+        const supabaseSession = await getSupabaseSession(email, password);
+        if (supabaseSession) {
+          const salt = await bcrypt.genSalt(10);
+          const synchronizedHash = await bcrypt.hash(password, salt);
+          const { error: syncError } = await supabase
+            .from('users')
+            .update({ password_hash: synchronizedHash })
+            .eq('id', user.id);
+          if (!syncError) {
+            user.password_hash = synchronizedHash;
+            isPasswordValid = true;
+          } else {
+            console.warn('[Auth] No se pudo sincronizar el hash legacy:', syncError.message);
+          }
+        }
+      }
       if (!isPasswordValid) {
         return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
       }
