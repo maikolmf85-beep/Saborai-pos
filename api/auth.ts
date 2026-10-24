@@ -7,6 +7,15 @@ import { allowedOriginForRedirect, getJwtSecret, handleOptions, setCorsHeaders }
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
+function escapeHtml(value: unknown): string {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
 async function ensureSupabaseAuthIdentity(email: string, password: string): Promise<string | null> {
   try {
     const created = await supabase.auth.admin.createUser({
@@ -352,6 +361,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(500).json({ error: 'Error al actualizar la contraseña.' });
         }
 
+        if (decoded.authUserId) {
+          const { error: authPasswordError } = await supabase.auth.admin.updateUserById(decoded.authUserId, {
+            password: newPassword
+          });
+          if (authPasswordError) {
+            console.warn('[Auth] No se pudo sincronizar la contraseña de Supabase Auth:', authPasswordError.message);
+          }
+        }
+
         return res.status(200).json({
           success: true,
           message: 'Contraseña actualizada exitosamente. Ya puedes iniciar sesión.'
@@ -360,10 +378,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Case 2: Request password reset email
       if (email) {
+        const normalizedEmail = String(email).trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+          return res.status(400).json({ error: 'Ingresa un correo electrónico válido.' });
+        }
+
         const { data: user, error: userError } = await supabase
           .from('users')
-          .select('id, name, email')
-          .eq('email', email.toLowerCase())
+          .select('id, name, email, auth_user_id')
+          .eq('email', normalizedEmail)
           .single();
 
         if (userError || !user) {
@@ -374,7 +397,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const resetToken = jwt.sign(
-          { userId: user.id, email: user.email },
+          { userId: user.id, email: user.email, authUserId: user.auth_user_id || undefined },
           jwtSecret,
           { expiresIn: '1h' }
         );
@@ -383,10 +406,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const resetLink = `${origin}/?resetToken=${resetToken}`;
 
         if (!resendApiKey) {
-          console.warn('[Simulación de Envío] RESEND_API_KEY no configurado.');
-          return res.status(200).json({
-            success: true,
-            message: 'API Key no configurada. Revisa la consola para ver el enlace simulado.'
+          console.error('[Password Reset] RESEND_API_KEY no configurada; no se envió correo.');
+          return res.status(503).json({
+            error: 'El servicio de correo no está configurado. El administrador debe configurar RESEND_API_KEY y RESEND_FROM_EMAIL.'
           });
         }
 
@@ -400,7 +422,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #3b3733;">
               <h2 style="color: #a9b994;">Saborai POS</h2>
-              <p>Hola ${user.name},</p>
+              <p>Hola ${escapeHtml(user.name)},</p>
               <p>Hemos recibido una solicitud para restablecer tu contraseña.</p>
               <p>Haz clic en el siguiente enlace para crear una nueva contraseña. Este enlace expira en 1 hora:</p>
               <div style="margin: 30px 0;">
