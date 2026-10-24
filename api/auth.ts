@@ -7,6 +7,38 @@ import { allowedOriginForRedirect, getJwtSecret, handleOptions, setCorsHeaders }
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
+async function ensureSupabaseAuthIdentity(email: string, password: string): Promise<string | null> {
+  try {
+    const created = await supabase.auth.admin.createUser({
+      email: email.toLowerCase(),
+      password,
+      email_confirm: true
+    });
+    if (created.data.user?.id) return created.data.user.id;
+
+    const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
+    return existing?.id || null;
+  } catch (error) {
+    const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
+    if (existing?.id) return existing.id;
+    console.warn('[Auth Bridge] No se pudo vincular la identidad Supabase:', error);
+    return null;
+  }
+}
+
+async function linkLegacyUserToAuth(userId: string, email: string, password: string): Promise<void> {
+  const authUserId = await ensureSupabaseAuthIdentity(email, password);
+  if (!authUserId) return;
+  const { error } = await supabase
+    .from('users')
+    .update({ auth_user_id: authUserId })
+    .eq('id', userId)
+    .is('auth_user_id', null);
+  if (error) console.warn('[Auth Bridge] La columna auth_user_id aún no está disponible:', error.message);
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -55,6 +87,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
       if (!isPasswordValid) {
         return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+      }
+
+      if (!user.auth_user_id) {
+        await linkLegacyUserToAuth(user.id, email, password);
       }
 
       // 3. Fetch related tenant and subscription
@@ -128,6 +164,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error('Error creating user:', userError);
         return res.status(500).json({ error: 'Error al crear usuario' });
       }
+
+      await linkLegacyUserToAuth(newUser.id, newUser.email, password);
 
       // 4. Create tenant
       const { data: newTenant, error: tenantError } = await supabase
