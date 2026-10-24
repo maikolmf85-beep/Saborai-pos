@@ -25,7 +25,9 @@ export function useRealtimeSync(
     if (!tenantId || !client) return;
 
     const channelName = `tenant-${tenantId}-sync`;
-    const channel = client.channel(channelName);
+    const channel = client.channel(channelName, {
+      config: { private: true }
+    });
 
     channel
       .on('broadcast', { event: 'sync-tables' }, ({ payload }) => {
