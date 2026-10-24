@@ -5,3 +5,5 @@ alter table public.pos_invoices
 
 create index if not exists pos_invoices_tenant_status_idx
   on public.pos_invoices(tenant_id, hacienda_status, created_at desc);
+
+alter table public.pos_invoices enable row level security;
