@@ -1031,6 +1031,24 @@ export function App() {
     );
   }
 
+  if (resetToken) {
+    return (
+      <Suspense fallback={
+        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
+          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
+        </div>
+      }>
+        <ResetPasswordScreen
+          token={resetToken}
+          onSuccess={() => {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setResetToken(null);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   // Subscription gate — only for POS domain
   const isTrialExpired = subscription?.mode === 'TRIAL' && subscription.trialEndsAt
     ? new Date(subscription.trialEndsAt) < new Date()
@@ -1075,24 +1093,6 @@ export function App() {
           Renovar Suscripción
         </button>
       </div>
-    );
-  }
-
-  if (resetToken) {
-    return (
-      <Suspense fallback={
-        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
-          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
-        </div>
-      }>
-        <ResetPasswordScreen 
-          token={resetToken} 
-          onSuccess={() => {
-            window.history.replaceState({}, document.title, window.location.pathname);
-            setResetToken(null);
-          }} 
-        />
-      </Suspense>
     );
   }
 
