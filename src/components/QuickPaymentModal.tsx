@@ -340,6 +340,13 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
           { amount: mixedSinpe, method: 'SINPE', reference: sinpeRef || undefined, provider: 'POS' }
         ].filter(payment => payment.amount > 0);
 
+    const shouldQueueInvoice = isOffline || isSimplified || !emitToHacienda;
+    const inventoryItems = items.map(item => ({
+      menuItemId: item.id,
+      name: item.name,
+      quantity: item.quantity
+    }));
+
     // Se registra como PENDING en el backend; nunca se marca como autorizado desde el cliente.
     void localDB.enqueueOfflineAction(
       'UPDATE_TABLE',
@@ -358,7 +365,32 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       },
       `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
       tenant.id
-    )).then(() => localDB.syncAllPending());
+    )).then(() => localDB.enqueueOfflineAction(
+      'DEDUCT_INVENTORY',
+      {
+        orderNumber: table.activeOrder?.orderNumber,
+        items: inventoryItems,
+        occurredAt: emissionDate.toISOString()
+      },
+      `Inventario pendiente de descuento para ${table.name || 'Mesa'}`,
+      tenant.id
+    )).then(() => shouldQueueInvoice
+      ? localDB.enqueueOfflineAction(
+          'EMIT_INVOICE',
+          {
+            orderNumber: table.activeOrder?.orderNumber,
+            clave: generatedClave,
+            consecutivo: generatedConsecutivo,
+            documentType: docType,
+            total,
+            xmlContent: undefined,
+            occurredAt: emissionDate.toISOString()
+          },
+          `Comprobante pendiente para ${table.name || 'Mesa'}`,
+          tenant.id
+        )
+      : Promise.resolve()
+    ).then(() => localDB.syncAllPending());
     
     if (emitToHacienda && !isSimplified) {
       const xml = generateHaciendaXmlV44(invoiceObj, tenant);

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -209,6 +209,120 @@ async function syncPayment(tenantId: string, userId: string, operationId: string
   return { orderId: orderResult.data.id, paymentIds: inserted, status: 'PENDING' };
 }
 
+async function findOrder(tenantId: string, orderNumber: unknown) {
+  const normalizedOrderNumber = typeof orderNumber === 'string' ? orderNumber.trim() : '';
+  if (!normalizedOrderNumber) throw new Error('La operación no contiene un número de orden válido.');
+  const result = await supabaseAdmin
+    .from('pos_orders')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('idempotency_key', `order:${tenantId}:${normalizedOrderNumber}`)
+    .maybeSingle();
+  if (result.error || !result.data) throw new Error('La orden aún no existe en la nube; se reintentará después de sincronizar la comanda.');
+  return { id: result.data.id, orderNumber: normalizedOrderNumber };
+}
+
+async function syncInventory(tenantId: string, userId: string, operationId: string, payload: any) {
+  const order = await findOrder(tenantId, payload?.orderNumber);
+  const items = Array.isArray(payload?.items)
+    ? payload.items
+      .filter((item: any) => item && typeof item.name === 'string' && safeNumber(item.quantity, 0) > 0)
+      .map((item: any) => ({
+        name: item.name.slice(0, 200),
+        quantity: safeNumber(item.quantity, 0),
+        menuItemId: isUuid(item.menuItemId) ? item.menuItemId : null
+      }))
+    : [];
+  if (items.length === 0) throw new Error('La operación de inventario no contiene artículos válidos.');
+
+  const actorId = isUuid(userId) ? userId : null;
+  const rpc = await supabaseAdmin.rpc('apply_offline_inventory', {
+    p_tenant_id: tenantId,
+    p_operation_id: operationId,
+    p_created_by: actorId,
+    p_order_id: order.id,
+    p_items: items
+  });
+  if (rpc.error) throw new Error('No se pudo aplicar el descuento de inventario en la nube.');
+
+  await supabaseAdmin.from('pos_audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: userId,
+    action: 'OFFLINE_SYNC',
+    entity_type: 'INVENTORY',
+    entity_id: order.id,
+    request_id: operationId,
+    metadata: { ...rpc.data, orderNumber: order.orderNumber, source: 'pwa' }
+  });
+  return { orderId: order.id, ...rpc.data };
+}
+
+async function syncInvoice(tenantId: string, userId: string, operationId: string, payload: any) {
+  const order = await findOrder(tenantId, payload?.orderNumber);
+  const clave = typeof payload?.clave === 'string' ? payload.clave.trim() : '';
+  const consecutivo = typeof payload?.consecutivo === 'string' ? payload.consecutivo.trim() : '';
+  if (!clave || !consecutivo) throw new Error('El comprobante offline no contiene clave y consecutivo.');
+  if (!['FE', 'TE', 'NC', 'ND'].includes(payload?.documentType)) throw new Error('El tipo de comprobante offline no es válido.');
+
+  const branch = await findBranch(tenantId);
+  if (!branch) throw new Error('No existe una sucursal activa para registrar el comprobante.');
+
+  const existing = await supabaseAdmin
+    .from('pos_invoices')
+    .select('id, hacienda_status')
+    .eq('tenant_id', tenantId)
+    .eq('clave', clave)
+    .maybeSingle();
+  if (existing.error) throw new Error('No se pudo verificar el comprobante offline.');
+  if (existing.data) return { invoiceId: existing.data.id, status: existing.data.hacienda_status, alreadyExists: true };
+
+  const invoice = await supabaseAdmin.from('pos_invoices').insert({
+    tenant_id: tenantId,
+    branch_id: branch.id,
+    order_id: order.id,
+    clave: clave.slice(0, 50),
+    consecutivo: consecutivo.slice(0, 20),
+    document_type: payload.documentType,
+    hacienda_status: 'PENDING',
+    total: Math.max(0, safeNumber(payload.total, 0)),
+    xml_content: typeof payload.xmlContent === 'string' ? payload.xmlContent : null
+  }).select('id, hacienda_status').single();
+  if (invoice.error || !invoice.data) {
+    const conflict = await supabaseAdmin
+      .from('pos_invoices')
+      .select('id, hacienda_status')
+      .eq('tenant_id', tenantId)
+      .eq('clave', clave)
+      .maybeSingle();
+    if (conflict.data) return { invoiceId: conflict.data.id, status: conflict.data.hacienda_status, alreadyExists: true };
+    const consecutiveConflict = await supabaseAdmin
+      .from('pos_invoices')
+      .select('id, hacienda_status')
+      .eq('tenant_id', tenantId)
+      .eq('consecutivo', consecutivo)
+      .maybeSingle();
+    if (consecutiveConflict.data) {
+      return {
+        invoiceId: consecutiveConflict.data.id,
+        status: consecutiveConflict.data.hacienda_status,
+        alreadyExists: true
+      };
+    }
+    throw new Error('No se pudo guardar el comprobante offline.');
+  }
+
+  await supabaseAdmin.from('pos_audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: userId,
+    action: 'OFFLINE_SYNC',
+    entity_type: 'INVOICE',
+    entity_id: invoice.data.id,
+    request_id: operationId,
+    metadata: { orderNumber: order.orderNumber, clave, status: 'PENDING', source: 'pwa' }
+  });
+  return { invoiceId: invoice.data.id, status: invoice.data.hacienda_status, alreadyExists: false };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -245,7 +359,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const result = action === 'PAYMENT'
       ? await syncPayment(tenantId, auth.userId, operationId, body.payload)
-      : await syncTable(tenantId, auth.userId, operationId, body.payload);
+      : action === 'DEDUCT_INVENTORY'
+        ? await syncInventory(tenantId, auth.userId, operationId, body.payload)
+        : action === 'EMIT_INVOICE'
+          ? await syncInvoice(tenantId, auth.userId, operationId, body.payload)
+          : await syncTable(tenantId, auth.userId, operationId, body.payload);
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
