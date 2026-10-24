@@ -90,7 +90,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ error: 'Method Not Allowed' });
       }
 
-      const { email, password } = req.body || {};
+      const { email: rawEmail, password } = req.body || {};
+      const email = String(rawEmail || '').trim().toLowerCase();
       if (!email || !password) {
         return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
       }
@@ -351,6 +352,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(newPassword, salt);
 
+        const { data: resetUser, error: resetUserError } = await supabase
+          .from('users')
+          .select('id, auth_user_id')
+          .eq('id', userId)
+          .maybeSingle();
+        if (resetUserError || !resetUser) {
+          console.error('[Auth] Usuario no encontrado al restablecer contraseña:', resetUserError);
+          return res.status(404).json({ error: 'La cuenta asociada al enlace ya no existe.' });
+        }
+
         const { error: updateError } = await supabase
           .from('users')
           .update({ password_hash: hashedPassword })
@@ -361,8 +372,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(500).json({ error: 'Error al actualizar la contraseña.' });
         }
 
-        if (decoded.authUserId) {
-          const { error: authPasswordError } = await supabase.auth.admin.updateUserById(decoded.authUserId, {
+        const authUserId = decoded.authUserId || resetUser.auth_user_id;
+        if (authUserId) {
+          const { error: authPasswordError } = await supabase.auth.admin.updateUserById(authUserId, {
             password: newPassword
           });
           if (authPasswordError) {
