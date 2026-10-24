@@ -31,6 +31,8 @@ export interface OfflineSyncQueueItem {
 export class SaboraiLocalDB {
   private db: IDBDatabase | null = null;
   private isSimulatedOffline: boolean = false;
+  private networkListenersReady: boolean = false;
+  private syncInFlight: boolean = false;
   private listeners: ((isOnline: boolean, pendingCount: number) => void)[] = [];
 
   async init(): Promise<void> {
@@ -73,6 +75,8 @@ export class SaboraiLocalDB {
   }
 
   private setupNetworkListeners() {
+    if (this.networkListenersReady) return;
+    this.networkListenersReady = true;
     window.addEventListener('online', () => this.handleNetworkChange());
     window.addEventListener('offline', () => this.handleNetworkChange());
   }
@@ -109,10 +113,12 @@ export class SaboraiLocalDB {
   }
 
   async saveItem(storeName: string, item: any): Promise<void> {
+    const itemKey = item.id || item.clave50Digitos || item.tenantId;
     if (!this.db) await this.init();
     if (!this.db) {
       try {
-        localStorage.setItem(`saborai_${storeName}_${item.id || item.clave50Digitos}`, JSON.stringify(item));
+        if (!itemKey) throw new Error(`No se encontró una clave para ${storeName}.`);
+        localStorage.setItem(`saborai_${storeName}_${itemKey}`, JSON.stringify(item));
       } catch {}
       return;
     }
@@ -132,7 +138,19 @@ export class SaboraiLocalDB {
 
   async getAllItems<T>(storeName: string): Promise<T[]> {
     if (!this.db) await this.init();
-    if (!this.db) return [];
+    if (!this.db) {
+      const prefix = `saborai_${storeName}_`;
+      const items: T[] = [];
+      try {
+        for (let index = 0; index < localStorage.length; index += 1) {
+          const key = localStorage.key(index);
+          if (!key?.startsWith(prefix)) continue;
+          const raw = localStorage.getItem(key);
+          if (raw) items.push(JSON.parse(raw) as T);
+        }
+      } catch {}
+      return items;
+    }
 
     return new Promise((resolve) => {
       try {
@@ -148,7 +166,7 @@ export class SaboraiLocalDB {
   }
 
   async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
-    const operationId = `sync_${Date.now()}_${crypto.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+    const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const item: OfflineSyncQueueItem = {
       id: operationId,
       action,
@@ -243,8 +261,13 @@ export class SaboraiLocalDB {
   }
 
   async syncAllPending(): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
+    if (this.syncInFlight) {
+      return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount() };
+    }
+    this.syncInFlight = true;
     const pending = await this.getPendingItems();
     if (!this.isOnline() || pending.length === 0) {
+      this.syncInFlight = false;
       return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
     }
 
@@ -253,6 +276,7 @@ export class SaboraiLocalDB {
       for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada para sincronizar.');
       const remainingCount = await this.getPendingCount();
       this.notify(this.isOnline(), remainingCount);
+      this.syncInFlight = false;
       return { syncedCount: 0, failedCount: pending.length, remainingCount };
     }
 
@@ -294,6 +318,7 @@ export class SaboraiLocalDB {
 
     const remainingCount = await this.getPendingCount();
     this.notify(this.isOnline(), remainingCount);
+    this.syncInFlight = false;
     return { syncedCount, failedCount, remainingCount };
   }
 }
