@@ -18,7 +18,7 @@ function apiDevPlugin(): Plugin {
           targetModule = '/api/ai/chat.ts';
         } else if (cleanPath === '/api/email/send-invoice') {
           targetModule = '/api/email/send-invoice.ts';
-        } else if (cleanPath === '/api/auth' || cleanPath.startsWith('/api/auth/') || cleanPath === '/api/demo/register') {
+        } else if (cleanPath === '/api/auth' || cleanPath.startsWith('/api/auth/') || cleanPath === '/api/demo/register' || cleanPath === '/api/system-status') {
           targetModule = '/api/auth.ts';
         } else if (cleanPath === '/api/tilopay' || cleanPath.includes('/webhooks/tilopay')) {
           targetModule = '/api/tilopay.ts';
