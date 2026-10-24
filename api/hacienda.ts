@@ -123,6 +123,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fecha, 
       emisor, 
       receptor,
+      codigoActividadReceptor,
+      condicionVenta,
+      medioPago,
+      moneda,
+      tipoCambio,
+      pagos,
+      items,
+      subtotal,
+      iva13,
+      iva4,
+      iva2,
+      iva1,
+      servicio10,
       atvUsername: reqAtvUser,
       atvPassword: reqAtvPass,
       p12Base64: reqP12,
@@ -369,6 +382,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     }
 
+    const invoiceData = {
+      emisor,
+      receptor: receptor || null,
+      documentType: String(documentType || 'TE').slice(0, 2),
+      fechaEmision: fecha || getCostaRicaIsoDate(),
+      total: Number(total || 0),
+      codigoActividadReceptor,
+      condicionVenta,
+      medioPago,
+      moneda,
+      tipoCambio,
+      pagos,
+      items: Array.isArray(items) ? items : [],
+      subtotal: Number(subtotal || 0),
+      iva13: Number(iva13 || 0),
+      iva4: Number(iva4 || 0),
+      iva2: Number(iva2 || 0),
+      iva1: Number(iva1 || 0),
+      servicio10: Number(servicio10 || 0),
+      clave,
+      consecutivo: String(consecutivo || clave).slice(0, 20)
+    };
+
     // 4. Enviar a Recepción de Hacienda
     const recepcionRes = await fetch(endpoints.api, {
       method: 'POST',
@@ -397,6 +433,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           document_type: String(documentType || 'TE').slice(0, 2),
           hacienda_status: 'PROCESSING',
           total: Number(total || 0),
+          invoice_data: invoiceData,
+          xml_content: rawXml || null,
           signed_xml_content: finalXmlBase64,
           submitted_at: new Date().toISOString()
         }, { onConflict: 'tenant_id,clave' });
@@ -416,6 +454,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try { recepcionData = rawBody ? JSON.parse(rawBody) : null; } catch { recepcionData = { raw: rawBody }; }
       console.error('Rechazo Hacienda:', recepcionRes.status, errorCause, recepcionData);
       const reason = errorCause || recepcionData?.message || recepcionData?.error_description || recepcionData?.raw || `HTTP ${recepcionRes.status}`;
+      const branch = await supabaseAdmin
+        .from('pos_branches')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (branch.data) {
+        await supabaseAdmin.from('pos_invoices').upsert({
+          tenant_id: tenantId,
+          branch_id: branch.data.id,
+          clave,
+          consecutivo: String(consecutivo || clave).slice(0, 20),
+          document_type: String(documentType || 'TE').slice(0, 2),
+          hacienda_status: 'REJECTED',
+          total: Number(total || 0),
+          invoice_data: invoiceData,
+          xml_content: rawXml || null,
+          signed_xml_content: finalXmlBase64,
+          error_message: String(reason).slice(0, 4000)
+        }, { onConflict: 'tenant_id,clave' });
+      }
       return res.status(400).json({ 
         error: `Hacienda rechazó la recepción (${recepcionRes.status}): ${reason}`, 
         status: recepcionRes.status,

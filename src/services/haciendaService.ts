@@ -85,6 +85,56 @@ class HaciendaService {
     return [...this.invoices];
   }
 
+  public async refreshFromServer(): Promise<void> {
+    try {
+      const response = await fetch('/api/hacienda-history?limit=250', {
+        headers: this.getAuthHeaders()
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(data?.invoices)) return;
+
+      const remoteInvoices: ElectronicInvoiceCR[] = data.invoices.map((row: any) => {
+        const source = row.invoiceData || {};
+        const status = row.status === 'ACCEPTED'
+          ? 'ACEPTADO'
+          : row.status === 'REJECTED'
+            ? 'RECHAZADO'
+            : row.status === 'VOIDED'
+              ? 'ANULADO'
+              : 'PROCESANDO';
+        return {
+          ...source,
+          clave50Digitos: row.clave,
+          consecutivo: row.consecutivo,
+          tipoDocumento: source.documentType || row.documentType || 'TE',
+          emisor: source.emisor || { nombre: '', cedulaJuridica: '', nombreComercial: '', correo: '', sucursal: '', terminal: '' },
+          receptor: source.receptor || { nombre: 'Cliente General Contado', tipoIdentificacion: '01-Fisica', identificacion: '', correo: '' },
+          fechaEmision: source.fechaEmision || row.createdAt,
+          moneda: source.moneda || 'CRC',
+          tipoCambio: Number(source.tipoCambio || 1),
+          items: Array.isArray(source.items) ? source.items : [],
+          subtotal: Number(source.subtotal || row.total || 0),
+          iva13: Number(source.iva13 || 0),
+          iva4: Number(source.iva4 || 0),
+          iva2: Number(source.iva2 || 0),
+          iva1: Number(source.iva1 || 0),
+          servicio10: Number(source.servicio10 || 0),
+          totalComprobante: Number(source.total || row.total || 0),
+          estadoHacienda: status,
+          xmlContent: row.xmlContent || source.xmlContent,
+          signedXmlContent: row.signedXmlContent || source.signedXmlContent,
+          errorMensaje: row.errorMessage
+        } as ElectronicInvoiceCR;
+      });
+
+      const remoteKeys = new Set(remoteInvoices.map(invoice => invoice.clave50Digitos));
+      this.invoices = [...remoteInvoices, ...this.invoices.filter(invoice => !remoteKeys.has(invoice.clave50Digitos))];
+      this.persist();
+    } catch (error) {
+      console.warn('[Hacienda] No se pudo actualizar el historial remoto:', error);
+    }
+  }
+
   public async testConnection(configToTest?: HaciendaConfig): Promise<{ success: boolean; message: string; details?: any }> {
     const config = configToTest || this.getConfig();
     if (!config?.atvUsername || !config?.atvPassword) {
@@ -179,6 +229,19 @@ class HaciendaService {
         fecha: isNaN(new Date(invoice.fechaEmision as any).getTime()) ? undefined : fechaIso,
         emisor: { ...invoice.emisor, tipoIdentificacion: activeConfig?.tipoIdentificacion || '02' },
         receptor: invoice.tipoDocumento === 'TE' ? undefined : invoice.receptor,
+        codigoActividadReceptor: invoice.codigoActividadReceptor,
+        condicionVenta: invoice.condicionVenta,
+        medioPago: invoice.medioPago,
+        moneda: invoice.moneda,
+        tipoCambio: invoice.tipoCambio,
+        pagos: invoice.pagos,
+        items: invoice.items,
+        subtotal: invoice.subtotal,
+        iva13: invoice.iva13,
+        iva4: invoice.iva4,
+        iva2: invoice.iva2,
+        iva1: invoice.iva1,
+        servicio10: invoice.servicio10,
         ...credentials
       })
     })

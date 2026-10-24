@@ -285,6 +285,7 @@ async function syncInvoice(tenantId: string, userId: string, operationId: string
     document_type: payload.documentType,
     hacienda_status: 'PENDING',
     total: Math.max(0, safeNumber(payload.total, 0)),
+    invoice_data: payload.invoiceData && typeof payload.invoiceData === 'object' ? payload.invoiceData : {},
     xml_content: typeof payload.xmlContent === 'string' ? payload.xmlContent : null
   }).select('id, hacienda_status').single();
   if (invoice.error || !invoice.data) {

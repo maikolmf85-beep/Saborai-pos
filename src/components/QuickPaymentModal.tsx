@@ -383,6 +383,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
             consecutivo: generatedConsecutivo,
             documentType: docType,
             total,
+            invoiceData: invoiceObj,
             xmlContent: undefined,
             occurredAt: emissionDate.toISOString()
           },

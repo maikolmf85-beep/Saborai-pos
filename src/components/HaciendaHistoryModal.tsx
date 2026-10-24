@@ -45,6 +45,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   useEffect(() => {
     if (isOpen) {
       const unsubscribe = haciendaService.subscribe(setInvoices);
+      void haciendaService.refreshFromServer();
       return unsubscribe;
     }
   }, [isOpen]);
