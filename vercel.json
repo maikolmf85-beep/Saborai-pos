@@ -22,6 +22,10 @@
       "destination": "/api/tilopay?action=webhook"
     },
     {
+      "source": "/api/system-status",
+      "destination": "/api/auth?action=system-status"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

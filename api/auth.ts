@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
-import { allowedOriginForRedirect, getJwtSecret, handleOptions, setCorsHeaders } from './_utils/security.js';
+import { allowedOriginForRedirect, getJwtSecret, handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -63,6 +63,34 @@ async function linkLegacyUserToAuth(userId: string, email: string, password: str
   if (error) console.warn('[Auth Bridge] La columna auth_user_id aún no está disponible:', error.message);
 }
 
+async function operationalChecks(tenantId: string | undefined) {
+  const tableAvailable = async (table: string, columns = 'id'): Promise<boolean> => {
+    if (!tenantId) return false;
+    const { error } = await supabase
+      .from(table)
+      .select(columns, { head: true, count: 'exact' })
+      .eq('tenant_id', tenantId);
+    return !error;
+  };
+
+  const [orders, payments, invoices, inventory] = await Promise.all([
+    tableAvailable('pos_orders'),
+    tableAvailable('pos_payments'),
+    tableAvailable('pos_invoices', 'id, invoice_data'),
+    tableAvailable('pos_inventory_movements')
+  ]);
+  return {
+    databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY),
+    tenantResolved: Boolean(tenantId),
+    posOrdersTable: orders,
+    paymentsTable: payments,
+    invoicesHistoryTable: invoices,
+    offlineInventoryTable: inventory,
+    passwordResetEmail: Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL),
+    supabaseAuthClient: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)
+  };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
@@ -83,6 +111,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   ).toLowerCase();
 
   try {
+    if (rawAction === 'system-status') {
+      if (req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const checks = await operationalChecks(auth.tenantId);
+      const healthy = Object.values(checks).every(Boolean);
+      return res.status(healthy ? 200 : 503).json({
+        success: healthy,
+        status: healthy ? 'healthy' : 'degraded',
+        checks
+      });
+    }
+
     // -------------------------------------------------------------
     // ACTION: LOGIN (POST /api/auth/login)
     // -------------------------------------------------------------
