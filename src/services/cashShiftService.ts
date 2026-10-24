@@ -13,6 +13,7 @@ import {
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
 import { getTenantItem, setTenantItem } from './tenantStorage';
+import { auditService } from './auditService';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -376,6 +377,9 @@ class CashShiftService {
     tax?: number;
     service10?: number;
     registerId?: string;
+    tenantId?: string;
+    actor?: UserProfile | { id?: string; name?: string; role?: string };
+    reference?: string;
   }): void {
     const targetRegisterId = params.registerId || this.currentTerminalId;
     const shift = this.activeShiftsMap[targetRegisterId];
@@ -405,6 +409,18 @@ class CashShiftService {
     s.expectedCashInDrawer = shift.initialCashFloat + s.cashSales + s.totalInflows - s.totalOutflows;
 
     this.saveToStorage();
+    if (params.tenantId) {
+      auditService.record({
+        tenantId: params.tenantId,
+        action: 'SALE_RECORDED',
+        actor: params.actor,
+        registerId: targetRegisterId,
+        shiftId: shift.id,
+        amount: cash + card + sinpe,
+        reference: params.reference,
+        metadata: { cashAmount: cash, cardAmount: card, sinpeAmount: sinpe }
+      });
+    }
   }
 
   recordCashMovement(
