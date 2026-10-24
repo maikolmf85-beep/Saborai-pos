@@ -163,10 +163,14 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
             
             localStorage.setItem('saborai_token', regData.token);
             if (supabaseClient && regData.supabaseSession?.access_token && regData.supabaseSession?.refresh_token) {
-              await supabaseClient.auth.setSession({
-                access_token: regData.supabaseSession.access_token,
-                refresh_token: regData.supabaseSession.refresh_token
-              });
+              try {
+                await supabaseClient.auth.setSession({
+                  access_token: regData.supabaseSession.access_token,
+                  refresh_token: regData.supabaseSession.refresh_token
+                });
+              } catch (sessionError) {
+                console.warn('[Auth Bridge] No se pudo guardar sesión Supabase en el navegador:', sessionError);
+              }
             }
             localStorage.removeItem('saborai_user');
             localStorage.removeItem('saborai_tenant');
@@ -336,10 +340,14 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
       // Credenciales correctas ✅
       localStorage.setItem('saborai_token', data.token);
       if (supabaseClient && data.supabaseSession?.access_token && data.supabaseSession?.refresh_token) {
-        await supabaseClient.auth.setSession({
-          access_token: data.supabaseSession.access_token,
-          refresh_token: data.supabaseSession.refresh_token
-        });
+        try {
+          await supabaseClient.auth.setSession({
+            access_token: data.supabaseSession.access_token,
+            refresh_token: data.supabaseSession.refresh_token
+          });
+        } catch (sessionError) {
+          console.warn('[Auth Bridge] No se pudo guardar sesión Supabase en el navegador:', sessionError);
+        }
       }
       try {
         localStorage.setItem('saborai_user', JSON.stringify(user));
