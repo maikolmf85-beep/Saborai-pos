@@ -25,7 +25,6 @@ import { PosNotification } from './NotificationToast';
 import { printerService } from '../services/printerService';
 import { inventoryService } from '../services/inventoryService';
 import { getConfiguredOrRecommendedModifiers } from '../services/modifierRecommendationService';
-import { getMenuItemIcon } from '../services/menuIconService';
 
 interface OrderTakingProps {
   table: Table;
@@ -850,7 +849,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {filteredMenuItems.length === 0 ? (
               <div className="col-span-full py-16 text-center bg-stone-50 border border-dashed border-stone-200 rounded-3xl p-6">
-                <span className="text-3xl block mb-2">🍽️</span>
+                <div className="w-10 h-1 rounded-full bg-stone-200 mx-auto mb-4" aria-hidden="true" />
                 <p className="text-sm font-bold text-stone-700">No hay productos en esta categoría</p>
                 <p className="text-xs text-stone-400 mt-1 max-w-xs mx-auto">
                   Agrega platillos desde el Catálogo o Menú para comenzar a tomar pedidos.
@@ -879,9 +878,6 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2">
-                        <span className="text-2xl p-1.5 rounded-xl bg-stone-50 border border-stone-100 group-hover:scale-110 transition-transform">
-                          {getMenuItemIcon(item)}
-                        </span>
                         <div className="flex items-center gap-1.5">
                           {qtyInOrder > 0 && (
                             <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-[#588157] text-white shadow-xs">

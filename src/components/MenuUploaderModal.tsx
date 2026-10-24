@@ -404,7 +404,7 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         cabysCode: validCabys,
         taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
         available: true,
-        imageIcon: station === 'Bar' ? '🍹' : station === 'Postres' ? '🍰' : '🍽️',
+          imageIcon: '',
         ingredients: []
       };
     });

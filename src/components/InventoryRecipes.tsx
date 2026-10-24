@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { MenuItem } from '../types';
 import { sampleMenuItems } from '../data/mockData';
 import { getTenantItem } from '../services/tenantStorage';
-import { getMenuItemIcon } from '../services/menuIconService';
 import { 
   Boxes, 
   AlertTriangle, 
@@ -88,7 +87,6 @@ export const InventoryRecipes: React.FC = () => {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-2xl p-2 rounded-2xl bg-[#a9b994]/20">{getMenuItemIcon(prod)}</span>
                       <div>
                         <h4 className="font-bold text-sm text-[#3b3733]">{prod.name}</h4>
                         <p className="text-xs text-[#6b686d]">Categoría: {prod.category} • {prod.ingredients.length} Ingredientes</p>
@@ -116,9 +114,8 @@ export const InventoryRecipes: React.FC = () => {
               <div className="flex items-start justify-between pb-4 border-b border-[#6b686d]/15">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[#a9b994]">Escandallo de Platillo</span>
-                  <h3 className="text-xl font-black text-[#3b3733] flex items-center gap-2">
-                    <span>{getMenuItemIcon(selectedProduct)}</span>
-                    <span>{selectedProduct.name}</span>
+                    <h3 className="text-xl font-black text-[#3b3733]">
+                    {selectedProduct.name}
                   </h3>
                   <p className="text-xs text-[#6b686d] mt-1">{selectedProduct.description}</p>
                 </div>

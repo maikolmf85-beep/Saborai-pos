@@ -5,7 +5,6 @@ import { soundService } from '../services/soundEffects';
 import { CabysResult, searchCabys, suggestCabys, isValidCabys, RESTAURANT_CABYS_PRESETS, resolveRestaurantCabys } from '../services/cabysService';
 import { MenuUploaderModal } from './MenuUploaderModal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { getMenuItemIcon } from '../services/menuIconService';
 
 interface MenuEditorProps {
   menuItems: MenuItem[];
@@ -21,7 +20,6 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editingItem, setEditingItem] = useState<Partial<MenuItem> | null>(null);
-  const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   
   // Custom categories management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -58,7 +56,6 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   const [autoFillSummary, setAutoFillSummary] = useState<string | null>(null);
 
 const ALLOWED_RATES = [0.13, 0.08, 0.04, 0.01, 0];
-const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '☕', '🍕', '🍔', '🌮', '🍣', '🐟', '🥩', '🍗', '🥗', '🍝', '🍰', '🍨', '🍟'];
 
   const runCabysSearch = async (text: string, category?: string) => {
     if (!text.trim()) { setCabysResults([]); return []; }
@@ -165,7 +162,7 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
       cabysCode: resolveRestaurantCabys(item.name, item.category, undefined, item.station).codigo,
       taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
       available: true,
-      imageIcon: '🍽️',
+      imageIcon: '',
       ingredients: []
     }));
 
@@ -230,14 +227,13 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
         cabysCode: resolveRestaurantCabys('Plato', defaultCat).codigo,
         taxRate: taxRegime === 'SIMPLIFIED' ? 0 : 0.13,
         available: true,
-        imageIcon: '🍽️',
+        imageIcon: '',
         ingredients: []
       });
     }
     setCabysResults([]);
     setCabysQuery(item?.name || '');
     setCabysAutoNote(null);
-    setIsIconPickerOpen(false);
     setIsEditing(true);
   };
 
@@ -441,7 +437,6 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
               <div key={item.id} className="bg-white border border-stone-200 rounded-2xl p-4 flex flex-col justify-between hover:border-[#a9b994] transition-all hover:shadow-md group">
                 <div>
                   <div className="flex justify-between items-start mb-2">
-                    <span className="text-3xl">{getMenuItemIcon(item)}</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 uppercase tracking-wider">
                       {item.category}
                     </span>
@@ -476,7 +471,7 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
 
             {filteredItems.length === 0 && (
               <div className="col-span-full py-12 flex flex-col items-center justify-center text-stone-400 border-2 border-dashed border-stone-200 rounded-2xl">
-                <UtensilsCrossed className="w-12 h-12 mb-3 text-stone-300" />
+                <div className="w-10 h-1 rounded-full bg-stone-200 mb-3" aria-hidden="true" />
                 <p className="font-bold">No hay platillos en esta categoría</p>
                 <p className="text-xs mt-1">Haz clic en "Nuevo Platillo" para empezar a construir tu menú.</p>
               </div>
@@ -505,49 +500,8 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
             <div className="flex-1 overflow-y-auto p-6">
               <form id="menu-form" onSubmit={handleSave} className="space-y-5">
                 
-                {/* Icon & Name Row */}
-                <div className="flex gap-4">
-                  <div className="w-16">
-                    <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Icono</label>
-                    <input
-                      type="text"
-                      required
-                      value={editingItem.imageIcon || ''}
-                      onClick={() => setIsIconPickerOpen(true)}
-                      onChange={e => setEditingItem({...editingItem, imageIcon: e.target.value, iconManual: true})}
-                      className="w-full text-2xl text-center px-0 py-2 border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
-                    />
-                    {isIconPickerOpen && (
-                      <div className="flex flex-wrap gap-1 mt-2 p-2 rounded-xl bg-stone-50 border border-stone-200" aria-label="Iconos disponibles">
-                        {MENU_ICON_PRESETS.map(icon => (
-                          <button
-                            key={icon}
-                            type="button"
-                            onClick={() => {
-                              setEditingItem({ ...editingItem, imageIcon: icon, iconManual: true });
-                              setIsIconPickerOpen(false);
-                            }}
-                            className={`w-7 h-7 rounded-lg text-base border transition-colors ${editingItem.imageIcon === icon && editingItem.iconManual ? 'bg-[#a9b994]/30 border-[#588157]' : 'bg-white border-stone-200 hover:bg-stone-100'}`}
-                            title={`Usar icono ${icon}`}
-                          >
-                            {icon}
-                          </button>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingItem({ ...editingItem, imageIcon: '🍽️', iconManual: false });
-                            setIsIconPickerOpen(false);
-                          }}
-                          className="px-2 h-7 rounded-lg text-[10px] font-bold text-stone-600 bg-white border border-stone-200 hover:bg-stone-100"
-                          title="Asignar automáticamente según el producto"
-                        >
-                          Auto
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1">
+                {/* Product name */}
+                <div>
                     <label className="block text-[10px] font-bold text-stone-500 uppercase mb-1">Nombre del Platillo</label>
                     <input
                       type="text"
@@ -559,7 +513,6 @@ const MENU_ICON_PRESETS = ['🍽️', '🥤', '🍹', '🍺', '🍷', '🥃', '�
                       className="w-full px-3 py-2.5 text-sm font-bold border border-stone-200 rounded-xl focus:border-[#a9b994] focus:ring-1 focus:ring-[#a9b994] transition-all"
                     />
                   </div>
-                </div>
 
                 {/* Description with Magic Wand */}
                 <div>

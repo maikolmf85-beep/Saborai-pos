@@ -136,7 +136,7 @@ export const NysaOnboarding: React.FC<NysaOnboardingProps> = ({ tenant, currentU
         cabysCode: resolveRestaurantCabys(m.name!, m.category || 'General').codigo,
         taxRate: 0.13,
         available: true,
-        imageIcon: '🍽️',
+        imageIcon: '',
         ingredients: []
       }));
 

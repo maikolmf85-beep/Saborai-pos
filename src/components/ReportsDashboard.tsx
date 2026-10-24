@@ -300,7 +300,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) =>
 
             {topDishes.length === 0 ? (
               <div className="py-12 text-center text-stone-400 text-xs">
-                🍽️ No hay platillos registrados en el rango seleccionado. Los productos aparecerán al facturar comandas.
+                No hay platillos registrados en el rango seleccionado. Los productos aparecerán al facturar comandas.
               </div>
             ) : (
               <div className="space-y-3.5">
