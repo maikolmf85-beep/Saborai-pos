@@ -40,6 +40,7 @@ interface TableMapProps {
   activeShiftZones?: string[];
   hasActiveShift?: boolean;
   onOpenCashShift?: () => void;
+  currentUser?: UserProfile | null;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -55,7 +56,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   activeShiftZone,
   activeShiftZones,
   hasActiveShift = false,
-  onOpenCashShift
+  onOpenCashShift,
+  currentUser
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -405,10 +407,56 @@ export const TableMap: React.FC<TableMapProps> = ({
       return;
     }
     if (table.status === 'AVAILABLE') {
-      // Require server PIN selection before starting new order
+      // Si el usuario actual ya es un salonero logueado, asignar directamente la mesa a su nombre
+      const isLoggedWaiter = currentUser && (currentUser.role === 'SALONERO' || currentUser.role === 'SALONERO_CAJA' || currentUser.role === 'WAITER');
+      if (isLoggedWaiter && currentUser.name) {
+        const updated = tables.map(t => {
+          if (t.id === table.id) {
+            return {
+              ...t,
+              status: 'OCCUPIED' as TableStatus,
+              activeOrder: {
+                orderNumber: t.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+                server: currentUser.name,
+                openedAt: t.activeOrder?.openedAt || new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
+                subAccounts: t.activeOrder?.subAccounts || [{ id: 1, name: 'Cuenta 1' }],
+                items: t.activeOrder?.items || []
+              }
+            };
+          }
+          return t;
+        });
+
+        setTables(updated);
+        if (onUpdateTables) onUpdateTables(updated);
+
+        const updatedTbl = updated.find(t => t.id === table.id) || table;
+        setSelectedTable(updatedTbl);
+        onOpenOrder(updatedTbl);
+        return;
+      }
+
+      // Si es Admin o no hay salonero logueado, permitir seleccionar salonero con PIN
       setTableForPinAuth(table);
       setIsPinModalOpen(true);
     } else {
+      // Si la mesa ya estaba ocupada pero no tenía server asignado, asegurar que tenga el nombre correcto
+      if (table.activeOrder && (!table.activeOrder.server || table.activeOrder.server === 'Mesero General' || table.activeOrder.server === 'Salonero general')) {
+        const effectiveName = currentUser?.name || staffList[0]?.name || 'Salonero Encargado';
+        const updatedTbl: Table = {
+          ...table,
+          activeOrder: {
+            ...table.activeOrder,
+            server: effectiveName
+          }
+        };
+        const nextTables = tables.map(t => t.id === table.id ? updatedTbl : t);
+        setTables(nextTables);
+        if (onUpdateTables) onUpdateTables(nextTables);
+        setSelectedTable(updatedTbl);
+        onOpenOrder(updatedTbl);
+        return;
+      }
       onOpenOrder(table);
     }
   };
@@ -872,7 +920,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <div className="flex items-center justify-between text-xs text-stone-600">
                     <div className="flex items-center gap-1">
                       <User className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Salonero: <strong>{selectedTable.activeOrder.server}</strong></span>
+                      <span>Salonero: <strong>{(selectedTable.activeOrder.server && selectedTable.activeOrder.server !== 'Mesero General' && selectedTable.activeOrder.server !== 'Salonero general') ? selectedTable.activeOrder.server : (currentUser?.name || staffList[0]?.name || 'Salonero')}</strong></span>
                     </div>
                     <button
                       type="button"

@@ -35,6 +35,7 @@ interface OrderTakingProps {
   onDirectInvoice?: (table: Table) => void;
   onNotify?: (notif: PosNotification) => void;
   userRole?: UserRole;
+  currentUser?: UserProfile | null;
   onOpenQuickSwitch?: () => void;
   staffList?: UserProfile[];
 }
@@ -48,9 +49,20 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   onDirectInvoice,
   onNotify,
   userRole,
+  currentUser,
   onOpenQuickSwitch,
   staffList = []
 }) => {
+  const assignedServerName = (
+    table?.activeOrder?.server &&
+    table.activeOrder.server !== 'Mesero General' &&
+    table.activeOrder.server !== 'Salonero general' &&
+    table.activeOrder.server !== 'Salonero General' &&
+    table.activeOrder.server !== 'Mesero'
+  )
+    ? table.activeOrder.server
+    : (currentUser?.name || staffList[0]?.name || 'Salonero Encargado');
+
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -431,7 +443,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       status: 'OCCUPIED',
       activeOrder: {
         orderNumber: table?.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-        server: table?.activeOrder?.server || 'Mesero General',
+        server: assignedServerName,
         openedAt: table?.activeOrder?.openedAt || 'Ahora',
         subAccounts,
         items: currentOrderItems
@@ -445,7 +457,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         printJobId: `order_${updatedTable.activeOrder?.orderNumber || 'ORD-001'}_${Date.now()}`,
         tableName: table.name,
         orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
-        server: updatedTable.activeOrder?.server || 'Mesero General',
+        server: assignedServerName,
         items: currentOrderItems.map(i => ({
           name: i.name,
           quantity: i.quantity,
@@ -514,7 +526,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         activeOrder: {
           ...(table?.activeOrder || {}),
           orderNumber: table?.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-          server: table?.activeOrder?.server || 'Mesero General',
+          server: assignedServerName,
           openedAt: table?.activeOrder?.openedAt || 'Ahora',
           subAccounts: subAccounts,
           items: remainingItems
@@ -598,13 +610,13 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                   title="Cambiar salonero encargado con PIN"
                 >
                   <User className="w-3 h-3 text-[#588157]" />
-                  <span>Salonero: {table?.activeOrder?.server || 'Mesero General'}</span>
+                  <span>Salonero: {assignedServerName}</span>
                   <ArrowRightLeft className="w-2.5 h-2.5 text-stone-400 group-hover:text-stone-700" />
                 </button>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-stone-800 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">
                   <User className="w-3 h-3 text-[#588157]" />
-                  <span>Salonero: {table?.activeOrder?.server || 'Mesero General'}</span>
+                  <span>Salonero: {assignedServerName}</span>
                 </span>
               )}
             </div>
@@ -1332,7 +1344,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           ...table,
           activeOrder: {
             orderNumber: table?.activeOrder?.orderNumber || 'ORD-NEW',
-            server: table?.activeOrder?.server || 'Mesero',
+            server: assignedServerName,
             openedAt: table?.activeOrder?.openedAt || 'Ahora',
             subAccounts,
             items: currentOrderItems

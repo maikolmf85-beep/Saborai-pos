@@ -509,15 +509,21 @@ export function App() {
   const handleSwitchWaiter = (staff: UserProfile) => {
     handleSelectUser(staff);
 
-    // If currently editing/taking order on a table, update server
-    if (selectedTableForOrder && selectedTableForOrder.activeOrder) {
+    // If currently editing/taking order on a table, update server immediately
+    if (selectedTableForOrder) {
       const updatedTable: Table = {
         ...selectedTableForOrder,
         activeOrder: {
-          ...selectedTableForOrder.activeOrder,
+          ...(selectedTableForOrder.activeOrder || {
+            orderNumber: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+            openedAt: new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
+            subAccounts: [{ id: 1, name: 'Cuenta 1' }],
+            items: []
+          }),
           server: staff.name
         }
       };
+      setSelectedTableForOrder(updatedTable);
       handleSaveOrder(updatedTable);
     }
 
@@ -831,7 +837,22 @@ export function App() {
   };
 
   const handleOpenOrder = (table: Table) => {
-    setSelectedTableForOrder(table);
+    const fallbackServer = currentUser?.name || staffList[0]?.name || 'Salonero';
+    if (!table.activeOrder || !table.activeOrder.server || table.activeOrder.server === 'Mesero General' || table.activeOrder.server === 'Salonero general') {
+      const ensuredTable: Table = {
+        ...table,
+        activeOrder: {
+          orderNumber: table.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+          server: (table.activeOrder?.server && table.activeOrder.server !== 'Mesero General' && table.activeOrder.server !== 'Salonero general') ? table.activeOrder.server : fallbackServer,
+          openedAt: table.activeOrder?.openedAt || new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
+          subAccounts: table.activeOrder?.subAccounts || [{ id: 1, name: 'Cuenta 1' }],
+          items: table.activeOrder?.items || []
+        }
+      };
+      setSelectedTableForOrder(ensuredTable);
+    } else {
+      setSelectedTableForOrder(table);
+    }
   };
 
   const handleQuickTakeaway = () => {
@@ -1345,6 +1366,7 @@ export function App() {
                   onDirectInvoice={() => setActiveTab('billing')}
                   onNotify={addNotification}
                   userRole={currentUser?.role || 'SALONERO'}
+                  currentUser={currentUser}
                   onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
                   staffList={staffList}
                 />
@@ -1355,6 +1377,7 @@ export function App() {
                   onOpenOrder={handleOpenOrder}
                   onSplitBill={handleSplitBill}
                   isAdmin={currentUser?.role === 'ADMIN'}
+                  currentUser={currentUser}
                   staffList={staffList}
                   tenant={tenant}
                   onUpdateTenant={handleUpdateTenant}
@@ -1419,6 +1442,7 @@ export function App() {
             {activeTab === 'billing' && (
               <BillingHacienda
                 tenant={tenant}
+                currentUser={currentUser}
                 selectedTable={selectedTableForOrder || tables.find(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK') || tables[0] || null}
                 onSaveTable={handleSaveOrder}
                 onRegisterPayment={handleRegisterPayment}

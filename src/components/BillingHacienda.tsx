@@ -136,6 +136,10 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const currentShift = cashShiftService.getActiveShift();
   const terminalCode = currentRegister.terminalCode || '00001';
   const branchCode = currentRegister.branchCode || '001';
+  const genericServerNames = new Set(['Mesero General', 'Salonero general', 'Salonero General', 'Mesero', 'Salonero']);
+  const effectiveServerName = selectedTable?.activeOrder?.server && !genericServerNames.has(selectedTable.activeOrder.server)
+    ? selectedTable.activeOrder.server
+    : currentUser?.name || 'Salonero Encargado';
 
   // Clave y consecutivo válidos (50 / 20 dígitos). La vista previa no consume consecutivo; se reserva al emitir.
   const docType: 'FE' | 'TE' = isFacturaElectronica ? 'FE' : 'TE';
@@ -263,7 +267,7 @@ Medio de Pago: ${paymentMethod}
         ...selectedTable,
         activeOrder: {
           orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
-          server: selectedTable.activeOrder?.server || 'Mesero General',
+          server: effectiveServerName,
           openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
           subAccounts: updatedSubs,
           items: orderItems
@@ -316,7 +320,7 @@ Medio de Pago: ${paymentMethod}
         ...selectedTable,
         activeOrder: {
           orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
-          server: selectedTable.activeOrder?.server || 'Mesero General',
+          server: effectiveServerName,
           openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
           subAccounts,
           items: updatedList
@@ -561,7 +565,7 @@ Medio de Pago: ${paymentMethod}
         status: 'OCCUPIED',
         activeOrder: {
           orderNumber: selectedTable?.activeOrder?.orderNumber || 'ORD-8921',
-          server: selectedTable?.activeOrder?.server || 'Mesero General',
+          server: effectiveServerName,
           openedAt: selectedTable?.activeOrder?.openedAt || 'Ahora',
           subAccounts,
           items: remainingItems
@@ -578,7 +582,7 @@ Medio de Pago: ${paymentMethod}
       ...updatedTable,
       activeOrder: {
         orderNumber: selectedTable?.activeOrder?.orderNumber || updatedTable.activeOrder?.orderNumber || `ORD-${Date.now()}`,
-        server: selectedTable?.activeOrder?.server || updatedTable.activeOrder?.server || 'Mesero General',
+        server: effectiveServerName,
         openedAt: selectedTable?.activeOrder?.openedAt || updatedTable.activeOrder?.openedAt || new Date().toISOString(),
         subAccounts,
         items: updatedTable.activeOrder?.items || activeItems
