@@ -60,30 +60,33 @@ end $$;
 
 commit;
 
--- Verificación: todas deben devolver 0; el tenant debe mostrar zones = [].
-select 'tables' as object_name, count(*) as remaining
-from public.pos_tables t
-join public.tenants tn on tn.id = t.tenant_id
-join public.users u on u.id = tn.user_id
-where lower(u.email) = lower('matamoros.maikol85@gmail.com')
-union all
-select 'menu_items', count(*)
-from public.pos_menu_items m
-join public.tenants tn on tn.id = m.tenant_id
-join public.users u on u.id = tn.user_id
-where lower(u.email) = lower('matamoros.maikol85@gmail.com')
-union all
-select 'menu_categories', count(*)
-from public.pos_menu_categories m
-join public.tenants tn on tn.id = m.tenant_id
-join public.users u on u.id = tn.user_id
-where lower(u.email) = lower('matamoros.maikol85@gmail.com')
-union all
-select 'ingredients', count(*)
-from public.pos_ingredients i
-join public.tenants tn on tn.id = i.tenant_id
-join public.users u on u.id = tn.user_id
-where lower(u.email) = lower('matamoros.maikol85@gmail.com');
+-- Verificación: las tablas existentes deben quedar en 0; las ausentes se omiten.
+do $$
+declare
+  v_user_id uuid;
+  v_tenant_id uuid;
+  v_table text;
+  v_count bigint;
+begin
+  select id into strict v_user_id
+  from public.users
+  where lower(email) = lower('matamoros.maikol85@gmail.com');
+
+  select id into strict v_tenant_id
+  from public.tenants
+  where user_id = v_user_id;
+
+  foreach v_table in array array['pos_tables', 'pos_menu_items', 'pos_menu_categories', 'pos_ingredients']
+  loop
+    if to_regclass('public.' || v_table) is null then
+      raise notice '%: tabla ausente, omitida.', v_table;
+    else
+      execute format('select count(*) from public.%I where tenant_id = $1', v_table)
+        into v_count using v_tenant_id;
+      raise notice '%: % registros restantes.', v_table, v_count;
+    end if;
+  end loop;
+end $$;
 
 select id, zones
 from public.tenants
