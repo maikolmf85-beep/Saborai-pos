@@ -113,6 +113,26 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
 
     if (existingOrder.data) {
       orderId = existingOrder.data.id;
+      const updateResult = await supabaseAdmin
+        .from('pos_orders')
+        .update({
+          branch_id: branch.id,
+          ...(scope.cashRegisterId ? { cash_register_id: scope.cashRegisterId } : {}),
+          ...(scope.cashShiftId ? { cash_shift_id: scope.cashShiftId } : {}),
+          ...(scope.terminalId ? { terminal_id: scope.terminalId } : {}),
+          table_id: tableResult.data.id,
+          server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
+          status: 'OPEN'
+        })
+        .eq('id', orderId)
+        .eq('tenant_id', tenantId);
+      if (updateResult.error) throw new Error('No se pudo actualizar la orden en la nube.');
+      const deleteItemsResult = await supabaseAdmin
+        .from('pos_order_items')
+        .delete()
+        .eq('order_id', orderId)
+        .eq('tenant_id', tenantId);
+      if (deleteItemsResult.error) throw new Error('No se pudieron actualizar los artículos de la orden.');
     } else {
       const orderResult = await supabaseAdmin
         .from('pos_orders')
@@ -136,24 +156,24 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
       if (orderResult.error || !orderResult.data) throw new Error('No se pudo guardar la orden en la nube.');
       orderId = orderResult.data.id;
 
-      const items = Array.isArray(activeOrder.items) ? activeOrder.items : [];
-      if (items.length > 0) {
-        const itemRows = items.map((item: any) => ({
-          tenant_id: tenantId,
-          order_id: orderId,
-          menu_item_id: isUuid(item.id) ? item.id : null,
-          name_snapshot: String(item.name || 'Producto').slice(0, 200),
-          quantity: Math.max(0.001, safeNumber(item.quantity, 1)),
-          unit_price: Math.max(0, safeNumber(item.price, 0)),
-          tax_rate: Math.max(0, safeNumber(item.taxRate, 0.13)),
-          modifiers: Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [],
-          notes: typeof item.notes === 'string' ? item.notes.slice(0, 500) : null,
-          station: item.category === 'Bar' ? 'Bar' : item.category === 'Postres' ? 'Postres' : 'Cocina',
-          kds_status: item.kdsStatus || 'PENDING'
-        }));
-        const itemResult = await supabaseAdmin.from('pos_order_items').insert(itemRows);
-        if (itemResult.error) throw new Error('No se pudieron guardar los artículos de la orden.');
-      }
+    }
+    const items = Array.isArray(activeOrder.items) ? activeOrder.items : [];
+    if (items.length > 0) {
+      const itemRows = items.map((item: any) => ({
+        tenant_id: tenantId,
+        order_id: orderId,
+        menu_item_id: isUuid(item.id) ? item.id : null,
+        name_snapshot: String(item.name || 'Producto').slice(0, 200),
+        quantity: Math.max(0.001, safeNumber(item.quantity, 1)),
+        unit_price: Math.max(0, safeNumber(item.price, 0)),
+        tax_rate: Math.max(0, safeNumber(item.taxRate, 0.13)),
+        modifiers: Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [],
+        notes: typeof item.notes === 'string' ? item.notes.slice(0, 500) : null,
+        station: item.category === 'Bar' ? 'Bar' : item.category === 'Postres' ? 'Postres' : 'Cocina',
+        kds_status: item.kdsStatus || 'PENDING'
+      }));
+      const itemResult = await supabaseAdmin.from('pos_order_items').insert(itemRows);
+      if (itemResult.error) throw new Error('No se pudieron guardar los artículos de la orden.');
     }
   }
 
@@ -224,6 +244,15 @@ async function syncPayment(tenantId: string, userId: string, operationId: string
       .single();
     if (paymentResult.error || !paymentResult.data) throw new Error('No se pudo registrar el pago pendiente.');
     inserted.push(paymentResult.data.id);
+  }
+
+  if (payload?.closeOrder === true) {
+    const closeResult = await supabaseAdmin
+      .from('pos_orders')
+      .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
+      .eq('id', orderResult.data.id)
+      .eq('tenant_id', tenantId);
+    if (closeResult.error) throw new Error('No se pudo cerrar la orden en la nube.');
   }
 
   await supabaseAdmin.from('pos_audit_events').insert({

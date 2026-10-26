@@ -34,6 +34,7 @@ import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
+import { posCloudService, SaleCloudPayload } from './services/posCloudService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -868,6 +869,45 @@ export function App() {
     setActiveTab('billing');
   };
 
+  const handleRegisterPayment = (sale: SaleCloudPayload) => {
+    const invoicePayload = {
+      orderNumber: sale.table.activeOrder?.orderNumber,
+      clave: sale.invoice.clave50Digitos,
+      consecutivo: sale.invoice.consecutivo,
+      documentType: sale.invoice.tipoDocumento || 'TE',
+      total: sale.invoice.totalComprobante,
+      invoiceData: sale.invoice,
+      xmlContent: sale.invoice.xmlContent
+    };
+    const paymentPayload = {
+      orderNumber: sale.table.activeOrder?.orderNumber,
+      payments: [{
+        amount: sale.total,
+        method: sale.paymentMethod === '01-Efectivo' ? 'CASH' : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : 'SINPE',
+        provider: 'POS_OFFLINE_FALLBACK'
+      }],
+      closeOrder: sale.closeOrder
+    };
+    const inventoryPayload = {
+      orderNumber: sale.table.activeOrder?.orderNumber,
+      items: sale.items
+    };
+
+    if (localDB.isOnline()) {
+      void posCloudService.syncSale(tenant.id, sale).catch(async error => {
+        console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
+        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
+        await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
+        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id);
+      });
+      return;
+    }
+
+    void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id);
+    void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
+    void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id);
+  };
+
   const handleSaveOrder = (updatedTable: Table) => {
     if (!updatedTable) return;
 
@@ -963,14 +1003,12 @@ export function App() {
     // Save locally in IndexedDB
     localDB.saveItem('tables', updatedTable);
 
-    // If offline, enqueue for cloud sync
-    if (!isOnline && updatedTable) {
-      localDB.enqueueOfflineAction(
-        'UPDATE_TABLE',
-        updatedTable,
-        `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`,
-        tenant.id
-      );
+    const orderDescription = `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`;
+    if (localDB.isOnline()) {
+      void posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id)
+        .catch(() => localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id));
+    } else {
+      void localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id);
     }
   };
 
@@ -1371,6 +1409,7 @@ export function App() {
                 tenant={tenant}
                 selectedTable={selectedTableForOrder || tables.find(t => t.status === 'OCCUPIED' || t.status === 'PRE_CHECK') || tables[0] || null}
                 onSaveTable={handleSaveOrder}
+                onRegisterPayment={handleRegisterPayment}
                 onNotify={addNotification}
                 onOpenCashShift={(tab) => {
                   setCashShiftInitialTab(tab || 'status');

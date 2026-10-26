@@ -39,6 +39,14 @@ interface BillingHaciendaProps {
   selectedTable?: Table | null;
   onEmitInvoice?: (invoice: ElectronicInvoiceCR) => void;
   onSaveTable?: (updatedTable: Table) => void;
+  onRegisterPayment?: (payload: {
+    table: Table;
+    invoice: ElectronicInvoiceCR;
+    paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+    total: number;
+    closeOrder: boolean;
+    items: Array<{ name: string; quantity: number; menuItemId?: string }>;
+  }) => void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
   onOpenHaciendaHistory?: () => void;
   onNotify?: (notif: PosNotification) => void;
@@ -51,6 +59,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   selectedTable,
   onEmitInvoice,
   onSaveTable,
+  onRegisterPayment,
   onOpenCashShift,
   onOpenHaciendaHistory,
   onNotify,
@@ -564,6 +573,29 @@ Medio de Pago: ${paymentMethod}
     if (onSaveTable && selectedTable) {
       onSaveTable(updatedTable);
     }
+
+    const cloudTable: Table = {
+      ...updatedTable,
+      activeOrder: {
+        orderNumber: selectedTable?.activeOrder?.orderNumber || updatedTable.activeOrder?.orderNumber || `ORD-${Date.now()}`,
+        server: selectedTable?.activeOrder?.server || updatedTable.activeOrder?.server || 'Mesero General',
+        openedAt: selectedTable?.activeOrder?.openedAt || updatedTable.activeOrder?.openedAt || new Date().toISOString(),
+        subAccounts,
+        items: updatedTable.activeOrder?.items || activeItems
+      }
+    };
+    onRegisterPayment?.({
+      table: cloudTable,
+      invoice: finalInvoice,
+      paymentMethod,
+      total,
+      closeOrder: isPayingAll || remainingItems.length === 0,
+      items: activeItems.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        menuItemId: item.id
+      }))
+    });
 
     if (onEmitInvoice) {
       onEmitInvoice(finalInvoice);
