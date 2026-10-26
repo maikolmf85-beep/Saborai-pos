@@ -446,9 +446,12 @@ class CashShiftService {
     if (this.cloudSyncInFlight || !this.tenantId || !cashControlCloudService.isAvailable()) return;
     this.cloudSyncInFlight = true;
     try {
-      await cashControlCloudService.importLocalConfiguration(this.tenantId, {
+      const result = await cashControlCloudService.importLocalConfiguration(this.tenantId, {
         deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
       });
+      // Si PostgreSQL rechazó una operación por concurrencia (por ejemplo, dos
+      // dispositivos abriendo la misma caja), el estado confirmado prevalece.
+      if (result.conflicts.length > 0) await this.refreshFromCloud();
     } catch (error) {
       console.warn('[CashControl] No se pudo sincronizar con Supabase; se conserva la caché local:', error);
     } finally {
