@@ -782,19 +782,23 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
 
                 {/* 4. Salón(es) / Áreas Asignadas a esta Caja */}
                 <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center justify-between">
+                  <div className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <Layers className="w-3.5 h-3.5 text-emerald-600" />
                       <span>4. Salones / Áreas Asignadas a este Turno:</span>
                     </span>
                     <button
                       type="button"
-                      onClick={() => setOpeningZones([])}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpeningZones([]);
+                      }}
                       className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
                     >
                       {openingZones.length === 0 ? '✓ Todos activos' : 'Marcar todos'}
                     </button>
-                  </label>
+                  </div>
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-stone-50 border border-stone-200 rounded-2xl">
                     {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Patio', 'Terraza', 'Barra', 'VIP']).map((z) => {
@@ -803,7 +807,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                         <button
                           key={z}
                           type="button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
                             if (isSelected) {
                               setOpeningZones(openingZones.filter(item => item !== z));
                             } else {
