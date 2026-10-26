@@ -1,4 +1,4 @@
-import { CashRegister, CashShift } from '../types/cashShift';
+import type { CashRegister, CashShift } from '../types/cashShift';
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 
@@ -36,6 +36,24 @@ type CloudShift = {
   status: 'OPEN' | 'CLOSED' | 'VOIDED';
   shift_number: number | null;
   legacy_id?: string | null;
+  opened_by?: string | null;
+  closed_by?: string | null;
+  opening_float?: number | null;
+  expected_cash?: number | null;
+  counted_cash?: number | null;
+  difference?: number | null;
+  opened_at?: string | null;
+  closed_at?: string | null;
+  notes?: string | null;
+  participants?: CashShift['participants'] | null;
+  movements?: CashShift['movements'] | null;
+  system_summary?: CashShift['systemSummary'] | null;
+  cash_breakdown?: CashShift['cashBreakdown'] | null;
+  counted_cards?: number | null;
+  dataphones_breakdown?: CashShift['dataphonesBreakdown'] | null;
+  counted_sinpe?: number | null;
+  difference_reason?: string | null;
+  z_report_generated?: boolean | null;
 };
 
 export interface CashControlCloudSnapshot {
@@ -64,6 +82,13 @@ export interface CashControlMigrationResult {
   skippedExisting: number;
   conflicts: string[];
   migrationMarker: string;
+}
+
+export interface LocalCashControlState {
+  registers: CashRegister[];
+  activeShiftsMap: Record<string, CashShift>;
+  shiftsHistory: CashShift[];
+  currentTerminalId?: string;
 }
 
 function getOrCreateDeviceKey(): string {
@@ -124,7 +149,7 @@ class CashControlCloudService {
         .order('terminal_code'),
       supabaseClient
         .from('pos_cash_shifts')
-        .select('id, tenant_id, branch_id, cash_register_id, status, shift_number, legacy_id')
+        .select('id, tenant_id, branch_id, cash_register_id, status, shift_number, legacy_id, opened_by, closed_by, opening_float, expected_cash, counted_cash, difference, opened_at, closed_at, notes, participants, movements, system_summary, cash_breakdown, counted_cards, dataphones_breakdown, counted_sinpe, difference_reason, z_report_generated')
         .eq('tenant_id', tenantId)
         .order('opened_at', { ascending: false }),
       supabaseClient
@@ -146,6 +171,78 @@ class CashControlCloudService {
       currentDeviceTerminal: (terminalResult.data as CashControlCloudSnapshot['currentDeviceTerminal']) || null,
       fetchedAt: new Date().toISOString()
     };
+  }
+
+  toLocalState(snapshot: CashControlCloudSnapshot): LocalCashControlState {
+    const branchCodes = new Map(snapshot.branches.map(branch => [branch.id, branch.code]));
+    const registers = snapshot.registers.map(register => ({
+      id: register.legacy_id || register.id,
+      name: register.name,
+      terminalCode: register.terminal_code,
+      branchCode: branchCodes.get(register.branch_id) || '001',
+      isDefault: register.is_default,
+      allowsBilling: register.allows_billing,
+      allowsOrdering: register.allows_ordering,
+      assignedPrinterId: register.assigned_printer_id || undefined,
+      isActive: register.is_active,
+      notes: register.notes || '',
+      linkedZones: Array.isArray(register.linked_zones) ? register.linked_zones : [],
+      linkedZone: Array.isArray(register.linked_zones) && register.linked_zones.length === 1
+        ? register.linked_zones[0]
+        : undefined
+    }));
+    const registerByCloudId = new Map(snapshot.registers.map(register => [register.id, register]));
+    const activeShiftsMap: Record<string, CashShift> = {};
+    const shiftsHistory: CashShift[] = [];
+
+    snapshot.shifts.forEach(remote => {
+      const remoteRegister = registerByCloudId.get(remote.cash_register_id);
+      const localRegisterId = remoteRegister?.legacy_id || remote.cash_register_id;
+      const participants = Array.isArray(remote.participants) ? remote.participants : [];
+      const firstParticipant = participants[0];
+      const localShift: CashShift = {
+        id: remote.legacy_id || remote.id,
+        shiftNumber: remote.shift_number || 0,
+        tenantId: remote.tenant_id,
+        terminalId: remoteRegister?.terminal_code || '00001',
+        cashRegisterId: localRegisterId,
+        cashRegisterName: remoteRegister?.name || 'Caja',
+        terminalCode: remoteRegister?.terminal_code || '00001',
+        openedBy: {
+          userId: remote.opened_by || firstParticipant?.userId || 'cloud-user',
+          userName: firstParticipant?.userName || 'Usuario POS',
+          userRole: firstParticipant?.userRole || 'CAJERO'
+        },
+        participants,
+        openedAt: remote.opened_at || new Date().toISOString(),
+        initialCashFloat: Number(remote.opening_float || 0),
+        status: remote.status === 'OPEN' ? 'OPEN' : 'CLOSED',
+        notes: remote.notes || '',
+        movements: Array.isArray(remote.movements) ? remote.movements : [],
+        systemSummary: remote.system_summary || {
+          cashSales: 0, cardSales: 0, sinpeSales: 0, totalSales: 0, subtotal: 0,
+          totalTax: 0, serviceTax10: 0, totalInflows: 0, totalOutflows: 0,
+          expectedCashInDrawer: Number(remote.expected_cash || 0), invoicesCount: 0
+        },
+        closedBy: remote.closed_by ? { userId: remote.closed_by, userName: 'Usuario POS' } : undefined,
+        closedAt: remote.closed_at || undefined,
+        countedCash: remote.counted_cash ?? undefined,
+        cashBreakdown: remote.cash_breakdown || undefined,
+        countedCards: remote.counted_cards ?? undefined,
+        dataphonesBreakdown: remote.dataphones_breakdown || undefined,
+        countedSinpe: remote.counted_sinpe ?? undefined,
+        cashDifference: remote.difference ?? undefined,
+        differenceReason: remote.difference_reason || undefined,
+        zReportGenerated: Boolean(remote.z_report_generated)
+      };
+      if (remote.status === 'OPEN') activeShiftsMap[localRegisterId] = localShift;
+      else shiftsHistory.push(localShift);
+    });
+
+    const currentTerminalId = snapshot.currentDeviceTerminal
+      ? (registerByCloudId.get(snapshot.currentDeviceTerminal.cash_register_id)?.legacy_id || snapshot.currentDeviceTerminal.cash_register_id)
+      : undefined;
+    return { registers, activeShiftsMap, shiftsHistory, currentTerminalId };
   }
 
   async previewLocalMigration(tenantId: string): Promise<CashControlMigrationPreview> {

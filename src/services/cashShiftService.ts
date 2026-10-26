@@ -14,6 +14,7 @@ import {
 import { UserProfile, TenantInfo } from '../types';
 import { getTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
+import { cashControlCloudService } from './cashControlCloudService';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -40,6 +41,10 @@ class CashShiftService {
   private activeShiftsMap: Record<string, CashShift> = {}; // key: registerId (e.g. 'caja-01')
   private shiftsHistory: CashShift[] = [];
   private tenantId: string | null = null;
+  private cloudSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  private cloudSyncInFlight = false;
+  private cloudHydrating = false;
+  private cloudRealtimeUnsubscribe: (() => void) | null = null;
 
   constructor() {
     this.resetInMemoryState();
@@ -49,6 +54,11 @@ class CashShiftService {
     if (!tenantId || this.tenantId === tenantId) return;
     this.tenantId = tenantId;
     this.loadFromStorage();
+    this.cloudRealtimeUnsubscribe?.();
+    this.cloudRealtimeUnsubscribe = cashControlCloudService.subscribe(tenantId, () => {
+      void this.refreshFromCloud();
+    });
+    void this.reconcileWithCloud(tenantId);
   }
 
   private resetInMemoryState(): void {
@@ -96,6 +106,7 @@ class CashShiftService {
       setTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId, this.tenantId);
       setTenantItem(TENANT_KEY_ACTIVE_SHIFTS_MAP, this.activeShiftsMap, this.tenantId);
       setTenantItem(TENANT_KEY_SHIFTS_HISTORY, this.shiftsHistory, this.tenantId);
+      this.queueCloudSync();
     } catch (e) {
       console.warn('Error saving shifts to storage:', e);
     }
@@ -420,6 +431,65 @@ class CashShiftService {
         reference: params.reference,
         metadata: { cashAmount: cash, cardAmount: card, sinpeAmount: sinpe }
       });
+    }
+  }
+
+  private queueCloudSync(): void {
+    if (this.cloudHydrating || !this.tenantId || !cashControlCloudService.isAvailable()) return;
+    if (this.cloudSyncTimer) clearTimeout(this.cloudSyncTimer);
+    this.cloudSyncTimer = setTimeout(() => {
+      void this.syncToCloud();
+    }, 800);
+  }
+
+  private async syncToCloud(): Promise<void> {
+    if (this.cloudSyncInFlight || !this.tenantId || !cashControlCloudService.isAvailable()) return;
+    this.cloudSyncInFlight = true;
+    try {
+      await cashControlCloudService.importLocalConfiguration(this.tenantId, {
+        deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
+      });
+    } catch (error) {
+      console.warn('[CashControl] No se pudo sincronizar con Supabase; se conserva la caché local:', error);
+    } finally {
+      this.cloudSyncInFlight = false;
+    }
+  }
+
+  private async reconcileWithCloud(tenantId: string): Promise<void> {
+    if (!cashControlCloudService.isAvailable()) return;
+    try {
+      // Primera sincronización: importa lo local de forma idempotente y después
+      // reemplaza la caché con el estado confirmado por PostgreSQL.
+      await cashControlCloudService.importLocalConfiguration(tenantId, {
+        deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
+      });
+      await this.refreshFromCloud();
+    } catch (error) {
+      console.warn('[CashControl] Supabase no disponible; el POS continúa offline:', error);
+    }
+  }
+
+  private async refreshFromCloud(): Promise<void> {
+    if (!this.tenantId || !cashControlCloudService.isAvailable()) return;
+    try {
+      const snapshot = await cashControlCloudService.getCloudSnapshot(this.tenantId);
+      const state = cashControlCloudService.toLocalState(snapshot);
+      if (state.registers.length === 0) return;
+      this.cloudHydrating = true;
+      this.registers = state.registers;
+      this.activeShiftsMap = state.activeShiftsMap;
+      this.shiftsHistory = state.shiftsHistory;
+      if (state.currentTerminalId && this.registers.some(register => register.id === state.currentTerminalId)) {
+        this.currentTerminalId = state.currentTerminalId;
+      } else if (!this.registers.some(register => register.id === this.currentTerminalId)) {
+        this.currentTerminalId = (this.registers.find(register => register.isDefault) || this.registers[0]).id;
+      }
+      this.saveToStorage();
+    } catch (error) {
+      console.warn('[CashControl] No se pudo refrescar el estado cloud:', error);
+    } finally {
+      this.cloudHydrating = false;
     }
   }
 
