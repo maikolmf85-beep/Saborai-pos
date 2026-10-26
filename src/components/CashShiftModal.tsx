@@ -260,8 +260,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   if (!isOpen) return null;
 
   // Handlers
-  const handleOpenShiftSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleOpenShiftSubmit = () => {
     setOpeningError(null);
 
     const cashierToUse = openingCashier || currentUser || staffList[0] || {
@@ -697,7 +696,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 </p>
               </div>
 
-              <form onSubmit={handleOpenShiftSubmit} className="space-y-4">
+              <form onSubmit={(event) => event.preventDefault()} className="space-y-4">
                 
                 {/* 1. Responsable */}
                 <div>
@@ -861,7 +860,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 )}
 
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleOpenShiftSubmit}
                   className="w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
