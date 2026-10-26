@@ -789,8 +789,9 @@ export function App() {
     setActiveTab('pos');
   };
 
-  const handleSelectTable = (table: Table) => {
-    setSelectedTableForOrder(table);
+  const handleSelectTable = (_table: Table) => {
+    // Al tocar una mesa en el mapa solo se selecciona para ver sus detalles en el panel lateral.
+    // La comanda o pedido se abre exclusivamente con handleOpenOrder (botón 'Abrir Mesa y Comandar' / 'Tomar Pedido').
   };
 
   const handleNyzaCreateTable = async (salonName: string, tableNumber: number) => {
