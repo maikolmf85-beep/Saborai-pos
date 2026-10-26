@@ -408,9 +408,28 @@ class CashControlCloudService {
   }
 
   private async resolveBranch(tenantId: string, branchCode: string, branches: CloudBranch[]): Promise<CloudBranch> {
-    const exact = branches.find(branch => branch.code === String(branchCode || '').padStart(3, '0'));
+    const normalizedCode = String(branchCode || '001').replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
+    const exact = branches.find(branch => branch.code === normalizedCode);
     if (exact) return exact;
     if (branches.length === 1) return branches[0];
+
+    if (branches.length === 0 && supabaseClient) {
+      const created = await supabaseClient
+        .from('pos_branches')
+        .insert({
+          tenant_id: tenantId,
+          name: 'Sucursal Principal',
+          code: normalizedCode,
+          timezone: 'America/Costa_Rica',
+          currency: 'CRC',
+          is_active: true
+        })
+        .select('id, tenant_id, code, name')
+        .single();
+      if (!created.error && created.data) return created.data as CloudBranch;
+      throw new Error(`No se pudo crear la sucursal principal (${normalizedCode}): ${created.error?.message || 'respuesta vacía'}`);
+    }
+
     throw new Error(`No se encontró una sucursal para el código ${branchCode || '(vacío)'} del tenant ${tenantId}.`);
   }
 
