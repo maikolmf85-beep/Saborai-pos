@@ -523,6 +523,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
             className="w-9 h-9 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition-colors"
           >
@@ -587,6 +588,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         {/* Modal Navigation Tabs */}
         <div className="px-6 border-b border-stone-200 bg-white flex items-center gap-2 overflow-x-auto scrollbar-none">
           <button
+            type="button"
             onClick={() => setActiveTab('status')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
               activeTab === 'status'
@@ -599,6 +601,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => {
               if (activeShift) setActiveTab('movements');
             }}
@@ -616,6 +619,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => {
               if (activeShift) setActiveTab('close');
             }}
@@ -633,6 +637,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('history')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
               activeTab === 'history'
@@ -645,6 +650,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('audit')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
               activeTab === 'audit'
@@ -657,6 +663,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => setActiveTab('registers')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ml-auto ${
               activeTab === 'registers'
