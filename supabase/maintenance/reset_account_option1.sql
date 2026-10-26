@@ -49,8 +49,7 @@ begin
 
   -- Los salones viven en el perfil del tenant. Se conserva el tenant y su cuenta.
   update public.tenants
-  set zones = '[]'::jsonb,
-      updated_at = now()
+  set zones = '[]'::jsonb
   where id = v_tenant_id;
 
   raise notice 'Configuración reiniciada para tenant % (usuario %).', v_tenant_id, v_user_id;
