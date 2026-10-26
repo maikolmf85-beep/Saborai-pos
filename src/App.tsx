@@ -1256,14 +1256,14 @@ export function App() {
 
             {/* Punto de Venta: Mesas o Tomapedidos integrado */}
             {activeTab === 'pos' && (
-              !cashShiftService.getActiveShift() ? (
+              selectedTableForOrder && !cashShiftService.getActiveShift() ? (
                 <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-stone-50 animate-in fade-in duration-300">
                   <div className="w-24 h-24 bg-stone-200/50 rounded-full flex items-center justify-center mb-6">
                     <Lock className="w-12 h-12 text-stone-400" />
                   </div>
-                  <h2 className="text-3xl font-black text-stone-800 mb-3 tracking-tight">Turno de Caja Cerrado</h2>
+                  <h2 className="text-3xl font-black text-stone-800 mb-3 tracking-tight">Turno requerido para comandar</h2>
                   <p className="text-stone-500 max-w-md mx-auto mb-8 text-lg">
-                    Es obligatorio abrir un turno de caja para poder comandar productos o tomar órdenes en las mesas.
+                    Puedes configurar mesas, salones, personal y menú sin turno. Para agregar productos o tomar esta comanda debes abrir un turno de caja.
                   </p>
                   {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(currentUser?.role || '') ? (
                     <button
@@ -1277,6 +1277,13 @@ export function App() {
                       Solicita a un administrador o cajero que abra el turno
                     </div>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTableForOrder(null)}
+                    className="mt-4 text-sm font-bold text-stone-500 hover:text-stone-900"
+                  >
+                    Volver al mapa de mesas
+                  </button>
                 </div>
               ) : selectedTableForOrder ? (
                 <OrderTaking
