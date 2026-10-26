@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Table, TableStatus, UserProfile } from '../types';
 import { WaiterPinModal } from './WaiterPinModal';
+import { TableReservationsModal } from './TableReservationsModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { 
   Plus, 
@@ -22,7 +23,8 @@ import {
   PanelRightClose,
   PanelRight,
   RefreshCw,
-  LayoutGrid
+  LayoutGrid,
+  CalendarDays
 } from 'lucide-react';
 
 interface TableMapProps {
@@ -61,33 +63,12 @@ export const TableMap: React.FC<TableMapProps> = ({
 }) => {
   const tenantZones = tenant.zones || [];
   
-  // Load saved positions from localStorage if available, or fall back to initialTablesList
-  const [tables, setTables] = useState<Table[]>(() => {
-    try {
-      const saved = localStorage.getItem(`saborai_table_positions_${tenant.id}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return initialTablesList.map(t => {
-            const match = parsed.find((p: any) => p.id === t.id);
-            return match ? { ...t, x: match.x, y: match.y, zone: match.zone || t.zone } : t;
-          });
-        }
-      }
-    } catch {
-      // fallback
-    }
-    return initialTablesList;
-  });
+  const [tables, setTables] = useState<Table[]>(() => initialTablesList);
 
   useEffect(() => {
-    setTables(prev => {
-      const nextTables = initialTablesList.map(incoming => {
-        const local = prev.find(p => p.id === incoming.id);
-        return local ? { ...incoming, x: local.x, y: local.y } : incoming;
-      });
-      return nextTables;
-    });
+    // The parent state is hydrated from the central floor-plan record. Do not
+    // prefer component-local coordinates over a newer synchronized layout.
+    setTables(initialTablesList);
     setSelectedTable(prev => {
       if (!prev) return null;
       const updated = initialTablesList.find(t => t.id === prev.id);
@@ -113,6 +94,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [isReservationsOpen, setIsReservationsOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
   const selectedZoneHasActiveShift = zoneHasActiveShift(selectedZone);
@@ -182,16 +164,6 @@ export const TableMap: React.FC<TableMapProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // Persist positions to localStorage
-  useEffect(() => {
-    try {
-      const positions = tables.map(t => ({ id: t.id, x: t.x, y: t.y, zone: t.zone }));
-      localStorage.setItem(`saborai_table_positions_${tenant.id}`, JSON.stringify(positions));
-    } catch {
-      // ignore storage error
-    }
-  }, [tables, tenant.id]);
 
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'AVAILABLE' | 'OCCUPIED'>('ALL');
 
@@ -265,6 +237,8 @@ export const TableMap: React.FC<TableMapProps> = ({
       } catch {
         // ignore
       }
+      // Persist the completed drag through the parent, which saves it centrally.
+      onUpdateTables?.(tables);
       setDraggingId(null);
     }
   };
@@ -391,10 +365,10 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   const handleOpenTableOrder = (table: Table) => {
-    if (!selectedZoneHasActiveShift) {
+    if (!zoneHasActiveShift(table.zone)) {
       setConfirmConfig({
         isOpen: true,
-        title: `El salón "${selectedZone}" no tiene turno activo`,
+        title: `El salón "${table.zone}" no tiene turno activo`,
         message: 'Puedes consultar y configurar sus mesas, pero necesitas abrir un turno para tomar o modificar comandas en este salón.',
         confirmLabel: onOpenCashShift ? 'Abrir turno' : 'Entendido',
         cancelLabel: 'Seguir configurando',
@@ -707,6 +681,15 @@ export const TableMap: React.FC<TableMapProps> = ({
               </button>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => setIsReservationsOpen(true)}
+            className="h-8 flex items-center gap-1.5 px-3 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-xs font-bold hover:bg-violet-100 transition-colors cursor-pointer"
+            title="Ver y gestionar reservas"
+          >
+            <CalendarDays className="w-3.5 h-3.5" />
+            <span>Reservas</span>
+          </button>
         </div>
       </div>
 
@@ -1196,6 +1179,41 @@ export const TableMap: React.FC<TableMapProps> = ({
         table={tableForPinAuth}
         staffList={staffList}
         onConfirm={handlePinValidated}
+      />
+
+      <TableReservationsModal
+        isOpen={isReservationsOpen}
+        onClose={() => setIsReservationsOpen(false)}
+        tenant={tenant}
+        tables={tables}
+        currentUser={currentUser}
+        canOpenTable={(table) => {
+          if (table.status !== 'AVAILABLE') {
+            setConfirmConfig({
+              isOpen: true,
+              title: 'Mesa no disponible',
+              message: `La mesa "${table.name}" ya está ocupada o en pre-cuenta. No se puede sentar esta reserva hasta liberarla.`,
+              confirmLabel: 'Entendido',
+              cancelLabel: 'Cerrar',
+              type: 'warning',
+              onConfirm: () => setConfirmConfig(previous => ({ ...previous, isOpen: false }))
+            });
+            return false;
+          }
+          if (!zoneHasActiveShift(table.zone)) {
+            setIsReservationsOpen(false);
+            handleOpenTableOrder(table);
+            return false;
+          }
+          return true;
+        }}
+        onOpenTable={(table) => {
+          setIsReservationsOpen(false);
+          setSelectedZone(table.zone);
+          setSelectedTable(table);
+          onSelectTable(table);
+          handleOpenTableOrder(table);
+        }}
       />
 
       {/* Ventana de confirmación elegante */}

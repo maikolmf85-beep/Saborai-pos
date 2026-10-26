@@ -14,6 +14,8 @@ const OPERATIONAL_KEYS = [
   'shifts_map',
   'printers_config_v2',
   'customers',
+  'table_reservations',
+  'table_reservations_outbox',
   'notion_records',
   'kds_orders',
   'subscription',
