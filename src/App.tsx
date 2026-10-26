@@ -171,7 +171,9 @@ export function App() {
       // no depender únicamente del estado global de la sesión.
       setTenantItem('tenant_profile', updated, updated.id);
       setTenantItem('zones', updated.zones || [], updated.id);
-      syncTenantZonesWithServer(updated.zones || []);
+      // Los eventos Realtime solo hidratan la caché local. Nunca deben escribir
+      // de vuelta al servidor porque otro dispositivo podría tener un estado viejo.
+      if (!skipBroadcast) syncTenantZonesWithServer(updated.zones || []);
       if (updated.haciendaConfig) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
