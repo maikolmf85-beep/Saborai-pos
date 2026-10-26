@@ -8,6 +8,28 @@ function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+type OperationalScope = {
+  branchId: string | null;
+  cashRegisterId: string | null;
+  cashShiftId: string | null;
+  terminalId: string | null;
+};
+
+function readOperationalScope(payload: any): OperationalScope {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const read = (value: unknown, label: string) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (!isUuid(value)) throw new Error(`${label} no tiene un UUID válido.`);
+    return value;
+  };
+  return {
+    branchId: read(source.branchId, 'branchId'),
+    cashRegisterId: read(source.cashRegisterId, 'cashRegisterId'),
+    cashShiftId: read(source.cashShiftId, 'cashShiftId'),
+    terminalId: read(source.terminalId, 'terminalId')
+  };
+}
+
 function safeStatus(value: unknown): 'AVAILABLE' | 'OCCUPIED' | 'PRE_CHECK' | 'RESERVED' {
   return value === 'OCCUPIED' || value === 'PRE_CHECK' || value === 'RESERVED' ? value : 'AVAILABLE';
 }
@@ -16,24 +38,24 @@ function safeNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-async function findBranch(tenantId: string) {
-  const { data, error } = await supabaseAdmin
+async function findBranch(tenantId: string, branchId?: string | null) {
+  let query = supabaseAdmin
     .from('pos_branches')
     .select('id')
     .eq('tenant_id', tenantId)
-    .eq('is_active', true)
-    .order('created_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .eq('is_active', true);
+  if (branchId) query = query.eq('id', branchId);
+  const { data, error } = await query.order('created_at', { ascending: true }).limit(1).maybeSingle();
   if (error) throw new Error('No se pudo localizar una sucursal operativa.');
   return data;
 }
 
 async function syncTable(tenantId: string, userId: string, operationId: string, payload: any) {
+  const scope = readOperationalScope(payload);
   const table = payload && typeof payload === 'object' ? payload : null;
   if (!table || !table.name) throw new Error('El payload de la mesa es inválido.');
 
-  const branch = await findBranch(tenantId);
+  const branch = await findBranch(tenantId, scope.branchId);
   if (!branch) throw new Error('No existe una sucursal activa para este restaurante.');
 
   let existingTable: { id: string } | null = null;
@@ -97,6 +119,9 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
         .insert({
           tenant_id: tenantId,
           branch_id: branch.id,
+          cash_register_id: scope.cashRegisterId,
+          cash_shift_id: scope.cashShiftId,
+          terminal_id: scope.terminalId,
           table_id: tableResult.data.id,
           order_number: activeOrder.orderNumber.trim().slice(0, 80),
           status: 'OPEN',
@@ -146,13 +171,14 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
 }
 
 async function syncPayment(tenantId: string, userId: string, operationId: string, payload: any) {
+  const scope = readOperationalScope(payload);
   const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
   const payments = Array.isArray(payload?.payments) ? payload.payments : [];
   if (!orderNumber || payments.length === 0) throw new Error('El pago no contiene una orden y un desglose válido.');
 
   const orderResult = await supabaseAdmin
     .from('pos_orders')
-    .select('id')
+    .select('id, branch_id, cash_shift_id, cash_register_id, terminal_id')
     .eq('tenant_id', tenantId)
     .eq('idempotency_key', `order:${tenantId}:${orderNumber}`)
     .maybeSingle();
@@ -183,6 +209,10 @@ async function syncPayment(tenantId: string, userId: string, operationId: string
       .insert({
         tenant_id: tenantId,
         order_id: orderResult.data.id,
+        branch_id: scope.branchId || orderResult.data.branch_id,
+        cash_shift_id: scope.cashShiftId || orderResult.data.cash_shift_id,
+        cash_register_id: scope.cashRegisterId || orderResult.data.cash_register_id,
+        terminal_id: scope.terminalId || orderResult.data.terminal_id,
         amount,
         method,
         provider: typeof payment?.provider === 'string' ? payment.provider.slice(0, 80) : 'POS_OFFLINE_SYNC',
@@ -223,6 +253,7 @@ async function findOrder(tenantId: string, orderNumber: unknown) {
 }
 
 async function syncInventory(tenantId: string, userId: string, operationId: string, payload: any) {
+  readOperationalScope(payload);
   const order = await findOrder(tenantId, payload?.orderNumber);
   const items = Array.isArray(payload?.items)
     ? payload.items
@@ -258,13 +289,14 @@ async function syncInventory(tenantId: string, userId: string, operationId: stri
 }
 
 async function syncInvoice(tenantId: string, userId: string, operationId: string, payload: any) {
+  const scope = readOperationalScope(payload);
   const order = await findOrder(tenantId, payload?.orderNumber);
   const clave = typeof payload?.clave === 'string' ? payload.clave.trim() : '';
   const consecutivo = typeof payload?.consecutivo === 'string' ? payload.consecutivo.trim() : '';
   if (!clave || !consecutivo) throw new Error('El comprobante offline no contiene clave y consecutivo.');
   if (!['FE', 'TE', 'NC', 'ND'].includes(payload?.documentType)) throw new Error('El tipo de comprobante offline no es válido.');
 
-  const branch = await findBranch(tenantId);
+  const branch = await findBranch(tenantId, scope.branchId);
   if (!branch) throw new Error('No existe una sucursal activa para registrar el comprobante.');
 
   const existing = await supabaseAdmin
@@ -280,6 +312,9 @@ async function syncInvoice(tenantId: string, userId: string, operationId: string
     tenant_id: tenantId,
     branch_id: branch.id,
     order_id: order.id,
+    cash_shift_id: scope.cashShiftId,
+    cash_register_id: scope.cashRegisterId,
+    terminal_id: scope.terminalId,
     clave: clave.slice(0, 50),
     consecutivo: consecutivo.slice(0, 20),
     document_type: payload.documentType,
