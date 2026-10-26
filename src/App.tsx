@@ -98,15 +98,7 @@ export function App() {
       const saved = localStorage.getItem('saborai_user');
       if (saved) return JSON.parse(saved);
     } catch {}
-    return {
-      id: 'usr_matamoros_admin',
-      name: 'Maikol Matamoros',
-      email: 'matamoros.maikol85@gmail.com',
-      role: 'ADMIN',
-      restaurantName: 'SaborAI POS',
-      active: true,
-      pin: '1234'
-    };
+    return null;
   });
 
   const [subscription, setSubscription] = useState<SaboraiSubscription | null>(() => {
@@ -158,6 +150,7 @@ export function App() {
 
   const broadcastTenantRef = useRef<((t: TenantInfo) => void) | null>(null);
   const broadcastStaffRef = useRef<((s: UserProfile[]) => void) | null>(null);
+  const broadcastKdsOrdersRef = useRef<((orders: KDSOrder[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
     setTenant(updated);
@@ -409,11 +402,21 @@ export function App() {
     } catch {}
   };
 
+  const handleUpdateKdsOrdersRealtime = (newOrders: KDSOrder[], skipBroadcast = false) => {
+    setKdsOrders(newOrders);
+    if (!skipBroadcast && broadcastKdsOrdersRef.current) {
+      broadcastKdsOrdersRef.current(newOrders);
+    }
+    try {
+      setTenantItem('kds_orders', newOrders, tenant.id);
+    } catch {}
+  };
+
   // Realtime Sync Hook
   const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts, broadcastTenant, broadcastStaff } = useRealtimeSync(
     tenant.id,
     handleUpdateTables,
-    setKdsOrders,
+    handleUpdateKdsOrdersRealtime,
     handleUpdateMenu,
     handleUpdateShifts,
     handleUpdateTenant,
@@ -432,7 +435,8 @@ export function App() {
   useEffect(() => {
     broadcastTenantRef.current = broadcastTenant;
     broadcastStaffRef.current = broadcastStaff;
-  }, [broadcastTenant, broadcastStaff]);
+    broadcastKdsOrdersRef.current = broadcastKdsOrders;
+  }, [broadcastTenant, broadcastStaff, broadcastKdsOrders]);
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
@@ -714,6 +718,8 @@ export function App() {
   const handleLogout = () => {
     try {
       localStorage.removeItem('saborai_user');
+      localStorage.removeItem('saborai_token');
+      localStorage.removeItem('saborai_tenant');
     } catch {}
     setCurrentUser(null);
   };
@@ -922,7 +928,7 @@ export function App() {
       const newKdsOrders: KDSOrder[] = [];
 
       if (newKitchenItems.length > 0) {
-        const orderId = `kds_c_${Date.now()}`;
+        const orderId = `kds_c_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         newKitchenItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
         const maxPrepTime = Math.max(0, ...newKitchenItems.map(i => {
           const menuIt = menuItems.find(m => m.name === i.name);
@@ -949,7 +955,7 @@ export function App() {
       }
 
       if (newBarItems.length > 0) {
-        const orderId = `kds_b_${Date.now()}`;
+        const orderId = `kds_b_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         newBarItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
         const maxPrepTime = Math.max(0, ...newBarItems.map(i => {
           const menuIt = menuItems.find(m => m.name === i.name);
@@ -988,8 +994,14 @@ export function App() {
     if (updatedTable.id.startsWith('takeaway_')) {
       if (updatedTable.status === 'AVAILABLE') {
         setSelectedTableForOrder(null);
+        handleUpdateTables(tables.filter(t => t.id !== updatedTable.id));
       } else {
         setSelectedTableForOrder(updatedTable);
+        const exists = tables.some(t => t.id === updatedTable.id);
+        const nextTables = exists
+          ? tables.map(t => t.id === updatedTable.id ? updatedTable : t)
+          : [...tables, updatedTable];
+        handleUpdateTables(nextTables);
       }
     } else {
       handleUpdateTables(tables.map(t => t.id === updatedTable.id ? updatedTable : t));

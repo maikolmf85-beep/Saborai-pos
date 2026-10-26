@@ -221,8 +221,8 @@ export const MenuUploaderModal: React.FC<MenuUploaderModalProps> = ({
         customApiKey.trim() ||
         (typeof localStorage !== 'undefined' ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim() : '')
       );
-      const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
-      const finalGeminiKey = effectiveKey || envGeminiKey;
+
+      const finalGeminiKey = effectiveKey;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };

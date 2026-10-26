@@ -22,18 +22,42 @@ export const supabaseAuth = supabaseAnonKey
     })
   : null;
 
-// Cliente Seguro para el resto de endpoints
+// Cliente Seguro para el resto de endpoints con aislamiento forzado de tenant
 export function getSafeSupabase(tenantId: string) {
   if (!tenantId) throw new Error("Tenant ID es requerido para consultar la BD");
   
-  // Usamos Proxy para interceptar llamadas a las tablas y forzar el filtro
   return {
     from: (table: string) => {
-      const query = supabaseAdmin.from(table);
-      // Forza el filtro por tenant_id en CADA consulta
-      return (query as any).eq('tenant_id', tenantId);
+      const builder = supabaseAdmin.from(table);
+      return new Proxy(builder, {
+        get(target: any, prop: string | symbol) {
+          const original = target[prop];
+          if (typeof original !== 'function') return original;
+
+          if (prop === 'select' || prop === 'delete') {
+            return (...args: any[]) => {
+              const query = original.apply(target, args);
+              return query.eq('tenant_id', tenantId);
+            };
+          }
+          if (prop === 'update') {
+            return (values: any, ...args: any[]) => {
+              const query = original.apply(target, [values, ...args]);
+              return query.eq('tenant_id', tenantId);
+            };
+          }
+          if (prop === 'insert' || prop === 'upsert') {
+            return (values: any, ...args: any[]) => {
+              const withTenant = Array.isArray(values)
+                ? values.map(v => ({ ...v, tenant_id: tenantId }))
+                : { ...values, tenant_id: tenantId };
+              return original.apply(target, [withTenant, ...args]);
+            };
+          }
+          return original.bind(target);
+        }
+      });
     },
-    // Exponer otros métodos de supabaseAdmin si son necesarios, pero filtrados
     rpc: supabaseAdmin.rpc.bind(supabaseAdmin),
     storage: supabaseAdmin.storage
   };

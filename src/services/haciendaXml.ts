@@ -38,7 +38,26 @@ function seqKey(branch: string, terminal: string, tipo: TipoDocumentoCR) {
 /** Siguiente número consecutivo SIN reservarlo (para vistas previas). */
 export function peekConsecutivoNumber(branch: string, terminal: string, tipo: TipoDocumentoCR): number {
   try {
-    return (parseInt(localStorage.getItem(seqKey(branch, terminal, tipo)) || '0', 10) || 0) + 1;
+    const rawVal = parseInt(localStorage.getItem(seqKey(branch, terminal, tipo)) || '0', 10) || 0;
+    if (rawVal === 0) {
+      const tenantId = getStoredTenantId();
+      const invoices = getTenantItem<any[]>('hacienda_invoices', tenantId) || [];
+      let maxNum = 0;
+      invoices.forEach(inv => {
+        if (inv.consecutivo && typeof inv.consecutivo === 'string') {
+          const docTipo = inv.tipo || inv.documentType;
+          if (!tipo || docTipo === tipo || inv.consecutivo.slice(8, 10) === TIPO_DOC_CODE[tipo]) {
+            const numPart = parseInt(inv.consecutivo.slice(10), 10);
+            if (numPart > maxNum) maxNum = numPart;
+          }
+        }
+      });
+      if (maxNum > 0) {
+        localStorage.setItem(seqKey(branch, terminal, tipo), String(maxNum));
+        return maxNum + 1;
+      }
+    }
+    return rawVal + 1;
   } catch {
     return 1;
   }

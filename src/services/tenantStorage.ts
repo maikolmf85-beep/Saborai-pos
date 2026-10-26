@@ -16,7 +16,8 @@ const OPERATIONAL_KEYS = [
   'customers',
   'notion_records',
   'kds_orders',
-  'subscription'
+  'subscription',
+  'audit_events'
 ] as const;
 
 const LEGACY_KEY_MAP: Record<string, TenantStorageKey> = {
@@ -35,7 +36,8 @@ const LEGACY_KEY_MAP: Record<string, TenantStorageKey> = {
   saborai_customers: 'customers',
   saborai_subscription: 'subscription',
   saborai_notion_records: 'notion_records',
-  saborai_kds_orders: 'kds_orders'
+  saborai_kds_orders: 'kds_orders',
+  saborai_audit_events: 'audit_events'
 };
 
 export type TenantStorageKey = typeof OPERATIONAL_KEYS[number] | string;

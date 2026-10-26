@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
-import { allowedOriginForRedirect, getJwtSecret, handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
+import { allowedOriginForRedirect, checkRateLimit, getJwtSecret, handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -136,6 +136,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const email = String(rawEmail || '').trim().toLowerCase();
       if (!email || !password) {
         return res.status(400).json({ error: 'Email y contraseña son obligatorios' });
+      }
+
+      const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+      const rateLimitCheck = checkRateLimit(`login:${clientIp}:${email}`, 5, 60000);
+      if (!rateLimitCheck.allowed) {
+        return res.status(429).json({ error: 'Demasiados intentos fallidos. Por favor espera un minuto antes de reintentar.' });
       }
 
       // 1. Fetch user

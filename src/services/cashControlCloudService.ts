@@ -443,7 +443,7 @@ class CashControlCloudService {
       .subscribe();
 
     return () => {
-      void supabaseClient.removeChannel(channel);
+      void supabaseClient?.removeChannel(channel);
     };
   }
 }

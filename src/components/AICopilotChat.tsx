@@ -84,11 +84,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const envGeminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string | undefined)?.trim();
   const localGeminiKey = typeof localStorage !== 'undefined'
     ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim()
     : '';
-  const customApiKey = localGeminiKey || envGeminiKey;
+  const customApiKey = localGeminiKey;
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
