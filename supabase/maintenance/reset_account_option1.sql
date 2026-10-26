@@ -21,23 +21,31 @@ begin
 
   -- Configuración de mesas. Las órdenes históricas se conservan y su table_id
   -- queda nulo por la FK ON DELETE SET NULL.
-  delete from public.pos_tables
-  where tenant_id = v_tenant_id;
+  if to_regclass('public.pos_tables') is not null then
+    delete from public.pos_tables
+    where tenant_id = v_tenant_id;
+  end if;
 
   -- Recetas dependen de ingredientes y productos.
-  delete from public.pos_recipes
-  where tenant_id = v_tenant_id
-     or menu_item_id in (select id from public.pos_menu_items where tenant_id = v_tenant_id)
-     or ingredient_id in (select id from public.pos_ingredients where tenant_id = v_tenant_id);
+  if to_regclass('public.pos_recipes') is not null then
+    delete from public.pos_recipes
+    where tenant_id = v_tenant_id;
+  end if;
 
-  delete from public.pos_menu_items
-  where tenant_id = v_tenant_id;
+  if to_regclass('public.pos_menu_items') is not null then
+    delete from public.pos_menu_items
+    where tenant_id = v_tenant_id;
+  end if;
 
-  delete from public.pos_menu_categories
-  where tenant_id = v_tenant_id;
+  if to_regclass('public.pos_menu_categories') is not null then
+    delete from public.pos_menu_categories
+    where tenant_id = v_tenant_id;
+  end if;
 
-  delete from public.pos_ingredients
-  where tenant_id = v_tenant_id;
+  if to_regclass('public.pos_ingredients') is not null then
+    delete from public.pos_ingredients
+    where tenant_id = v_tenant_id;
+  end if;
 
   -- Los salones viven en el perfil del tenant. Se conserva el tenant y su cuenta.
   update public.tenants
