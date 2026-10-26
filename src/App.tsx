@@ -1849,6 +1849,7 @@ export function App() {
         onToggleMute={handleToggleMute}
       />
 
+      {/* Botón flotante de WhatsApp oculto temporalmente mientras se configura el bot de IA en Meta
       {import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER && (
         <a
           href={`https://wa.me/${String(import.meta.env.VITE_WHATSAPP_SUPPORT_NUMBER).replace(/\D/g, '')}?text=${encodeURIComponent('Hola, necesito soporte con Saborai POS.')}`}
@@ -1860,7 +1861,7 @@ export function App() {
           <MessageCircle className="h-5 w-5" />
           <span className="hidden sm:inline">Soporte por WhatsApp</span>
         </a>
-      )}
+      )} */}
 
     </div>
   );
