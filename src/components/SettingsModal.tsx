@@ -26,6 +26,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
 import { haciendaService } from '../services/haciendaService';
 import { ConfirmDialog } from './ConfirmDialog';
+import { cashControlCloudService, CashControlMigrationPreview } from '../services/cashControlCloudService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -91,6 +92,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [newRegBranchCode, setNewRegBranchCode] = useState('001');
   const [newRegAllowsBilling, setNewRegAllowsBilling] = useState(true);
   const [newRegAllowsOrdering, setNewRegAllowsOrdering] = useState(true);
+  const [cloudMigrationPreview, setCloudMigrationPreview] = useState<CashControlMigrationPreview | null>(null);
+  const [cloudMigrationBusy, setCloudMigrationBusy] = useState(false);
+  const [cloudMigrationMessage, setCloudMigrationMessage] = useState<string | null>(null);
 
   // Edit register state
   const [editingRegister, setEditingRegister] = useState<CashRegister | null>(null);
@@ -164,6 +168,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCurrentRegister(cashShiftService.getCurrentRegister());
     } catch (err: any) {
       alert(err.message);
+    }
+  };
+
+  const handlePreviewCloudMigration = async () => {
+    setCloudMigrationBusy(true);
+    setCloudMigrationMessage(null);
+    try {
+      const preview = await cashControlCloudService.previewLocalMigration(tenant.id);
+      setCloudMigrationPreview(preview);
+    } catch (error: any) {
+      setCloudMigrationMessage(error?.message || 'No se pudo preparar la migración a Supabase.');
+    } finally {
+      setCloudMigrationBusy(false);
+    }
+  };
+
+  const handleImportCloudMigration = async () => {
+    setCloudMigrationBusy(true);
+    setCloudMigrationMessage(null);
+    try {
+      const result = await cashControlCloudService.importLocalConfiguration(tenant.id, {
+        deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
+      });
+      setCloudMigrationMessage(`Migración completada: ${result.importedRegisters} cajas nuevas, ${result.importedShifts} turnos nuevos y ${result.skippedExisting} registros ya existentes.`);
+      if (result.conflicts.length > 0) {
+        setCloudMigrationMessage(prev => `${prev} Conflictos omitidos: ${result.conflicts.length}.`);
+      }
+      setCloudMigrationPreview(null);
+    } catch (error: any) {
+      setCloudMigrationMessage(error?.message || 'No se pudo completar la migración a Supabase.');
+    } finally {
+      setCloudMigrationBusy(false);
     }
   };
 
@@ -671,6 +707,59 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <p className="text-xs text-stone-500 mt-1">
                   Asigna qué caja física opera esta computadora y administra los puntos de cobro y comandas del restaurante con códigos de terminal independientes para Hacienda CR v4.4.
                 </p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-sky-50 border border-sky-200 shadow-xs space-y-3">
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <h4 className="text-sm font-bold text-sky-950 flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-sky-700" />
+                      Sincronización central con Supabase
+                    </h4>
+                    <p className="text-xs text-sky-800 mt-1 max-w-2xl">
+                      Importa las cajas y turnos guardados en este navegador sin sobrescribir registros existentes. Primero genera una vista previa para revisar conflictos.
+                    </p>
+                  </div>
+                  {!cloudMigrationPreview && (
+                    <button
+                      type="button"
+                      onClick={handlePreviewCloudMigration}
+                      disabled={cloudMigrationBusy || !cashControlCloudService.isAvailable()}
+                      className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 disabled:bg-sky-300 text-white text-xs font-bold transition-colors"
+                    >
+                      {cloudMigrationBusy ? 'Consultando…' : 'Revisar migración'}
+                    </button>
+                  )}
+                </div>
+
+                {!cashControlCloudService.isAvailable() && (
+                  <p className="text-xs text-amber-800 bg-amber-100 border border-amber-200 rounded-lg px-3 py-2">
+                    Supabase no está configurado en este dispositivo. La operación local seguirá disponible.
+                  </p>
+                )}
+
+                {cloudMigrationPreview && (
+                  <div className="bg-white border border-sky-200 rounded-xl p-3 space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                      <div><strong className="block text-lg text-stone-900">{cloudMigrationPreview.localRegisters.length}</strong><span className="text-[10px] text-stone-500">Cajas locales</span></div>
+                      <div><strong className="block text-lg text-stone-900">{cloudMigrationPreview.localActiveShifts.length + cloudMigrationPreview.localShiftHistory.length}</strong><span className="text-[10px] text-stone-500">Turnos locales</span></div>
+                      <div><strong className="block text-lg text-stone-900">{cloudMigrationPreview.cloudRegisters.length}</strong><span className="text-[10px] text-stone-500">Cajas en nube</span></div>
+                      <div><strong className="block text-lg text-amber-700">{cloudMigrationPreview.conflicts.length}</strong><span className="text-[10px] text-stone-500">Conflictos</span></div>
+                    </div>
+                    {cloudMigrationPreview.conflicts.length > 0 && (
+                      <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg p-2 space-y-1">
+                        {cloudMigrationPreview.conflicts.slice(0, 5).map(conflict => <p key={conflict}>• {conflict}</p>)}
+                        {cloudMigrationPreview.conflicts.length > 5 && <p>• Hay más conflictos; los registros existentes no se sobrescribirán.</p>}
+                      </div>
+                    )}
+                    <div className="flex gap-2 justify-end">
+                      <button type="button" onClick={() => setCloudMigrationPreview(null)} className="px-3 py-2 rounded-xl border border-stone-200 text-xs font-bold text-stone-600 hover:bg-stone-50">Cancelar</button>
+                      <button type="button" onClick={handleImportCloudMigration} disabled={cloudMigrationBusy} className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:bg-emerald-300 text-white text-xs font-bold">{cloudMigrationBusy ? 'Importando…' : 'Importar sin duplicar'}</button>
+                    </div>
+                  </div>
+                )}
+
+                {cloudMigrationMessage && <p className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2">{cloudMigrationMessage}</p>}
               </div>
 
               {/* Step 1: Active Terminal on THIS device */}
