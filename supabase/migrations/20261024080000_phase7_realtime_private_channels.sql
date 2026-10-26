@@ -1,8 +1,6 @@
 -- Fase 7: canales Realtime privados y aislados por tenant.
 -- Requiere que Fase 5 haya creado public.current_tenant_id().
 
-alter table realtime.messages enable row level security;
-
 drop policy if exists "saborai_realtime_tenant_receive" on realtime.messages;
 create policy "saborai_realtime_tenant_receive"
 on realtime.messages
