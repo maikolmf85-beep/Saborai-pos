@@ -304,7 +304,20 @@ class CashShiftService {
     linkedZones?: string[]
   ): CashShift {
     const targetRegisterId = registerId || this.currentTerminalId || 'caja-01';
-    const register = this.registers.find(r => r.id === targetRegisterId) || this.getCurrentRegister() || DEFAULT_REGISTERS[0];
+    const register = this.registers.find(r => r.id === targetRegisterId);
+
+    if (!register) {
+      throw new Error(`La caja con ID "${targetRegisterId}" no existe.`);
+    }
+    if (!register.isActive) {
+      throw new Error(`La caja "${register.name}" está inactiva y no puede abrir un turno.`);
+    }
+    if (!openedByUser?.id || !openedByUser.name?.trim() || openedByUser.active === false) {
+      throw new Error('Selecciona un colaborador activo para asignarlo como responsable del turno.');
+    }
+    if (!Number.isFinite(initialFloat) || !Number.isInteger(initialFloat) || initialFloat < 0) {
+      throw new Error('El fondo inicial debe ser un monto entero igual o mayor que ₡0.');
+    }
 
     if (this.activeShiftsMap[targetRegisterId] && this.activeShiftsMap[targetRegisterId].status === 'OPEN') {
       throw new Error(`La ${register?.name || 'caja'} ya tiene un turno de caja activo. Debe cerrarse antes de abrir uno nuevo.`);
@@ -328,8 +341,8 @@ class CashShiftService {
 
     // Determinar salones a enlazar
     let zonesToUse: string[] | undefined = undefined;
-    if (linkedZones && linkedZones.length > 0) {
-      zonesToUse = linkedZones.filter(Boolean);
+    if (linkedZones !== undefined) {
+      zonesToUse = linkedZones.map(zone => zone.trim()).filter(Boolean);
     } else if (linkedZone !== undefined) {
       zonesToUse = linkedZone.trim() ? [linkedZone.trim()] : undefined;
     } else if (register?.linkedZones && register.linkedZones.length > 0) {
@@ -377,6 +390,21 @@ class CashShiftService {
 
     this.activeShiftsMap[targetRegisterId] = newShift;
     this.saveToStorage();
+    auditService.record({
+      tenantId: newShift.tenantId,
+      action: 'SHIFT_OPENED',
+      actor: openedByUser,
+      registerId: register.id,
+      shiftId: newShift.id,
+      amount: initialFloat,
+      reference: `Turno #${newShift.shiftNumber}`,
+      reason: notes,
+      metadata: {
+        cashRegisterName: register.name,
+        terminalCode: register.terminalCode,
+        linkedZones: zonesToUse || []
+      }
+    });
     return newShift;
   }
 

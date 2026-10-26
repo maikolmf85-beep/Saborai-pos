@@ -197,6 +197,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setRegisters(regList);
       const curRegId = cashShiftService.getCurrentRegisterId() || (regList[0]?.id || 'caja-01');
       setSelectedRegisterId(curRegId);
+      setOpeningPin('');
+      setOpeningError(null);
       const matchedReg = regList.find(r => r.id === curRegId);
       const initialZones = matchedReg?.linkedZones && matchedReg.linkedZones.length > 0
         ? matchedReg.linkedZones
@@ -204,10 +206,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setOpeningZones(initialZones);
       refreshData(curRegId);
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
-      if (currentUser) {
+      if (currentUser && currentUser.active !== false) {
         setOpeningCashier(currentUser);
-      } else if (staffList.length > 0) {
-        setOpeningCashier(staffList[0]);
+      } else {
+        setOpeningCashier(staffList.find(staff => staff.active !== false) || null);
       }
     }
   }, [isOpen, currentUser, initialTab, staffList]);
@@ -259,42 +261,76 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
 
   if (!isOpen) return null;
 
+  const availableCashiers = staffList.filter(staff =>
+    staff.active !== false && !(staff.id === currentUser?.id && currentUser.active === false)
+  );
+  if (currentUser && currentUser.active !== false && !availableCashiers.some(staff => staff.id === currentUser.id)) {
+    availableCashiers.unshift(currentUser);
+  }
+  const selectedOpeningCashier = availableCashiers.find(staff => staff.id === openingCashier?.id)
+    || availableCashiers[0]
+    || null;
+  const openingZoneOptions = Array.from(new Set([...(tenant.zones || []), ...openingZones]))
+    .filter(zone => zone.trim().length > 0);
+
   // Handlers
   const handleOpenShiftSubmit = () => {
     setOpeningError(null);
 
-    const cashierToUse = openingCashier || currentUser || staffList[0] || {
-      id: 'usr_matamoros_admin',
-      name: 'Maikol Matamoros',
-      email: 'matamoros.maikol85@gmail.com',
-      role: 'ADMIN',
-      restaurantName: tenant?.name || 'SaborAI POS',
-      active: true,
-      pin: '1234'
-    };
+    const cashierToUse = selectedOpeningCashier;
+    if (!cashierToUse) {
+      setOpeningError('No hay colaboradores activos para asignar como responsables. Activa o registra un colaborador antes de abrir el turno.');
+      soundService.playErrorBuzz();
+      return;
+    }
 
-    // Validate PIN if configured
+    if (!/^\d{4}$/.test(openingPin)) {
+      setOpeningError('Ingresa el PIN de seguridad de 4 dígitos para autorizar la apertura.');
+      soundService.playErrorBuzz();
+      return;
+    }
+
     const expectedPin = cashierToUse.pin || '1234';
-    if (openingPin && openingPin !== expectedPin) {
+    if (openingPin !== expectedPin) {
       setOpeningError('PIN de autorización incorrecto.');
       soundService.playErrorBuzz();
       return;
     }
 
+    if (!Number.isFinite(initialFloatInput) || !Number.isInteger(initialFloatInput) || initialFloatInput < 0) {
+      setOpeningError('El fondo inicial debe ser un monto entero igual o mayor que ₡0.');
+      soundService.playErrorBuzz();
+      return;
+    }
+
+    const regIdToUse = selectedRegisterId || currentRegisterObj?.id || cashShiftService.getCurrentRegisterId();
+    const registerToOpen = registers.find(register => register.id === regIdToUse);
+    if (!registerToOpen) {
+      setOpeningError('No se encontró la caja seleccionada. Actualiza la configuración de cajas e inténtalo de nuevo.');
+      soundService.playErrorBuzz();
+      return;
+    }
+    if (!registerToOpen.isActive) {
+      setOpeningError('Esta caja está inactiva. Actívala desde la configuración de cajas antes de abrir un turno.');
+      soundService.playErrorBuzz();
+      return;
+    }
+
     try {
-      const regIdToUse = selectedRegisterId || currentRegisterObj?.id || cashShiftService.getCurrentRegisterId() || 'caja-01';
       const newShift = cashShiftService.openShift(
         tenant,
         cashierToUse,
-        Number(initialFloatInput),
+        initialFloatInput,
         openingNotes,
         regIdToUse,
         undefined,
-        openingZones.length > 0 ? openingZones : undefined
+        openingZones
       );
       soundService.playSuccessChime();
+      setOpeningPin('');
       setActiveShift(newShift);
       setActiveTab('status');
+      setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
       refreshData(regIdToUse);
     } catch (err: any) {
       setOpeningError(err.message || 'Error al abrir caja.');
@@ -711,27 +747,29 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     1. Colaborador Responsable de la Caja:
                   </label>
                   <select
-                    value={openingCashier?.id || ''}
+                    value={selectedOpeningCashier?.id || ''}
+                    disabled={availableCashiers.length === 0}
                     onChange={(e) => {
-                      const found = staffList.find(s => s.id === e.target.value) || (currentUser?.id === e.target.value ? currentUser : null);
+                      const found = availableCashiers.find(s => s.id === e.target.value) || null;
                       setOpeningCashier(found || null);
                     }}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-xs font-bold text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                   >
-                    {staffList.length === 0 ? (
-                      currentUser ? (
-                        <option value={currentUser.id}>{currentUser.name} — ({currentUser.role})</option>
-                      ) : (
-                        <option value="">Sin colaboradores registrados</option>
-                      )
+                    {availableCashiers.length === 0 ? (
+                      <option value="">Sin colaboradores activos</option>
                     ) : (
-                      staffList.map((staff) => (
+                      availableCashiers.map((staff) => (
                         <option key={staff.id} value={staff.id}>
                           {staff.name} — ({staff.role})
                         </option>
                       ))
                     )}
                   </select>
+                  {availableCashiers.length === 0 && (
+                    <p role="alert" className="mt-1.5 text-[11px] text-rose-700">
+                      Activa o registra un colaborador para poder abrir el turno.
+                    </p>
+                  )}
                 </div>
 
                 {/* 2. PIN de Autorización */}
@@ -743,11 +781,16 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   <input
                     type="password"
                     maxLength={4}
+                    inputMode="numeric"
+                    autoComplete="off"
+                    pattern="[0-9]{4}"
+                    required
                     value={openingPin}
-                    onChange={(e) => setOpeningPin(e.target.value)}
-                    placeholder={`PIN de ${openingCashier?.name ? openingCashier.name.split(' ')[0] : (currentUser?.name ? currentUser.name.split(' ')[0] : 'usuario')}`}
+                    onChange={(e) => setOpeningPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder="Ingresa el PIN de 4 dígitos"
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                   />
+                  <p className="mt-1 text-[11px] text-stone-400">El PIN es obligatorio para autorizar esta apertura.</p>
                 </div>
 
                 {/* 3. Fondo Inicial de Caja */}
@@ -759,9 +802,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-stone-400">₡</span>
                     <input
                       type="number"
+                      min={0}
                       step={1000}
                       value={initialFloatInput}
-                      onChange={(e) => setInitialFloatInput(Number(e.target.value))}
+                      onChange={(e) => setInitialFloatInput(e.target.value === '' ? 0 : Number(e.target.value))}
                       className="w-full pl-9 pr-4 py-3 bg-stone-50 border border-stone-200 rounded-2xl text-lg font-black text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                     />
                   </div>
@@ -807,7 +851,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </div>
                   
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 bg-stone-50 border border-stone-200 rounded-2xl">
-                    {(tenant.zones && tenant.zones.length > 0 ? tenant.zones : ['Salón Principal', 'Patio', 'Terraza', 'Barra', 'VIP']).map((z) => {
+                    {openingZoneOptions.length > 0 ? openingZoneOptions.map((z) => {
                       const isSelected = openingZones.includes(z);
                       return (
                         <button
@@ -836,7 +880,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                           )}
                         </button>
                       );
-                    })}
+                    }) : (
+                      <p className="col-span-full text-xs text-stone-500">
+                        No hay salones configurados para este restaurante. La caja atenderá todos los salones.
+                      </p>
+                    )}
                   </div>
                   <p className="text-[11px] text-stone-400 mt-1.5">
                     {openingZones.length === 0 
