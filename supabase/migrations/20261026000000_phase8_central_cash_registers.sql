@@ -12,6 +12,20 @@
 
 create extension if not exists pgcrypto;
 
+-- La Fase A amplía el núcleo creado por la migración 20261017000000_pos_core.
+-- Fallar aquí con una instrucción clara evita un error posterior menos útil.
+do $$
+begin
+  if to_regclass('public.pos_branches') is null
+     or to_regclass('public.pos_cash_registers') is null
+     or to_regclass('public.pos_cash_shifts') is null then
+    raise exception using
+      errcode = '42P01',
+      message = 'Falta la migración base 20261017000000_pos_core.sql. Ejecuta primero el núcleo POS y luego esta Fase A.';
+  end if;
+end;
+$$;
+
 -- -----------------------------------------------------------------------------
 -- 1. Cajas: completar la configuración que hoy vive en el navegador
 -- -----------------------------------------------------------------------------
