@@ -726,7 +726,7 @@ export const TableMap: React.FC<TableMapProps> = ({
               isEditMode ? 'cursor-move bg-amber-50/20' : 'cursor-default bg-stone-50/70'
             }`}
             style={{
-              backgroundImage: `radial-gradient(#d6d3d1 1.2px, transparent 1.2px)`,
+              backgroundImage: 'radial-gradient(var(--pos-map-dot) 1.2px, transparent 1.2px)',
               backgroundSize: '22px 22px',
             }}
           >

@@ -15,7 +15,10 @@ import {
   Info,
   Store,
   Pencil,
-  ShieldAlert
+  ShieldAlert,
+  Palette,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { PrinterSettings } from './PrinterSettings';
 import { InventoryRecipes } from './InventoryRecipes';
@@ -32,6 +35,8 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   tenant: TenantInfo;
+  theme: 'light' | 'dark';
+  onThemeChange: (theme: 'light' | 'dark') => void;
   onUpdateTenant?: (updated: TenantInfo) => void;
   onUpdateTenantStatus: (status: SubscriptionStatus, graceEnds?: string) => void;
   onSelectTenant: (tenant: TenantInfo) => void;
@@ -41,12 +46,14 @@ interface SettingsModalProps {
   currentUser?: any;
 }
 
-type SettingsSection = 'regime' | 'hacienda' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
+type SettingsSection = 'appearance' | 'regime' | 'hacienda' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
   onClose,
   tenant,
+  theme,
+  onThemeChange,
   onUpdateTenant,
   onUpdateTenantStatus,
   onSelectTenant,
@@ -238,7 +245,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-bold text-stone-900">Ajustes & Herramientas SaborAI</h2>
-              <p className="text-xs text-stone-500">Configuración general de periféricos, inventarios y régimen fiscal</p>
+              <p className="text-xs text-stone-500">Ajustes operativos, apariencia e identidad del negocio</p>
             </div>
           </div>
 
@@ -259,6 +266,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Navigation Tabs */}
         <div className="px-6 border-b border-stone-200 flex items-center gap-2 overflow-x-auto bg-white scrollbar-none">
+          <button
+            onClick={() => setActiveSection('appearance')}
+            aria-current={activeSection === 'appearance' ? 'page' : undefined}
+            className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
+              activeSection === 'appearance'
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <Palette className="w-4 h-4 text-[#588157]" />
+            <span>Apariencia</span>
+          </button>
+
           <button
             onClick={() => setActiveSection('regime')}
             className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
@@ -378,6 +398,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Section Content */}
         <div className="flex-1 overflow-y-auto bg-stone-50/40 p-4 sm:p-6">
+          {activeSection === 'appearance' && (
+            <div className="max-w-4xl mx-auto space-y-6 animate-in fade-in duration-200">
+              <section className="bg-white rounded-2xl border border-stone-200 p-5 sm:p-6 shadow-xs">
+                <div className="flex items-start gap-3 mb-6">
+                  <div className="w-11 h-11 shrink-0 rounded-2xl bg-[#a9b994]/25 text-[#3b3733] flex items-center justify-center">
+                    <Palette className="w-5 h-5 text-[#588157]" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-stone-900">Apariencia del POS</h3>
+                    <p className="text-xs text-stone-500 mt-1">Elige el contraste que mejor acompaña tu espacio de trabajo. La selección se aplica al instante y se guarda en este dispositivo.</p>
+                  </div>
+                </div>
+
+                <fieldset>
+                  <legend className="text-xs font-bold text-stone-700 mb-3">Tema de pantalla</legend>
+                  <div role="radiogroup" aria-label="Tema de pantalla" className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {([
+                      { value: 'light', label: 'Claro', description: 'Superficies luminosas con acentos verde salvia.', Icon: Sun },
+                      { value: 'dark', label: 'Oscuro', description: 'Fondos carbón-verde con acentos Saborai de alto contraste.', Icon: Moon }
+                    ] as const).map(option => {
+                      const selected = theme === option.value;
+                      return (
+                        <label
+                          key={option.value}
+                          className={`group relative flex cursor-pointer items-start gap-4 rounded-2xl border-2 p-4 transition-all focus-within:ring-2 focus-within:ring-[#588157]/35 ${
+                            selected
+                              ? 'border-[#588157] bg-[#f4f7f0] shadow-sm'
+                              : 'border-stone-200 bg-white hover:border-[#a9b994] hover:bg-stone-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="saborai-pos-theme"
+                            value={option.value}
+                            checked={selected}
+                            onChange={() => onThemeChange(option.value)}
+                            className="sr-only"
+                          />
+                          <div className="pos-theme-option-preview" data-preview-theme={option.value} aria-hidden="true">
+                            <div className="pos-theme-preview-sidebar" />
+                            <div className="pos-theme-preview-content">
+                              <div className="pos-theme-preview-bar" />
+                              <div className="pos-theme-preview-card">
+                                <span />
+                                <i />
+                              </div>
+                              <div className="pos-theme-preview-accent" />
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1 pt-1">
+                            <span className="flex items-center gap-2 text-sm font-bold text-stone-900">
+                              <option.Icon className="h-4 w-4 text-[#588157]" />
+                              {option.label}
+                              {selected && <CheckCircle2 className="ml-auto h-4 w-4 text-[#588157]" aria-hidden="true" />}
+                            </span>
+                            <span className="mt-1 block text-xs leading-relaxed text-stone-500">{option.description}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              </section>
+
+              <div className="flex items-start gap-3 rounded-2xl border border-[#a9b994]/45 bg-[#a9b994]/15 p-4 text-xs text-stone-700">
+                <Palette className="mt-0.5 h-4 w-4 shrink-0 text-[#588157]" />
+                <p>Ambos temas conservan el verde salvia y el carbón característicos de Saborai. El tema es una preferencia local de este navegador; no cambia los colores impresos en los tiquetes.</p>
+              </div>
+            </div>
+          )}
+
           {activeSection === 'regime' && (
             <div className="max-w-4xl mx-auto space-y-6">
               <form onSubmit={handleSaveTaxConfig} className="space-y-6">

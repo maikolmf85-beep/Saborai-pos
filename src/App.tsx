@@ -44,6 +44,17 @@ import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayout
 import { supabaseClient } from './lib/supabaseClient';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat, MessageCircle } from 'lucide-react';
 
+type PosTheme = 'light' | 'dark';
+const POS_THEME_STORAGE_KEY = 'saborai_pos_theme';
+
+function readInitialPosTheme(): PosTheme {
+  try {
+    return localStorage.getItem(POS_THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
 function normalizeTablePositions(tables: Table[]): Table[] {
   const columns = Math.max(1, Math.ceil(Math.sqrt(tables.length)));
   return tables.map((table, index) => ({
@@ -268,6 +279,12 @@ export function App() {
     // Default to POS for pos.saborai.site, localhost, or any vercel preview URL
     return 'POS';
   });
+
+  const [posTheme, setPosTheme] = useState<PosTheme>(readInitialPosTheme);
+  const handlePosThemeChange = (nextTheme: PosTheme) => {
+    setPosTheme(nextTheme);
+    try { localStorage.setItem(POS_THEME_STORAGE_KEY, nextTheme); } catch {}
+  };
 
   // KDS Orders State
   const [kdsOrders, setKdsOrders] = useState<KDSOrder[]>([]);
@@ -1530,7 +1547,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#fafaf9] text-stone-900 flex flex-col sm:flex-row font-sans selection:bg-[#a9b994]/30">
+    <div data-pos-theme={activeTab === 'landing' ? 'light' : posTheme} className="pos-theme-root h-screen w-screen overflow-hidden flex flex-col sm:flex-row font-sans selection:bg-[#a9b994]/30">
       
       <GuidedTour />
       
@@ -1773,6 +1790,8 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         tenant={tenant}
+        theme={posTheme}
+        onThemeChange={handlePosThemeChange}
         onUpdateTenant={handleUpdateTenant}
         onUpdateTenantStatus={handleUpdateTenantStatus}
         onSelectTenant={(t) => handleUpdateTenant(t)}
