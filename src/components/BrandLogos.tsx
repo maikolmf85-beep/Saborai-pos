@@ -4,7 +4,7 @@ interface LogoProps {
   className?: string;
   variant?: 'full' | 'wordmark' | 'stacked' | 'isotype';
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  tone?: 'default' | 'light' | 'mono';
+  tone?: 'default' | 'light' | 'mono' | 'web';
 }
 
 export const BrandLogo: React.FC<LogoProps> = ({ 
@@ -13,10 +13,10 @@ export const BrandLogo: React.FC<LogoProps> = ({
   size = 'md',
   tone = 'default'
 }) => {
-  const logoUrl = '/assets/logos/Saborai_icono_app.png';
-  const fullLogoUrl = '/assets/logos/Saborailogocompletoprincipal.png';
-  const lightLogoUrl = '/assets/logos/Saborai_logo_claro.png';
-  const monoLogoUrl = '/assets/logos/SaboraiLogooscuroaunatinta.png';
+  const logoUrl = '/assets/logos/finales/Isotipo.png';
+  const fullLogoUrl = '/assets/logos/finales/Logotipocompleto.png';
+  const webLogoUrl = '/assets/logos/finales/Logotipoweb.png';
+  const monoLogoUrl = '/assets/logos/finales/Logotipoparafondosclaros.png';
 
   const iconSizes = {
     sm: 'w-8 h-8',
@@ -86,7 +86,7 @@ export const BrandLogo: React.FC<LogoProps> = ({
 
     return (
       <img
-        src={tone === 'light' ? lightLogoUrl : tone === 'mono' ? monoLogoUrl : fullLogoUrl}
+        src={tone === 'mono' ? monoLogoUrl : tone === 'web' ? webLogoUrl : fullLogoUrl}
         alt="SaborAI POS"
         className={`${fullLogoSizes[size]} h-auto max-w-full object-contain select-none ${className}`}
         loading="eager"

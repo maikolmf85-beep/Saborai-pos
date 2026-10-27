@@ -202,7 +202,9 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       {/* Copilot Header */}
       <div className="bg-[#3b3733] text-[#fcfeff] p-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <BrandLogo variant="isotype" size="sm" />
+          <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#f4f7f0] shrink-0">
+            <BrandLogo variant="isotype" size="sm" />
+          </div>
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-bold text-sm">Nyza</h3>

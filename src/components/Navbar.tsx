@@ -460,7 +460,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-stone-900 border border-stone-800 hover:border-[#a9b994]/80 transition-all duration-200 cursor-pointer shadow-sm overflow-hidden"
               title="SaborAI POS"
             >
-              <div className="w-6 h-6 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 flex items-center justify-center shrink-0">
                 <BrandLogo variant="isotype" size="sm" />
               </div>
               

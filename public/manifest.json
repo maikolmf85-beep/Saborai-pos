@@ -1,12 +1,16 @@
 {
-  "name": "Saborai POS",
+  "id": "/",
+  "name": "Saborai POS - Gastronomía Inteligente",
   "short_name": "Saborai POS",
-  "description": "Sistema inteligente de punto de venta para restaurantes.",
+  "description": "Punto de venta gastronómico inteligente para restaurantes.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#fcfeff",
+  "orientation": "any",
+  "background_color": "#f4f7f0",
   "theme_color": "#3b3733",
   "lang": "es-CR",
+  "categories": ["business", "food", "productivity"],
   "icons": [
     {
       "src": "/icons/icon-192.png",
