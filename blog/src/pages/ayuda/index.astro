@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
+import { supportWhatsAppUrl } from '../../lib/support';
 
 const ayuda = (await getCollection('ayuda')).sort((a, b) => a.data.order - b.data.order);
 
@@ -100,13 +101,15 @@ const grouped = ayuda.reduce((acc, item) => {
     <!-- Contact CTA -->
     <div class="mt-12 p-8 bg-gradient-to-br from-sage-50 to-sage-100/50 rounded-3xl border border-sage-200/50 text-center">
       <h2 class="text-2xl font-black font-heading text-primary mb-2">¿No encontraste tu respuesta?</h2>
-      <p class="text-neutral mb-6">Nuestro equipo de soporte en Costa Rica está listo para ayudarte.</p>
+      <p class="text-neutral mb-6">Nuestro equipo de soporte en Costa Rica está listo para ayudarte por WhatsApp al +506 7206-1146.</p>
       <div class="flex flex-wrap justify-center gap-3">
         <a
-          href="mailto:soporte@saborai.site"
+          href={supportWhatsAppUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           class="btn-primary text-sm"
         >
-          ✉️ Contactar Soporte
+          Contactar por WhatsApp
         </a>
         <a href="/guias" class="inline-flex items-center gap-2 px-5 py-2.5 bg-white text-primary font-bold text-sm rounded-xl border border-stone-200 hover:bg-stone-50 transition-colors">
           📖 Ver Guías

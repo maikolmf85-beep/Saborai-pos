@@ -1,4 +1,6 @@
 ---
+import { supportWhatsAppUrl } from '../lib/support';
+
 export interface Props {
   title: string;
   description: string;
@@ -8,6 +10,7 @@ export interface Props {
   modifiedTime?: string;
   author?: string;
   tags?: string[];
+  keywords?: string[];
   canonicalUrl?: string;
   noindex?: boolean;
 }
@@ -21,6 +24,7 @@ const {
   modifiedTime,
   author = 'Equipo SaborAI',
   tags = [],
+  keywords = [],
   canonicalUrl,
   noindex = false,
 } = Astro.props;
@@ -29,6 +33,7 @@ const siteTitle = 'SaborAI Blog';
 const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
 const canonical = canonicalUrl || Astro.url.href;
 const ogImage = new URL(image, Astro.site).href;
+const metaKeywords = [...keywords, ...tags];
 
 // Google Analytics Measurement ID - Replace with your actual GA4 ID
 const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
@@ -45,7 +50,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
     <title>{fullTitle}</title>
     <meta name="description" content={description} />
     <meta name="author" content={author} />
-    {tags.length > 0 && <meta name="keywords" content={tags.join(', ')} />}
+    {metaKeywords.length > 0 && <meta name="keywords" content={metaKeywords.join(', ')} />}
     <link rel="canonical" href={canonical} />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     {!noindex && <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />}
@@ -201,7 +206,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
           </a>
 
           <!-- Desktop Nav -->
-          <div class="hidden md:flex items-center gap-1">
+          <div class="hidden lg:flex items-center gap-1">
             <a href="/blog" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
               📝 Blog
             </a>
@@ -213,6 +218,9 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
             </a>
             <a href="/changelog" class="px-3 py-2 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg transition-colors">
               🚀 Novedades
+            </a>
+            <a href={supportWhatsAppUrl} target="_blank" rel="noopener noreferrer" aria-label="Contactar soporte de SaborAI por WhatsApp" class="rounded-lg border border-sage-200 bg-sage-50 px-3 py-2 text-sm font-bold text-sage-800 transition hover:bg-sage-100">
+              Soporte WhatsApp
             </a>
             <div class="w-px h-6 bg-stone-200 mx-2"></div>
             <a
@@ -228,7 +236,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
           <!-- Mobile Menu Button -->
           <button
             id="mobile-menu-btn"
-            class="md:hidden p-2 rounded-lg hover:bg-sage-50 transition-colors"
+            class="lg:hidden p-2 rounded-lg hover:bg-sage-50 transition-colors"
             aria-label="Abrir menú"
             aria-expanded="false"
           >
@@ -239,12 +247,13 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
         </div>
 
         <!-- Mobile Nav -->
-        <div id="mobile-menu" class="hidden md:hidden pb-4 border-t border-stone-100 mt-2 pt-3">
+        <div id="mobile-menu" class="hidden lg:hidden pb-4 border-t border-stone-100 mt-2 pt-3">
           <div class="flex flex-col gap-1">
             <a href="/blog" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">📝 Blog</a>
             <a href="/guias" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">📖 Guías</a>
             <a href="/ayuda" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">💬 Centro de Ayuda</a>
             <a href="/changelog" class="px-3 py-2.5 text-sm font-semibold text-neutral hover:text-primary hover:bg-sage-50 rounded-lg">🚀 Novedades</a>
+            <a href={supportWhatsAppUrl} target="_blank" rel="noopener noreferrer" aria-label="Contactar soporte de SaborAI por WhatsApp" class="btn-primary text-xs py-2.5 px-4 text-center mt-2">Soporte por WhatsApp</a>
             <a href="https://pos.saborai.site" target="_blank" rel="noopener" class="btn-primary text-xs py-2.5 px-4 text-center mt-2">Ir al POS →</a>
           </div>
         </div>
@@ -289,6 +298,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
               <li><a href="/guias" class="hover:text-accent transition-colors">Guías de Uso</a></li>
               <li><a href="/ayuda" class="hover:text-accent transition-colors">Centro de Ayuda</a></li>
               <li><a href="/changelog" class="hover:text-accent transition-colors">Novedades</a></li>
+              <li><a href={supportWhatsAppUrl} target="_blank" rel="noopener noreferrer" class="hover:text-accent transition-colors">Soporte por WhatsApp</a></li>
               <li><a href="/rss.xml" class="hover:text-accent transition-colors">RSS Feed</a></li>
             </ul>
           </div>

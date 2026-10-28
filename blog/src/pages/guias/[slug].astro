@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import { getCollection } from 'astro:content';
+import { supportWhatsAppUrl } from '../../lib/support';
 import type { CollectionEntry } from 'astro:content';
 
 export async function getStaticPaths() {
@@ -93,8 +94,8 @@ const allGuias = (await getCollection('guias'))
         <h3 class="font-bold text-primary text-sm">¿La guía no resolvió tu duda?</h3>
         <p class="text-xs text-neutral mt-0.5">Visita el Centro de Ayuda o contacta a nuestro soporte técnico local.</p>
       </div>
-      <a href="/ayuda" class="btn-primary text-xs py-2 px-4 whitespace-nowrap">
-        Centro de Ayuda
+      <a href={supportWhatsAppUrl} target="_blank" rel="noopener noreferrer" class="btn-primary text-xs py-2 px-4 whitespace-nowrap">
+        Soporte por WhatsApp
       </a>
     </div>
 
