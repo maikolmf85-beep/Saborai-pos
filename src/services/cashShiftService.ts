@@ -93,20 +93,21 @@ class CashShiftService {
 
       // 4. Load shifts history
       this.shiftsHistory = getTenantItem<CashShift[]>(TENANT_KEY_SHIFTS_HISTORY, this.tenantId) || [];
-      this.saveToStorage();
+      // La carga inicial no debe volver a subir una caché local antigua a Supabase.
+      this.saveToStorage(false);
     } catch (e) {
       console.warn('Error loading shifts from storage:', e);
     }
   }
 
-  private saveToStorage(): void {
+  private saveToStorage(syncCloud = true): void {
     if (!this.tenantId) return;
     try {
       setTenantItem(TENANT_KEY_CASH_REGISTERS, this.registers, this.tenantId);
       setTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId, this.tenantId);
       setTenantItem(TENANT_KEY_ACTIVE_SHIFTS_MAP, this.activeShiftsMap, this.tenantId);
       setTenantItem(TENANT_KEY_SHIFTS_HISTORY, this.shiftsHistory, this.tenantId);
-      this.queueCloudSync();
+      if (syncCloud) this.queueCloudSync();
     } catch (e) {
       console.warn('Error saving shifts to storage:', e);
     }
@@ -490,11 +491,9 @@ class CashShiftService {
   private async reconcileWithCloud(tenantId: string): Promise<void> {
     if (!cashControlCloudService.isAvailable()) return;
     try {
-      // Primera sincronización: importa lo local de forma idempotente y después
-      // reemplaza la caché con el estado confirmado por PostgreSQL.
-      await cashControlCloudService.importLocalConfiguration(tenantId, {
-        deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
-      });
+      // Al iniciar o cambiar de tenant, Supabase es la fuente de verdad.
+      // La importación local solo debe ejecutarse por una acción explícita de migración;
+      // hacerlo aquí puede recrear turnos abiertos de una caché antigua.
       await this.refreshFromCloud();
     } catch (error) {
       console.warn('[CashControl] Supabase no disponible; el POS continúa offline:', error);
@@ -516,7 +515,7 @@ class CashShiftService {
       } else if (!this.registers.some(register => register.id === this.currentTerminalId)) {
         this.currentTerminalId = (this.registers.find(register => register.isDefault) || this.registers[0]).id;
       }
-      this.saveToStorage();
+      this.saveToStorage(false);
     } catch (error) {
       console.warn('[CashControl] No se pudo refrescar el estado cloud:', error);
     } finally {
