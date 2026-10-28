@@ -131,6 +131,17 @@ export function clearLegacyOperationalData(): void {
   ].forEach(key => localStorage.removeItem(key));
 }
 
+export function clearLegacyCashControlData(): void {
+  if (typeof window === 'undefined') return;
+  [
+    'saborai_cash_registers',
+    'saborai_current_terminal_id',
+    'saborai_active_shift',
+    'saborai_shifts_history',
+    'saborai_shifts_map'
+  ].forEach(key => localStorage.removeItem(key));
+}
+
 /** Recupera datos previos solo cuando pertenecen al tenant autenticado. */
 export function migrateLegacyDataToTenant(tenantId: string): boolean {
   if (typeof window === 'undefined' || !tenantId) return false;

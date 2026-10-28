@@ -12,7 +12,7 @@ import {
   CashShiftParticipant
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
-import { getTenantItem, setTenantItem } from './tenantStorage';
+import { clearLegacyCashControlData, getTenantItem, removeTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
 
@@ -53,7 +53,22 @@ class CashShiftService {
   setTenantContext(tenantId: string): void {
     if (!tenantId || this.tenantId === tenantId) return;
     this.tenantId = tenantId;
-    this.loadFromStorage();
+    if (this.cloudSyncTimer) {
+      clearTimeout(this.cloudSyncTimer);
+      this.cloudSyncTimer = null;
+    }
+    if (cashControlCloudService.isAvailable()) {
+      // Supabase es la fuente de verdad. No reutilizar catálogos/turnos antiguos
+      // que puedan volver a insertarse después de un Ctrl+Shift+R.
+      this.resetInMemoryState();
+      clearLegacyCashControlData();
+      removeTenantItem(TENANT_KEY_CASH_REGISTERS, tenantId);
+      removeTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, tenantId);
+      removeTenantItem(TENANT_KEY_ACTIVE_SHIFTS_MAP, tenantId);
+      removeTenantItem(TENANT_KEY_SHIFTS_HISTORY, tenantId);
+    } else {
+      this.loadFromStorage();
+    }
     this.cloudRealtimeUnsubscribe?.();
     this.cloudRealtimeUnsubscribe = cashControlCloudService.subscribe(tenantId, () => {
       void this.refreshFromCloud();
