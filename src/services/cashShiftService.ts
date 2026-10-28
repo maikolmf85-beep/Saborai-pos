@@ -60,7 +60,10 @@ class CashShiftService {
     if (cashControlCloudService.isAvailable()) {
       // Supabase es la fuente de verdad. No reutilizar catálogos/turnos antiguos
       // que puedan volver a insertarse después de un Ctrl+Shift+R.
-      this.resetInMemoryState();
+      this.registers = [];
+      this.currentTerminalId = '';
+      this.activeShiftsMap = {};
+      this.shiftsHistory = [];
       clearLegacyCashControlData();
       removeTenantItem(TENANT_KEY_CASH_REGISTERS, tenantId);
       removeTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, tenantId);
@@ -131,7 +134,7 @@ class CashShiftService {
   // --- Cash Registers Management ---
 
   getCashRegisters(): CashRegister[] {
-    if (this.registers.length === 0) {
+    if (this.registers.length === 0 && !cashControlCloudService.isAvailable()) {
       this.registers = [...DEFAULT_REGISTERS];
       this.saveToStorage();
     }
@@ -319,6 +322,9 @@ class CashShiftService {
     linkedZone?: string,
     linkedZones?: string[]
   ): CashShift {
+    if (cashControlCloudService.isAvailable() && this.registers.length === 0) {
+      throw new Error('No hay cajas configuradas en la nube. Crea una caja antes de abrir un turno.');
+    }
     const targetRegisterId = registerId || this.currentTerminalId || 'caja-01';
     const register = this.registers.find(r => r.id === targetRegisterId);
 
@@ -520,7 +526,6 @@ class CashShiftService {
     try {
       const snapshot = await cashControlCloudService.getCloudSnapshot(this.tenantId);
       const state = cashControlCloudService.toLocalState(snapshot);
-      if (state.registers.length === 0) return;
       this.cloudHydrating = true;
       this.registers = state.registers;
       this.activeShiftsMap = state.activeShiftsMap;
@@ -528,7 +533,7 @@ class CashShiftService {
       if (state.currentTerminalId && this.registers.some(register => register.id === state.currentTerminalId)) {
         this.currentTerminalId = state.currentTerminalId;
       } else if (!this.registers.some(register => register.id === this.currentTerminalId)) {
-        this.currentTerminalId = (this.registers.find(register => register.isDefault) || this.registers[0]).id;
+        this.currentTerminalId = (this.registers.find(register => register.isDefault) || this.registers[0])?.id || '';
       }
       this.saveToStorage(false);
     } catch (error) {
