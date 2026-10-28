@@ -91,8 +91,13 @@ const formatDate = (date: Date) =>
           href={`/blog/${featuredPost.slug}`}
           class="group relative block overflow-hidden rounded-[1.75rem] border border-white/60 bg-white p-6 text-primary shadow-2xl shadow-black/20 transition duration-300 hover:-translate-y-1 hover:shadow-black/30 sm:p-8"
         >
-          <div aria-hidden="true" class="absolute -right-14 -top-14 h-48 w-48 rounded-full bg-sage-100"></div>
-          <div class="relative">
+          {featuredPost.data.heroImage && (
+            <div class="relative z-10 -mx-6 -mt-6 mb-6 aspect-[16/8] overflow-hidden bg-sage-100 sm:-mx-8 sm:-mt-8">
+              <img src={featuredPost.data.heroImage} alt="" aria-hidden="true" class="h-full w-full object-cover" loading="eager" decoding="async" />
+            </div>
+          )}
+          <div aria-hidden="true" class="pointer-events-none absolute -right-14 -top-14 z-0 h-48 w-48 rounded-full bg-sage-100"></div>
+          <div class="relative z-10">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <span class="badge-sage text-[10px]">Lectura destacada</span>
               <span class="text-xs font-semibold uppercase tracking-wider text-neutral">
@@ -157,7 +162,7 @@ const formatDate = (date: Date) =>
           <a href={`/blog/${post.slug}`} class="group overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm transition duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lg">
             {post.data.heroImage ? (
               <div class="aspect-[16/10] overflow-hidden bg-sage-50">
-                <img src={post.data.heroImage} alt={post.data.title} class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" />
+                <img src={post.data.heroImage} alt={post.data.heroImageAlt || post.data.title} class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]" loading="lazy" />
               </div>
             ) : (
               <div class="relative flex aspect-[16/10] items-end overflow-hidden bg-gradient-to-br from-sage-50 via-white to-sage-100 p-5">

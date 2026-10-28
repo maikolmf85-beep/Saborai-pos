@@ -8,6 +8,7 @@ const blog = defineCollection({
     pubDate: z.coerce.date(),
     updatedDate: z.coerce.date().optional(),
     heroImage: z.string().optional(),
+    heroImageAlt: z.string().optional(),
     category: z.enum(['noticias', 'tips', 'actualizaciones', 'industria', 'recetas-exito']),
     tags: z.array(z.string()).default([]),
     author: z.string().default('Equipo SaborAI'),

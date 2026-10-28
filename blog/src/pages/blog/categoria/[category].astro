@@ -48,7 +48,7 @@ const categoryLabels: Record<string, string> = {
           <a href={`/blog/${post.slug}`} class="group bg-white rounded-2xl border border-stone-200/80 overflow-hidden card-hover shadow-sm">
             {post.data.heroImage ? (
               <div class="aspect-video bg-sage-50 overflow-hidden">
-                <img src={post.data.heroImage} alt={post.data.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
+                <img src={post.data.heroImage} alt={post.data.heroImageAlt || post.data.title} class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
               </div>
             ) : (
               <div class="aspect-video bg-gradient-to-br from-sage-100 to-sage-200 flex items-center justify-center">

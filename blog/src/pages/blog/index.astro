@@ -66,7 +66,7 @@ const categoryLabels: Record<string, string> = {
               <div class="aspect-video bg-sage-50 overflow-hidden">
                 <img
                   src={post.data.heroImage}
-                  alt={post.data.title}
+                  alt={post.data.heroImageAlt || post.data.title}
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   loading="lazy"
                 />

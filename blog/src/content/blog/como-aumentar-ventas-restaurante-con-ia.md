@@ -2,7 +2,8 @@
 title: "Cómo usar la IA de SaborAI para aumentar las ventas de tu restaurante"
 description: "Descubre cómo la inteligencia artificial integrada en SaborAI POS analiza tus ventas, sugiere combos y optimiza tu menú para maximizar tus ingresos en Costa Rica."
 pubDate: 2026-10-01
-heroImage: /assets/blog/ia-ventas-restaurante.jpg
+heroImage: /assets/blog/ia-ventas-restaurante.webp
+heroImageAlt: "Propietario de restaurante consulta gráficos de ventas en una tableta durante el servicio."
 category: tips
 tags: ["inteligencia artificial", "ventas", "restaurante", "Costa Rica", "POS"]
 author: "Equipo SaborAI"

@@ -37,7 +37,7 @@ const allPosts = (await getCollection('blog'))
     <div class="w-full aspect-[21/9] overflow-hidden bg-sage-100">
       <img
         src={post.data.heroImage}
-        alt={post.data.title}
+        alt={post.data.heroImageAlt || post.data.title}
         class="w-full h-full object-cover"
         loading="eager"
       />

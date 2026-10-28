@@ -2,7 +2,8 @@
 title: "Facturación Electrónica para Restaurantes en Costa Rica: Todo lo que necesitas saber"
 description: "Guía completa sobre facturación electrónica v4.3 de Hacienda para restaurantes en Costa Rica. Aprende los requisitos, cómo funciona con SaborAI POS y evita multas."
 pubDate: 2026-09-15
-heroImage: /assets/blog/facturacion-electronica-cr.jpg
+heroImage: /assets/blog/facturacion-electronica-cr.webp
+heroImageAlt: "Cajera entrega un recibo a un cliente junto a un terminal de pago en un restaurante."
 category: noticias
 tags: ["facturación electrónica", "Hacienda", "Costa Rica", "restaurantes", "obligatorio"]
 author: "Equipo SaborAI"

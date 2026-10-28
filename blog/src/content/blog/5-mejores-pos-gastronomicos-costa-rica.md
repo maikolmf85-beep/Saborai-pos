@@ -3,6 +3,8 @@ title: "Los 5 mejores POS de Costa Rica"
 description: "Comparamos cinco POS para restaurantes en Costa Rica por funciones, soporte y precio. Conoce cuál puede adaptarse a la operación de tu negocio."
 pubDate: 2026-10-27
 updatedDate: 2026-10-27
+heroImage: /assets/blog/pos-costa-rica.webp
+heroImageAlt: "Dueña de restaurante revisa un punto de venta en una tableta detrás de la barra."
 category: industria
 tags: ["POS para restaurantes", "POS Costa Rica", "punto de venta", "software gastronómico", "facturación electrónica", "gestión de restaurantes"]
 author: "Equipo SaborAI"

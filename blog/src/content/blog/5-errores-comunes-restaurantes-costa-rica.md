@@ -2,7 +2,8 @@
 title: "5 errores comunes que cometen los restaurantes en Costa Rica (y cómo evitarlos)"
 description: "Desde no llevar control de inventario hasta ignorar las métricas de ventas, estos son los 5 errores más frecuentes de los restauranteros ticos y cómo SaborAI te ayuda a evitarlos."
 pubDate: 2026-08-20
-heroImage: /assets/blog/errores-restaurantes.jpg
+heroImage: /assets/blog/errores-restaurantes.webp
+heroImageAlt: "Gerente de restaurante revisa inventario y operaciones en una tableta en la cocina."
 category: industria
 tags: ["gestión de restaurantes", "errores", "Costa Rica", "tips", "control de costos"]
 author: "Equipo SaborAI"
