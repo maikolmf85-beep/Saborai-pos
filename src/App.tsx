@@ -748,6 +748,7 @@ export function App() {
   }, [tenant.id]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -1632,6 +1633,8 @@ export function App() {
       
       {/* Navbar: Bottom on mobile, Vertical on Desktop */}
       <Navbar
+        isSidebarCollapsed={isSidebarCollapsed}
+        onToggleSidebar={() => setIsSidebarCollapsed(collapsed => !collapsed)}
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
@@ -1659,7 +1662,7 @@ export function App() {
       />
 
       {/* Spacer to push content because Navbar is absolute/fixed */}
-      <div className="hidden sm:block w-[68px] h-full shrink-0 z-0 bg-stone-950/20"></div>
+      <div className={`hidden sm:block ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-full shrink-0 z-0 bg-[#3b3733]/10 transition-[width] duration-300 ease-out`}></div>
 
       {/* Main Workspace Container */}
       <div className="min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden relative pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
