@@ -35,7 +35,8 @@ interface TableMapProps {
   isAdmin?: boolean;
   staffList?: UserProfile[];
   tenant: import('../types').TenantInfo;
-  onUpdateTenant: (tenant: import('../types').TenantInfo) => void;
+  onUpdateTenant: (tenant: import('../types').TenantInfo) => Promise<boolean>;
+  isSavingTenantZones?: boolean;
   onUpdateTables?: (tables: Table[]) => void;
   onQuickTakeaway?: () => void;
   activeShiftZone?: string;
@@ -55,6 +56,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   staffList = [],
   tenant,
   onUpdateTenant,
+  isSavingTenantZones = false,
   onUpdateTables,
   activeShiftZone,
   activeShiftZones,
@@ -248,9 +250,10 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   };
 
-  const handleAddNewTable = (e: React.FormEvent) => {
+  const handleAddNewTable = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTableName.trim()) return;
+    if (tenantZones.length === 0 && isSavingTenantZones) return;
 
     const nextNumber = Math.max(...tables.map(t => t.number), 0) + 1;
     // Calculate an unoccupied position
@@ -259,10 +262,11 @@ export const TableMap: React.FC<TableMapProps> = ({
 
     const targetZone = newTableZone.trim() || (tenantZones.length > 0 ? tenantZones[0] : 'Principal');
     if (tenantZones.length === 0) {
-      onUpdateTenant({
+      const saved = await onUpdateTenant({
         ...tenant,
         zones: [targetZone]
       });
+      if (!saved) return;
       setSelectedZone(targetZone);
     }
 
@@ -324,15 +328,16 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   };
 
-  const handleAddZone = (e: React.FormEvent) => {
+  const handleAddZone = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = newZoneName.trim();
-    if (!cleanName || tenantZones.includes(cleanName)) return;
+    if (isSavingTenantZones || !cleanName || tenantZones.includes(cleanName)) return;
 
-    onUpdateTenant({
+    const saved = await onUpdateTenant({
       ...tenant,
       zones: [...tenantZones, cleanName]
     });
+    if (!saved) return;
     setNewZoneName('');
     setSelectedZone(cleanName);
   };
@@ -358,11 +363,12 @@ export const TableMap: React.FC<TableMapProps> = ({
       message: `¿Estás seguro de que deseas eliminar el salón "${zone}" de la configuración del restaurante?`,
       confirmLabel: 'Eliminar salón',
       type: 'danger',
-      onConfirm: () => {
-        onUpdateTenant({
+      onConfirm: async () => {
+        const saved = await onUpdateTenant({
           ...tenant,
           zones: tenantZones.filter(z => z !== zone)
         });
+        if (!saved) return;
         if (selectedZone === zone) setSelectedZone('Todas');
         setConfirmConfig(prev => ({ ...prev, isOpen: false }));
       }
@@ -1105,9 +1111,10 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={isSavingTenantZones}
                   className="px-5 py-2.5 rounded-xl bg-stone-900 text-white font-bold hover:bg-stone-800 shadow-xs"
                 >
-                  Crear y Ubicar
+                  {isSavingTenantZones ? 'Guardando salón…' : 'Crear y Ubicar'}
                 </button>
               </div>
             </form>
@@ -1143,10 +1150,10 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </div>
                 <button
                   type="submit"
-                  disabled={!newZoneName.trim() || tenantZones.includes(newZoneName.trim())}
+                  disabled={isSavingTenantZones || !newZoneName.trim() || tenantZones.includes(newZoneName.trim())}
                   className="px-4 py-2.5 rounded-xl bg-stone-900 text-white font-bold hover:bg-stone-800 shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Agregar
+                  {isSavingTenantZones ? 'Guardando…' : 'Agregar'}
                 </button>
               </form>
 
@@ -1168,6 +1175,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                           </div>
                           <button
                             onClick={() => handleDeleteZone(zone)}
+                            disabled={isSavingTenantZones}
                             className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                             title="Eliminar salón"
                           >

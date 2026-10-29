@@ -41,6 +41,7 @@ import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
+import { persistTenantZones } from './services/tenantZonesService';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { supabaseClient } from './lib/supabaseClient';
 import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat, MessageCircle } from 'lucide-react';
@@ -162,19 +163,8 @@ function redactEmployeePins(staff: UserProfile[]): UserProfile[] {
   return staff.map(member => withoutEmployeePin(member) as UserProfile);
 }
 
-function syncTenantZonesWithServer(zones: string[]): void {
-  try {
-    const token = localStorage.getItem('saborai_token');
-    if (!token) return;
-    void fetch('/api/tenant/profile', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ zones })
-    }).catch(error => console.warn('[SaborAI] No se pudieron sincronizar los salones:', error));
-  } catch {}
+function syncTenantZonesWithServer(zones: string[]): Promise<string[]> {
+  return persistTenantZones(zones, localStorage.getItem('saborai_token'));
 }
 
 export function App() {
@@ -242,27 +232,63 @@ export function App() {
   const broadcastTenantRef = useRef<((t: TenantInfo) => void) | null>(null);
   const broadcastStaffRef = useRef<((s: UserProfile[]) => void) | null>(null);
   const broadcastKdsOrdersRef = useRef<((orders: KDSOrder[]) => void) | null>(null);
+  const tenantZonesSaveInProgressRef = useRef(false);
 
-  const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
-    setTenant(updated);
-    setActiveTenantId(updated.id);
+  const handleUpdateTenant = async (updated: TenantInfo, skipBroadcast = false): Promise<boolean> => {
+    let tenantToSave = updated;
+    const currentZones = tenant.id === updated.id ? tenant.zones || [] : [];
+    const updatedZones = updated.zones || [];
+    const zonesChanged = JSON.stringify(currentZones) !== JSON.stringify(updatedZones);
+    const shouldConfirmZoneSave = !skipBroadcast
+      && tenant.id === updated.id
+      && !updated.id.startsWith('tenant_demo_')
+      && zonesChanged;
+
+    if (shouldConfirmZoneSave) {
+      if (tenantZonesSaveInProgressRef.current) {
+        addNotification({
+          id: `tenant_zones_busy_${Date.now()}`,
+          type: 'SYNC_ERROR',
+          title: 'Salones en proceso de guardado',
+          message: 'Espera a que termine el guardado actual e inténtalo de nuevo.',
+          timestamp: new Date()
+        });
+        return false;
+      }
+
+      tenantZonesSaveInProgressRef.current = true;
+      setIsSavingTenantZones(true);
+      try {
+        const confirmedZones = await syncTenantZonesWithServer(updatedZones);
+        tenantToSave = { ...updated, zones: confirmedZones };
+      } catch (error) {
+        notifyTenantZonesFailure(error);
+        return false;
+      } finally {
+        tenantZonesSaveInProgressRef.current = false;
+        setIsSavingTenantZones(false);
+      }
+    }
+
+    setTenant(tenantToSave);
+    setActiveTenantId(tenantToSave.id);
     if (!skipBroadcast && broadcastTenantRef.current) {
-      broadcastTenantRef.current(updated);
+      broadcastTenantRef.current(tenantToSave);
     }
     try {
-      localStorage.setItem('saborai_tenant', JSON.stringify(updated));
+      localStorage.setItem('saborai_tenant', JSON.stringify(tenantToSave));
       // Persistir también en el almacenamiento aislado por tenant. El perfil
       // contiene los salones y categorías, que deben sobrevivir al logout y
       // no depender únicamente del estado global de la sesión.
-      setTenantItem('tenant_profile', updated, updated.id);
-      setTenantItem('zones', updated.zones || [], updated.id);
+      setTenantItem('tenant_profile', tenantToSave, tenantToSave.id);
+      setTenantItem('zones', tenantToSave.zones || [], tenantToSave.id);
       // Los eventos Realtime solo hidratan la caché local. Nunca deben escribir
       // de vuelta al servidor porque otro dispositivo podría tener un estado viejo.
-      if (!skipBroadcast) syncTenantZonesWithServer(updated.zones || []);
-      if (updated.haciendaConfig) {
-        setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
+      if (tenantToSave.haciendaConfig) {
+        setTenantItem('hacienda_config', tenantToSave.haciendaConfig, tenantToSave.id);
       }
     } catch {}
+    return true;
   };
 
   const persistSubscription = (value: SaboraiSubscription | null, tenantId = tenant.id) => {
@@ -404,7 +430,9 @@ export function App() {
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
             setTenantItem('tenant_profile', tenantObj, tenantObj.id);
             setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
-            syncTenantZonesWithServer(tenantObj.zones || []);
+            if (effectiveUser.role === 'ADMIN') {
+              void syncTenantZonesWithServer(tenantObj.zones || []).catch(notifyTenantZonesFailure);
+            }
           } catch {}
         } else {
           // Token invalid or expired
@@ -918,6 +946,7 @@ export function App() {
 
   // Sound & Notifications state
   const [notifications, setNotifications] = useState<PosNotification[]>([]);
+  const [isSavingTenantZones, setIsSavingTenantZones] = useState(false);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundService.isMuted());
 
   const handleToggleMute = () => {
@@ -925,12 +954,22 @@ export function App() {
     setIsMuted(nextMuted);
   };
 
-  const addNotification = (notif: PosNotification) => {
+  function addNotification(notif: PosNotification) {
     setNotifications(prev => [notif, ...prev.slice(0, 4)]);
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== notif.id));
     }, 7000);
-  };
+  }
+
+  function notifyTenantZonesFailure(error: unknown) {
+    addNotification({
+      id: `tenant_zones_error_${Date.now()}`,
+      type: 'SYNC_ERROR',
+      title: 'No se guardaron los salones',
+      message: error instanceof Error ? error.message : 'Revisa la conexión e inténtalo de nuevo.',
+      timestamp: new Date()
+    });
+  }
 
   const dismissNotification = (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
@@ -1085,7 +1124,9 @@ export function App() {
       localStorage.removeItem('saborai_employee_id');
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
       setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
-      syncTenantZonesWithServer(restoredTenant.zones || []);
+      if (user.role === 'ADMIN') {
+        void syncTenantZonesWithServer(restoredTenant.zones || []).catch(notifyTenantZonesFailure);
+      }
     } catch {}
     // La suscripción se resuelve por tenant, nunca desde el estado de la cuenta anterior.
     const tenantSubscription = getTenantItem<SaboraiSubscription>('subscription', restoredTenant.id);
@@ -1212,7 +1253,8 @@ export function App() {
 
     const currentZones = tenant.zones || [];
     if (!currentZones.some(zone => zone.toLowerCase() === zoneName.toLowerCase())) {
-      handleUpdateTenant({ ...tenant, zones: [...currentZones, zoneName] });
+      const saved = await handleUpdateTenant({ ...tenant, zones: [...currentZones, zoneName] });
+      if (!saved) return;
     }
     const newTable: Table = {
       id: `tbl_nyza_${Date.now()}_${normalizedNumber}`,
@@ -1607,7 +1649,8 @@ export function App() {
           tenant={tenant}
           currentUser={currentUser}
           onComplete={async (updatedTenant, newStaff, newMenu) => {
-            handleUpdateTenant(updatedTenant);
+            const tenantSaved = await handleUpdateTenant(updatedTenant);
+            if (!tenantSaved) return;
             if (newStaff.length > 0) {
               newStaff.forEach(handleAddStaffMember);
             }
@@ -1783,6 +1826,7 @@ export function App() {
                   staffList={staffList}
                   tenant={tenant}
                   onUpdateTenant={handleUpdateTenant}
+                  isSavingTenantZones={isSavingTenantZones}
                   onUpdateTables={handleUpdateTables}
                   onQuickTakeaway={handleQuickTakeaway}
                   activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
@@ -1985,7 +2029,7 @@ export function App() {
         selectedTable={selectedTableForOrder}
         zones={tenant.zones || []}
         onOpenLearningHub={() => setIsNyzaHubOpen(true)}
-        onQuickAction={(action) => {
+        onQuickAction={async (action) => {
           try {
             const cmd = JSON.parse(action);
             const autonomousAction = nyzaUIAgent.normalizeAction(cmd);
@@ -2054,7 +2098,8 @@ export function App() {
                if (!zoneName) throw new Error('Nyza recibió un salón sin nombre.');
                const existingZones = tenant.zones || [];
                if (!existingZones.some(z => z.toLowerCase() === zoneName.toLowerCase())) {
-                 handleUpdateTenant({ ...tenant, zones: [...existingZones, zoneName] });
+                 const saved = await handleUpdateTenant({ ...tenant, zones: [...existingZones, zoneName] });
+                 if (!saved) return;
                  addNotification({
                    id: `nyza_zone_${Date.now()}`,
                    type: 'ORDER_READY',
@@ -2114,7 +2159,8 @@ export function App() {
                  created++;
                }
                if (nextZones.length !== currentZones.length) {
-                 handleUpdateTenant({ ...tenant, zones: nextZones });
+                 const saved = await handleUpdateTenant({ ...tenant, zones: nextZones });
+                 if (!saved) return;
                }
                if (created > 0) handleUpdateTables(nextTables);
                addNotification({
@@ -2132,6 +2178,12 @@ export function App() {
                const tableNum = tableNumberStr ? parseInt(tableNumberStr, 10) : tables.length + 1;
                const exists = tables.some(t => t.number === tableNum || t.name.toLowerCase() === tableName.toLowerCase());
                if (!exists) {
+                 const targetZone = String(cmd.zone || 'Salón Principal').trim() || 'Salón Principal';
+                 const currentZones = tenant.zones || [];
+                 if (!currentZones.some(zone => zone.toLowerCase() === targetZone.toLowerCase())) {
+                   const saved = await handleUpdateTenant({ ...tenant, zones: [...currentZones, targetZone] });
+                   if (!saved) return;
+                 }
                  const newTable: Table = {
                    id: `tbl_${Date.now()}`,
                    number: tableNum,
@@ -2139,7 +2191,7 @@ export function App() {
                    seats: 4,
                    shape: 'square',
                    status: 'AVAILABLE',
-                   zone: cmd.zone || 'Salón Principal',
+                   zone: targetZone,
                    x: 50,
                    y: 50
                  };
