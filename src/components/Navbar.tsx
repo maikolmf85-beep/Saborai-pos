@@ -56,7 +56,7 @@ interface NavItemProps {
   sublabel?: string;
   badge?: React.ReactNode;
   isActive?: boolean;
-  variant?: 'default' | 'accent' | 'warning' | 'danger' | 'success';
+  variant?: 'default' | 'accent' | 'danger' | 'success';
   className?: string;
 }
 
@@ -75,12 +75,10 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
 
   if (isActive) {
     styleClasses = 'bg-[#a9b994] text-white font-black shadow-[0_0_18px_rgba(169,185,148,0.45)] ring-1 ring-white/30';
-  } else if (variant === 'warning') {
-    styleClasses = 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-300';
   } else if (variant === 'danger') {
-    styleClasses = 'text-rose-400 hover:text-white hover:bg-rose-600/90 hover:border-rose-500';
+    styleClasses = 'text-stone-400 hover:text-[#a9b994] hover:bg-[#a9b994]/10';
   } else if (variant === 'success') {
-    styleClasses = 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 hover:text-emerald-300';
+    styleClasses = 'bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/30 hover:bg-[#a9b994]/25';
   } else if (variant === 'accent') {
     styleClasses = 'bg-[#a9b994]/20 text-[#a9b994] border border-[#a9b994]/40 hover:bg-[#a9b994]/30 hover:text-white';
   }
@@ -91,7 +89,7 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
         id={id}
         type="button"
         onClick={onClick}
-        className={`w-12 h-12 sm:w-full sm:h-11 rounded-full sm:rounded-2xl flex items-center justify-center sm:justify-start sm:px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
+        className={`w-12 h-12 sm:w-full sm:h-11 rounded-full sm:rounded-2xl flex items-center justify-center sm:px-0 sm:group-hover/sidebar:justify-start sm:group-hover/sidebar:px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
         title={label}
       >
         <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
@@ -198,7 +196,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onQuickTakeaway();
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full p-3 rounded-2xl bg-stone-950/60 border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 flex items-center gap-3 text-left transition-all"
+                  className="w-full p-3 rounded-2xl bg-[#a9b994]/10 border border-[#a9b994]/30 text-[#a9b994] hover:bg-[#a9b994]/20 flex items-center gap-3 text-left transition-all"
                 >
                   <ShoppingBag className="w-5 h-5 shrink-0" />
                   <div className="flex-1">
@@ -265,10 +263,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onOpenCashShift('status');
                     setMobileMenuOpen(false);
                   }}
-                  className="relative w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 hover:border-emerald-500/40 text-stone-200 flex items-center justify-between transition-all"
+                  className="relative w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 hover:border-[#a9b994]/50 text-stone-200 flex items-center justify-between transition-all"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-emerald-400">
+                    <div className="w-8 h-8 rounded-xl bg-stone-900 flex items-center justify-center text-[#a9b994]">
                       <Calculator className="w-4 h-4" />
                     </div>
                     <div>
@@ -281,9 +279,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span
                     aria-label={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
                     title={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
-                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse shadow-[0_0_7px_rgba(52,211,153,0.8)]' : 'bg-red-500'}`}
+                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-[#a9b994] animate-pulse shadow-[0_0_7px_rgba(169,185,148,0.75)]' : 'bg-red-500'}`}
                   />
-                  <span className="text-[10px] font-bold text-emerald-400 uppercase">Gestionar</span>
+                  <span className="text-[10px] font-bold text-[#a9b994] uppercase">Gestionar</span>
                 </button>
               )}
 
@@ -362,7 +360,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={onLogout}
-                className="w-full py-2.5 text-rose-400 hover:text-white hover:bg-rose-600/20 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 text-stone-400 hover:text-[#a9b994] hover:bg-[#a9b994]/10 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
                 <span>Cerrar Sesión</span>
@@ -385,7 +383,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'pos' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'pos' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${activeTab === 'pos' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
               <LayoutGrid className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Mesas</span>
@@ -399,15 +397,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'kds' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'kds' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            <div className={`relative flex h-8 w-8 items-center justify-center rounded-xl transition-all ${activeTab === 'kds' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
               <ChefHat className="w-5 h-5" />
+              {tenant.plan === 'express' && (
+                <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-5 items-center justify-center rounded-full border border-[#a9b994]/50 bg-[#a9b994] px-1 text-[8px] font-black text-[#3b3733]">
+                  PRO
+                </span>
+              )}
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Cocina</span>
-            {tenant.plan === 'express' && (
-              <span className="absolute top-1 right-2 text-[8px] font-black bg-stone-800 text-amber-400 px-1 rounded-xs border border-amber-400/40">
-                PRO
-              </span>
-            )}
           </button>
 
           {/* 3. Caja & Facturación */}
@@ -418,7 +416,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               activeTab === 'billing' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'billing' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${activeTab === 'billing' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
               <Receipt className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Caja</span>
@@ -432,7 +430,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               mobileMenuOpen ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${mobileMenuOpen ? 'bg-[#a9b994]/20 scale-105' : ''}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all ${mobileMenuOpen ? 'bg-[#a9b994]/20 scale-105' : ''}`}>
               {mobileMenuOpen ? <ChevronUp className="w-5 h-5 text-[#a9b994]" /> : <Menu className="w-5 h-5" />}
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">
@@ -494,10 +492,10 @@ export const Navbar: React.FC<NavbarProps> = ({
               <NavVerticalItem
                 id="nav-tab-takeaway"
                 onClick={onQuickTakeaway}
-                icon={<ShoppingBag className="w-5 h-5 text-amber-400" />}
+                icon={<ShoppingBag className="w-5 h-5 text-[#a9b994]" />}
                 label="Para Llevar"
                 sublabel="Venta rápida directa de mostrador"
-                variant="warning"
+                variant="accent"
               />
             )}
 
@@ -509,7 +507,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               label="Cocina & Bar (KDS)"
               sublabel={tenant.plan === 'express' ? "Requiere Plan Pro · Comandas" : "Monitor de comandas en vivo"}
               isActive={activeTab === 'kds'}
-              badge={tenant.plan === 'express' ? <span className="absolute -top-1 -right-1 text-[8px] font-black bg-stone-800 text-amber-400 px-1 rounded-sm border border-amber-400/40">PRO</span> : undefined}
+              badge={tenant.plan === 'express' ? <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-5 items-center justify-center rounded-full border border-[#a9b994]/50 bg-[#a9b994] px-1 text-[8px] font-black text-[#3b3733]">PRO</span> : undefined}
             />
 
             {/* Menú y Catálogo */}
@@ -560,13 +558,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 icon={<Calculator className="w-5 h-5" />}
                 label={isShiftOpen ? "Turno de Caja Abierto" : "Turno Cerrado"}
                 sublabel={isShiftOpen ? `${activeRegisterName || 'Caja'} • Cierre Z y arqueo` : `${activeRegisterName || 'Caja'} • Clic para iniciar turno`}
-                variant={isShiftOpen ? 'default' : 'warning'}
+                variant={isShiftOpen ? 'accent' : 'default'}
                 badge={
                   <span 
-                    className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
+                    aria-label={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
+                    title={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
+                    className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-stone-950 ${
                       isShiftOpen 
-                        ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]' 
-                        : 'bg-amber-400'
+                        ? 'bg-[#a9b994] animate-pulse shadow-[0_0_8px_rgba(169,185,148,0.75)]'
+                        : 'bg-red-500'
                     }`} 
                   />
                 }
@@ -616,12 +616,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="nav-copilot-btn"
               type="button"
               onClick={onOpenCopilot}
-              className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/35 hover:bg-[#a9b994]/25 hover:text-white transition-all duration-200 cursor-pointer"
+              className="w-full h-11 rounded-2xl flex items-center justify-center px-0 group-hover/sidebar:justify-start group-hover/sidebar:px-2.5 bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/35 hover:bg-[#a9b994]/25 hover:text-white transition-all duration-200 cursor-pointer"
               title="Abrir Nyza Copilot IA"
             >
-              <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#a9b994]/10">
                 <Sparkles className="w-5 h-5 text-[#a9b994]" />
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-stone-950" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#a9b994] border border-stone-950" />
               </div>
               <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-36 transition-all duration-300 delay-75">
                 <span className="text-sm font-bold text-white">Nyza Copilot</span>
@@ -652,12 +652,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="relative w-full group-hover/sidebar:flex-1 h-8 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors cursor-pointer"
                 title={isOnline ? "Conectado a la nube (Clic para ver cola)" : "Modo Local Offline"}
               >
-                {isOnline ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" /> : <WifiOff className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />}
+                {isOnline ? <Wifi className="w-4 h-4 text-[#a9b994] shrink-0" /> : <WifiOff className="w-4 h-4 text-[#a9b994] animate-pulse shrink-0" />}
                 <span className="hidden group-hover/sidebar:inline text-[11px] text-stone-300 truncate">
                   {isOnline ? 'Online' : 'Offline'}
                 </span>
                 {pendingCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-400 text-stone-950 text-[9px] font-black rounded-full">
+                  <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-[#a9b994] px-1.5 py-0.5 text-[9px] font-black text-[#3b3733]">
                     {pendingCount}
                   </span>
                 )}
@@ -670,7 +670,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-xs transition-colors cursor-pointer"
                 title={isMuted ? "Sonidos silenciados" : "Sonidos activos"}
               >
-                {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-[#a9b994]" />}
               </button>
 
               {user?.role === 'ADMIN' && (
