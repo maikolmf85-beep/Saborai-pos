@@ -46,6 +46,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
+import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOpeningZones';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -57,6 +58,8 @@ interface CashShiftModalProps {
   onOpenZReport: (report: ZReportData) => void;
   onOpenConsolidatedZReport?: (report: ConsolidatedZReportData) => void;
   initialTab?: 'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers';
+  initialZone?: string;
+  returnToFloorAfterOpen?: boolean;
 }
 
 export const CashShiftModal: React.FC<CashShiftModalProps> = ({
@@ -68,7 +71,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   staffList,
   onOpenZReport,
   onOpenConsolidatedZReport,
-  initialTab
+  initialTab,
+  initialZone,
+  returnToFloorAfterOpen = false
 }) => {
   const [activeTab, setActiveTab] = useState<'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers'>('status');
   const [activeShift, setActiveShift] = useState<CashShift | null>(null);
@@ -200,9 +205,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setOpeningPin('');
       setOpeningError(null);
       const matchedReg = regList.find(r => r.id === curRegId);
-      const initialZones = matchedReg?.linkedZones && matchedReg.linkedZones.length > 0
+      const registerZones = matchedReg?.linkedZones?.length
         ? matchedReg.linkedZones
         : (matchedReg?.linkedZone ? [matchedReg.linkedZone] : []);
+      const initialZones = getInitialShiftZones(tenant.zones, registerZones, initialZone);
       setOpeningZones(initialZones);
       refreshData(curRegId);
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
@@ -212,7 +218,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         setOpeningCashier(staffList.find(staff => staff.active !== false) || null);
       }
     }
-  }, [isOpen, currentUser, initialTab, staffList]);
+  }, [isOpen, currentUser, initialTab, staffList, tenant.zones, initialZone]);
 
   const refreshData = (regId?: string) => {
     const targetRegId = regId || selectedRegisterId || cashShiftService.getCurrentRegisterId();
@@ -226,7 +232,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const regZones = targetReg.linkedZones && targetReg.linkedZones.length > 0
         ? targetReg.linkedZones
         : (targetReg.linkedZone ? [targetReg.linkedZone] : []);
-      setOpeningZones(regZones);
+      setOpeningZones(getInitialShiftZones(tenant.zones, regZones, initialZone));
     }
     if (shift) {
       setCountedCardsInput(shift.systemSummary.cardSales);
@@ -254,7 +260,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const regZones = reg.linkedZones && reg.linkedZones.length > 0
         ? reg.linkedZones
         : (reg.linkedZone ? [reg.linkedZone] : []);
-      setOpeningZones(regZones);
+      setOpeningZones(getInitialShiftZones(tenant.zones, regZones, initialZone));
     }
     refreshData(regId);
   };
@@ -270,8 +276,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const selectedOpeningCashier = availableCashiers.find(staff => staff.id === openingCashier?.id)
     || availableCashiers[0]
     || null;
-  const openingZoneOptions = Array.from(new Set([...(tenant.zones || []), ...openingZones]))
-    .filter(zone => zone.trim().length > 0);
+  const openingZoneOptions = normalizeSalonOptions(tenant.zones);
+  const targetOpeningZone = initialZone
+    ? openingZoneOptions.find(zone => zone.toLocaleLowerCase() === initialZone.trim().toLocaleLowerCase())
+    : undefined;
+  const targetOpeningZoneIsSelected = Boolean(targetOpeningZone && openingZones.includes(targetOpeningZone));
 
   // Handlers
   const handleOpenShiftSubmit = () => {
@@ -317,6 +326,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     try {
+      const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
       const newShift = cashShiftService.openShift(
         tenant,
         cashierToUse,
@@ -324,7 +334,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         openingNotes,
         regIdToUse,
         undefined,
-        openingZones
+        validOpeningZones
       );
       soundService.playSuccessChime();
       setOpeningPin('');
@@ -332,6 +342,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setActiveTab('status');
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
       refreshData(regIdToUse);
+      if (returnToFloorAfterOpen) onClose();
     } catch (err: any) {
       setOpeningError(err.message || 'Error al abrir caja.');
     }
@@ -735,16 +746,32 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   <span>Sucursal: {currentRegisterObj?.branchCode || '001'}</span>
                 </div>
                 <p className="text-xs text-stone-500 pt-1">
-                  Ingresa el fondo inicial en efectivo (base para dar vuelto) para iniciar la operación en esta caja.
+                  Registra quién inicia el turno, el efectivo disponible y los salones que podrán operar.
                 </p>
               </div>
+
+              <section aria-label="Pasos para abrir el turno" className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                <h4 className="text-xs font-black text-emerald-950">Abre el turno en 3 pasos</h4>
+                <ol className="mt-2 grid gap-2 text-[11px] leading-relaxed text-emerald-950 sm:grid-cols-3">
+                  <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-800 text-[10px] font-black text-white">1</span><span>Elige a la persona responsable e ingresa su PIN.</span></li>
+                  <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-800 text-[10px] font-black text-white">2</span><span>Confirma el efectivo inicial de la caja; puede ser ₡0.</span></li>
+                  <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-800 text-[10px] font-black text-white">3</span><span>Revisa los salones y pulsa “Abrir turno”.</span></li>
+                </ol>
+              </section>
+
+              {targetOpeningZone && (
+                <div role="status" className="flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs text-sky-950">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
+                  <span>Este aviso corresponde al salón <strong>{targetOpeningZone}</strong>. {targetOpeningZoneIsSelected ? 'Quedará habilitado al abrir el turno.' : 'Si lo dejas sin seleccionar, el aviso seguirá visible en el plano.'}</span>
+                </div>
+              )}
 
               <form onSubmit={(event) => event.preventDefault()} className="space-y-4">
                 
                 {/* 1. Responsable */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5">
-                    1. Colaborador Responsable de la Caja:
+                    Responsable del turno
                   </label>
                   <select
                     value={selectedOpeningCashier?.id || ''}
@@ -776,7 +803,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center gap-1">
                     <KeyRound className="w-3.5 h-3.5 text-stone-400" />
-                    <span>2. PIN de Seguridad (4 dígitos):</span>
+                    <span>PIN de autorización (4 dígitos)</span>
                   </label>
                   <input
                     type="password"
@@ -790,13 +817,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     placeholder="Ingresa el PIN de 4 dígitos"
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-mono text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900"
                   />
-                  <p className="mt-1 text-[11px] text-stone-400">El PIN es obligatorio para autorizar esta apertura.</p>
+                  <p className="mt-1 text-[11px] text-stone-400">Usa el PIN de la persona responsable seleccionada.</p>
                 </div>
 
                 {/* 3. Fondo Inicial de Caja */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5">
-                    3. Fondo de Caja Inicial (Base de Efectivo en Colones):
+                    Efectivo inicial en caja (para dar vuelto)
                   </label>
                   <div className="relative">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-stone-400">₡</span>
@@ -830,13 +857,16 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4. Salón(es) / Áreas Asignadas a esta Caja */}
+                {/* Salones habilitados para el turno */}
                 <div>
-                  <div className="block text-xs font-bold text-stone-700 uppercase mb-1.5 flex items-center justify-between">
-                    <span className="flex items-center gap-1">
-                      <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>4. Salones / Áreas Asignadas a este Turno:</span>
-                    </span>
+                  <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="flex items-center gap-1 text-xs font-bold uppercase text-stone-700">
+                        <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Salones donde estará activo este turno</span>
+                      </p>
+                      <p className="mt-1 text-[11px] text-stone-500">Elige todos los salones o limita el turno a uno o varios.</p>
+                    </div>
                     <button
                       type="button"
                       onClick={(event) => {
@@ -844,9 +874,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                         event.stopPropagation();
                         setOpeningZones([]);
                       }}
-                      className="text-[11px] font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                      aria-pressed={openingZones.length === 0}
+                      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition-colors cursor-pointer ${openingZones.length === 0 ? 'border-emerald-800 bg-emerald-800 text-white' : 'border-stone-300 bg-white text-stone-700 hover:bg-stone-100'}`}
                     >
-                      {openingZones.length === 0 ? '✓ Todos activos' : 'Marcar todos'}
+                      {openingZones.length === 0 ? '✓ Todos los salones' : 'Habilitar todos los salones'}
                     </button>
                   </div>
                   
@@ -857,6 +888,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                         <button
                           key={z}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -881,22 +913,22 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                         </button>
                       );
                     }) : (
-                      <p className="col-span-full text-xs text-stone-500">
-                        No hay salones configurados para este restaurante. La caja atenderá todos los salones.
+                      <p className="col-span-full text-xs leading-relaxed text-stone-600">
+                        Aún no hay salones creados. Puedes abrir la caja ahora; el turno quedará disponible para los salones que agregues después.
                       </p>
                     )}
                   </div>
-                  <p className="text-[11px] text-stone-400 mt-1.5">
+                  <p className="mt-1.5 text-[11px] text-stone-500" aria-live="polite">
                     {openingZones.length === 0 
-                      ? '🌐 Sin restricción: Esta caja atenderá todos los salones.' 
-                      : `✅ Habilitada solo en: ${openingZones.join(', ')}`}
+                      ? 'El turno quedará activo en todos los salones.'
+                      : `El turno quedará activo solo en: ${openingZones.join(', ')}`}
                   </p>
                 </div>
 
                 {/* 5. Notas Opcionales */}
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase mb-1.5">
-                    5. Observaciones de Apertura (Opcional):
+                    Nota de apertura (opcional)
                   </label>
                   <input
                     type="text"
@@ -920,7 +952,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   className="w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
-                  <span>Confirmar y Abrir Turno de Caja</span>
+                  <span>Abrir turno</span>
                 </button>
 
               </form>

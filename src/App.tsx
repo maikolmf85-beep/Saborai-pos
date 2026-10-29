@@ -758,6 +758,8 @@ export function App() {
   const [isQuickSwitchOpen, setIsQuickSwitchOpen] = useState(false);
   const [isCashShiftModalOpen, setIsCashShiftModalOpen] = useState(false);
   const [cashShiftInitialTab, setCashShiftInitialTab] = useState<'status' | 'movements' | 'close' | 'history' | 'registers'>('status');
+  const [cashShiftInitialZone, setCashShiftInitialZone] = useState<string | undefined>();
+  const [returnToFloorAfterShiftOpen, setReturnToFloorAfterShiftOpen] = useState(false);
   const [activeZReport, setActiveZReport] = useState<ZReportData | null>(null);
   const [activeConsolidatedZReport, setActiveConsolidatedZReport] = useState<ConsolidatedZReportData | null>(null);
   const [isRepairing, setIsRepairing] = useState(false);
@@ -765,8 +767,13 @@ export function App() {
   const [isZReportModalOpen, setIsZReportModalOpen] = useState(false);
   const [isHaciendaHistoryOpen, setIsHaciendaHistoryOpen] = useState(false);
 
-  const handleOpenCashShift = (tab: 'status' | 'movements' | 'close' | 'history' | 'registers' = 'status') => {
+  const handleOpenCashShift = (
+    tab: 'status' | 'movements' | 'close' | 'history' | 'registers' = 'status',
+    zone?: string
+  ) => {
     setCashShiftInitialTab(tab);
+    setCashShiftInitialZone(zone);
+    setReturnToFloorAfterShiftOpen(Boolean(zone));
     setIsCashShiftModalOpen(true);
   };
 
@@ -1781,10 +1788,7 @@ export function App() {
                   activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
                   activeShiftZones={cashShiftService.getActiveShift()?.linkedZones}
                   hasActiveShift={Boolean(cashShiftService.getActiveShift())}
-                  onOpenCashShift={() => {
-                    setCashShiftInitialTab('status');
-                    setIsCashShiftModalOpen(true);
-                  }}
+                  onOpenCashShift={(zone) => handleOpenCashShift('status', zone)}
                 />
               )
             )}
@@ -1930,6 +1934,8 @@ export function App() {
         isOpen={isCashShiftModalOpen}
         onClose={() => {
           setIsCashShiftModalOpen(false);
+          setCashShiftInitialZone(undefined);
+          setReturnToFloorAfterShiftOpen(false);
           handleUpdateShifts(cashShiftService.getAllActiveShiftsMap(), false);
         }}
         tenant={tenant}
@@ -1937,6 +1943,8 @@ export function App() {
         currentUser={currentUser}
         staffList={staffList}
         initialTab={cashShiftInitialTab}
+        initialZone={cashShiftInitialZone}
+        returnToFloorAfterOpen={returnToFloorAfterShiftOpen}
         onOpenZReport={(report) => {
           setActiveZReport(report);
           setActiveConsolidatedZReport(null);

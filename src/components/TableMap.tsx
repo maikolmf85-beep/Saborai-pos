@@ -41,7 +41,7 @@ interface TableMapProps {
   activeShiftZone?: string;
   activeShiftZones?: string[];
   hasActiveShift?: boolean;
-  onOpenCashShift?: () => void;
+  onOpenCashShift?: (zone: string) => void;
   currentUser?: UserProfile | null;
   onAuthenticateStaff: (staff: UserProfile, pin: string) => Promise<UserProfile>;
 }
@@ -377,7 +377,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         type: 'warning',
         onConfirm: () => {
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-          onOpenCashShift?.();
+          onOpenCashShift?.(table.zone || selectedZone);
         }
       });
       return;
@@ -699,7 +699,7 @@ export const TableMap: React.FC<TableMapProps> = ({
               {onOpenCashShift && (
                 <button
                   type="button"
-                  onClick={onOpenCashShift}
+                  onClick={() => onOpenCashShift(selectedZone)}
                   className="whitespace-nowrap rounded-lg bg-amber-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-800"
                 >
                   Abrir turno
