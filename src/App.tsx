@@ -1188,8 +1188,8 @@ export function App() {
   };
 
   const handleSelectTable = (_table: Table) => {
-    // Al tocar una mesa en el mapa solo se selecciona para ver sus detalles en el panel lateral.
-    // La comanda o pedido se abre exclusivamente con handleOpenOrder (botón 'Abrir Mesa y Comandar' / 'Tomar Pedido').
+    // TableMap conserva la selección local y abre el flujo de comanda al tocar
+    // una mesa solo cuando el turno activo cubre su salón.
   };
 
   const handleNyzaCreateTable = async (salonName: string, tableNumber: number) => {

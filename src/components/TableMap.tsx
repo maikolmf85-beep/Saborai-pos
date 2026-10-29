@@ -193,6 +193,9 @@ export const TableMap: React.FC<TableMapProps> = ({
     if (!isEditMode) {
       setSelectedTable(table);
       onSelectTable(table);
+      if (zoneHasActiveShift(table.zone)) {
+        handleOpenTableOrder(table);
+      }
       return;
     }
 
@@ -855,7 +858,11 @@ export const TableMap: React.FC<TableMapProps> = ({
               <span>Salón conectado en tiempo real</span>
             </span>
             <span className="text-[11px]">
-              {isEditMode ? 'Arrastra mesas para guardar su lugar' : 'Haz clic en una mesa para ver opciones'}
+              {isEditMode
+                ? 'Arrastra mesas para guardar su lugar'
+                : selectedZoneHasActiveShift
+                  ? 'Haz clic en una mesa para abrir o continuar su comanda'
+                  : 'Haz clic en una mesa para ver opciones'}
             </span>
           </div>
 
