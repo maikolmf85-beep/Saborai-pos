@@ -451,7 +451,13 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* ======================================================== */}
       {/* 2. ESCRITORIO / TABLET: SIDEBAR VERTICAL ORIGINAL        */}
       {/* ======================================================== */}
-      <aside 
+      <aside
+        onMouseEnter={() => {
+          if (isSidebarCollapsed) onToggleSidebar();
+        }}
+        onMouseLeave={() => {
+          if (!isSidebarCollapsed) onToggleSidebar();
+        }}
         className={`hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-[#3b3733] text-[#fcfeff] flex-col justify-between items-start py-3 border-r border-[#6b686d]/30 shadow-2xl z-50 overflow-y-auto overflow-x-hidden transition-[width] duration-300 ease-out scrollbar-none`}
         aria-label="Navegación vertical SaborAI POS"
       >
@@ -466,7 +472,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               className={`h-11 min-w-0 rounded-2xl flex items-center ${isSidebarCollapsed ? 'w-8 justify-center px-0' : 'flex-1 justify-start px-2.5'} bg-[#6b686d]/15 border border-[#6b686d]/30 hover:border-[#a9b994]/80 transition-all duration-200 cursor-pointer shadow-sm overflow-hidden`}
               title="SaborAI POS"
             >
-              <div className="w-8 h-8 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 flex-none flex items-center justify-center">
                 <BrandLogo variant="isotype" size="sm" />
               </div>
               

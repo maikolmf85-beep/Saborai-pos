@@ -748,7 +748,7 @@ export function App() {
   }, [tenant.id]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

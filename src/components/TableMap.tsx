@@ -515,185 +515,200 @@ export const TableMap: React.FC<TableMapProps> = ({
   return (
     <div className="tour-table-map w-full h-auto min-h-full lg:h-full flex flex-col p-3 sm:p-3.5 gap-3 overflow-visible lg:overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
-      {/* Top Header & Compact Live Control Bar */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3 border-b border-stone-200/80 shrink-0">
-        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
-            <span>Plano del Salón</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
-              {filteredTables.length} mesas
-            </span>
-          </h1>
-
-          {/* Zone Filter Navigation Inline */}
-          <div className="flex items-center gap-1 w-full sm:w-auto max-w-full bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {effectiveZones.length === 0 ? (
-              <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
-                Sin salones
-              </span>
-            ) : (
-              effectiveZones.map((zone) => (
-                <button
-                  key={zone}
-                  onClick={() => setSelectedZone(zone)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
-                    selectedZone === zone
-                      ? 'bg-stone-900 text-white shadow-xs'
-                      : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    {zone}
-                    {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
-                      <Lock className="w-3 h-3 text-amber-600" aria-label="Sin turno activo" />
-                    )}
-                  </span>
-                </button>
-              ))
-            )}
-            {isAdmin && effectiveZones.length === tenantZones.length && (
-              <button
-                onClick={() => setIsZoneModalOpen(true)}
-                className="px-2 py-1 ml-1 rounded-lg text-[11px] font-bold text-[#a9b994] bg-[#a9b994]/10 hover:bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center gap-1 cursor-pointer transition-colors"
-                title="Gestionar Salones"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Salones</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {!selectedZoneHasActiveShift && (
-          <div className="px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
+      {/* Encabezado superior y barra de controles agrupados */}
+      <header className="shrink-0 rounded-2xl border border-stone-200 bg-white p-3 shadow-xs sm:p-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-xl font-black tracking-tight text-stone-900 sm:text-2xl">Plano del Salón</h1>
+                <span className="rounded-full border border-[#a9b994]/50 bg-[#a9b994]/15 px-2.5 py-1 text-xs font-black text-[#3b3733]">
+                  {zoneTables.length} {zoneTables.length === 1 ? 'mesa' : 'mesas'}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">
+                {tenantZones.length > 0 ? `Salón seleccionado: ${selectedZone}` : 'Organiza las mesas y crea salones para tu restaurante.'}
+              </p>
             </div>
-            {onOpenCashShift && (
+
+            <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
               <button
                 type="button"
-                onClick={onOpenCashShift}
-                className="px-2.5 py-1 bg-amber-900 text-white rounded-lg text-[11px] font-bold whitespace-nowrap hover:bg-amber-800"
-              >
-                Abrir turno
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Right Action Controls & Metrics & Fullscreen */}
-        <div className="flex items-center flex-wrap justify-between sm:justify-start gap-2">
-          {/* Interactive Status Filter & Live Metrics */}
-          <div className="hidden md:flex items-center gap-1.5 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
-              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
-                statusFilter === 'AVAILABLE'
-                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
-              }`}
-              title="Filtrar solo mesas libres"
-            >
-              <span className={`w-2 h-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
-              <span>{availableCount} Libres</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
-              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
-                statusFilter === 'OCCUPIED'
-                  ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
-                  : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
-              }`}
-              title="Filtrar solo mesas ocupadas"
-            >
-              <span className={`w-2 h-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-amber-500'}`} />
-              <span>{occupiedCount} Ocupadas</span>
-            </button>
-            {statusFilter !== 'ALL' && (
-              <button
-                type="button"
-                onClick={() => setStatusFilter('ALL')}
-                className="px-2 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-[11px] font-bold transition-colors cursor-pointer"
-                title="Mostrar todas las mesas"
-              >
-                Ver Todas
-              </button>
-            )}
-            <span className="px-2.5 py-1 bg-stone-100 text-stone-800 border border-stone-200 rounded-lg flex items-center gap-1">
-              <CreditCard className="w-3.5 h-3.5 text-[#588157]" />
-              <span>₡{totalSalesInProgress.toLocaleString()}</span>
-            </span>
-          </div>
-
-          {/* Toggle Drawer Button (Ocultar/Ver Info de Mesa para Pantalla Completa Pura) */}
-          <button
-            type="button"
-            onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
-            className={`h-8 px-2.5 flex items-center gap-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-              showDetailsDrawer 
-                ? 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200' 
-                : 'bg-[#a9b994]/25 text-stone-950 border-[#a9b994] font-black'
-            }`}
-            title={showDetailsDrawer ? "Ocultar panel lateral para maximizar plano a pantalla completa" : "Mostrar panel de detalles de mesa"}
-          >
-            {showDetailsDrawer ? <PanelRightClose className="w-3.5 h-3.5 text-stone-600" /> : <PanelRight className="w-3.5 h-3.5 text-stone-900" />}
-            <span className="hidden lg:inline">{showDetailsDrawer ? "Ocultar Panel" : "Ver Panel"}</span>
-          </button>
-
-          {/* Botón de Pantalla Completa Inmersiva */}
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="h-8 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white transition-all shadow-xs border border-stone-800 cursor-pointer"
-            title={isFullscreen ? "Salir del modo pantalla completa" : "Activar pantalla completa para terminales táctiles y monitores"}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-amber-300" /> : <Maximize2 className="w-3.5 h-3.5 text-[#a9b994]" />}
-            <span className="hidden sm:inline">{isFullscreen ? "Salir Completa" : "Pantalla Completa"}</span>
-          </button>
-
-          {/* Admin Editing & Add Buttons */}
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => setIsEditMode(!isEditMode)}
-                className={`h-8 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isEditMode
-                    ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-300 animate-pulse'
-                    : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
+                onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all cursor-pointer ${
+                  statusFilter === 'AVAILABLE'
+                    ? 'border-emerald-700 bg-emerald-600 text-white shadow-xs'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
                 }`}
-                title={isEditMode ? 'Guardar y salir del modo edición' : 'Editar plano y mover mesas'}
+                title="Filtrar solo mesas libres"
               >
-                {isEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5 text-[#588157]" />}
-                <span className="hidden xl:inline">{isEditMode ? "Listo" : "Editar"}</span>
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
+                <span>{availableCount} libres</span>
               </button>
-
               <button
-                data-nyza-target="create-table"
-                onClick={() => {
-                  setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
-                  setShowAddModal(true);
-                }}
-                className="h-8 flex items-center gap-1.5 px-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-xs cursor-pointer"
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
+                className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-all cursor-pointer ${
+                  statusFilter === 'OCCUPIED'
+                    ? 'border-amber-700 bg-amber-600 text-white shadow-xs'
+                    : 'border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                }`}
+                title="Filtrar solo mesas ocupadas"
               >
-                <Plus className="w-3.5 h-3.5 text-[#a9b994]" />
-                <span className="hidden xl:inline">+ Mesa</span>
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-amber-500'}`} />
+                <span>{occupiedCount} ocupadas</span>
               </button>
-            </>
+              {statusFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('ALL')}
+                  className="rounded-lg bg-stone-100 px-2.5 py-1.5 text-[11px] font-bold text-stone-700 transition-colors hover:bg-stone-200 cursor-pointer"
+                  title="Mostrar todas las mesas"
+                >
+                  Ver todas
+                </button>
+              )}
+              <span className="flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-1.5 text-stone-800" title="Ventas en curso">
+                <CreditCard className="h-3.5 w-3.5 text-[#588157]" />
+                <span>En curso: ₡{totalSalesInProgress.toLocaleString()}</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="h-px bg-stone-100" />
+
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">Salones</span>
+              <div className="flex max-w-full flex-wrap items-center gap-1.5">
+                {effectiveZones.length === 0 ? (
+                  <span className="rounded-lg border border-dashed border-stone-200 px-3 py-1.5 text-xs text-stone-400">
+                    Sin salones configurados
+                  </span>
+                ) : (
+                  effectiveZones.map((zone) => (
+                    <button
+                      key={zone}
+                      type="button"
+                      onClick={() => setSelectedZone(zone)}
+                      className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer ${
+                        selectedZone === zone
+                          ? 'bg-[#3b3733] text-white shadow-xs'
+                          : 'border border-stone-200 bg-white text-stone-600 hover:border-[#a9b994] hover:bg-[#a9b994]/10 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {zone}
+                        {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
+                          <Lock className="h-3 w-3 text-amber-600" aria-label="Sin turno activo" />
+                        )}
+                      </span>
+                    </button>
+                  ))
+                )}
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setIsZoneModalOpen(true)}
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-3 py-1.5 text-xs font-bold text-[#3b3733] transition-colors hover:bg-[#a9b994]/30 cursor-pointer"
+                    title="Añadir o quitar salones"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-[#588157]" />
+                    <span>Editar salones</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+              {isAdmin && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditMode(!isEditMode)}
+                    className={`flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition-all cursor-pointer ${
+                      isEditMode
+                        ? 'border-[#a9b994] bg-[#a9b994] text-[#3b3733] shadow-xs'
+                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                    }`}
+                    title={isEditMode ? 'Guardar y salir del modo edición' : 'Editar plano y mover mesas'}
+                  >
+                    {isEditMode ? <Unlock className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5 text-[#588157]" />}
+                    <span>{isEditMode ? 'Terminar edición' : 'Editar plano'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-nyza-target="create-table"
+                    onClick={() => {
+                      setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
+                      setShowAddModal(true);
+                    }}
+                    className="flex h-9 items-center gap-1.5 rounded-xl bg-[#3b3733] px-3 text-xs font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-[#a9b994]" />
+                    <span>Agregar mesa</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
+                  className={`flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition-all cursor-pointer ${
+                    showDetailsDrawer
+                      ? 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                      : 'border-[#a9b994] bg-[#a9b994]/20 text-stone-950'
+                  }`}
+                  title={showDetailsDrawer ? 'Ocultar panel lateral' : 'Mostrar panel de detalles de mesa'}
+                >
+                  {showDetailsDrawer ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRight className="h-3.5 w-3.5" />}
+                  <span>{showDetailsDrawer ? 'Ocultar panel' : 'Ver panel'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-stone-800 bg-stone-900 px-3 text-xs font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer"
+                  title={isFullscreen ? 'Salir del modo pantalla completa' : 'Activar pantalla completa'}
+                >
+                  {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-amber-300" /> : <Maximize2 className="h-3.5 w-3.5 text-[#a9b994]" />}
+                  <span>{isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsReservationsOpen(true)}
+                  className="flex h-9 items-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-bold text-violet-900 transition-colors hover:bg-violet-100 cursor-pointer"
+                  title="Ver y gestionar reservas"
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  <span>Reservas</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!selectedZoneHasActiveShift && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+                <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
+              </div>
+              {onOpenCashShift && (
+                <button
+                  type="button"
+                  onClick={onOpenCashShift}
+                  className="whitespace-nowrap rounded-lg bg-amber-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-800"
+                >
+                  Abrir turno
+                </button>
+              )}
+            </div>
           )}
-          <button
-            type="button"
-            onClick={() => setIsReservationsOpen(true)}
-            className="h-8 flex items-center gap-1.5 px-3 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-xs font-bold hover:bg-violet-100 transition-colors cursor-pointer"
-            title="Ver y gestionar reservas"
-          >
-            <CalendarDays className="w-3.5 h-3.5" />
-            <span>Reservas</span>
-          </button>
         </div>
-      </div>
+      </header>
 
       {/* Main Floor Plan & Table Details Workspace Container */}
       <div className="flex-none lg:flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-3 overflow-visible lg:overflow-hidden">
