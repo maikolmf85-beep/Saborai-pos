@@ -65,6 +65,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [searchTerm, setSearchTerm] = useState('');
+  const [mobilePosSection, setMobilePosSection] = useState<'menu' | 'order'>('menu');
   
   // Subaccounts / Named Diners state
   const initialSubAccounts: SubAccount[] = table?.activeOrder?.subAccounts?.length
@@ -577,7 +578,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     : [];
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1700px] mx-auto space-y-5 animate-in fade-in duration-150">
+    <div className="p-3 sm:p-6 max-w-[1700px] mx-auto space-y-4 sm:space-y-5 animate-in fade-in duration-150">
       
       {/* Top Breadcrumb & Table Summary Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-stone-200">
@@ -694,6 +695,28 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         </div>
       </div>
       
+      <div className="sticky top-0 z-20 grid grid-cols-2 gap-1 rounded-2xl bg-stone-100 p-1 lg:hidden">
+        <button
+          type="button"
+          onClick={() => setMobilePosSection('menu')}
+          aria-pressed={mobilePosSection === 'menu'}
+          className={`min-h-11 rounded-xl px-3 py-2 text-xs font-bold transition-colors ${mobilePosSection === 'menu' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
+        >
+          Menú
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobilePosSection('order')}
+          aria-pressed={mobilePosSection === 'order'}
+          className={`min-h-11 rounded-xl px-3 py-2 text-xs font-bold transition-colors flex items-center justify-center gap-2 ${mobilePosSection === 'order' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500'}`}
+        >
+          <span>Comanda</span>
+          <span className="rounded-full bg-[#a9b994]/30 px-1.5 py-0.5 text-[10px] text-stone-800">
+            {currentOrderItems.reduce((sum, item) => sum + item.quantity, 0)}
+          </span>
+        </button>
+      </div>
+
       {/* Current Diner text right below accounts header */}
       <div className="flex items-center justify-between mt-3 px-4 py-2 bg-stone-100 rounded-xl border border-stone-200/80 text-xs">
         <span className="text-stone-600">
@@ -715,10 +738,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       )}
 
       {/* Main 3-Column POS Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 lg:h-[calc(100vh-140px)]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6 lg:h-[calc(100dvh-140px)]">
         
         {/* Left Column: Categories Sidebar (2 cols) */}
-        <div className="lg:col-span-2 space-y-2 lg:overflow-y-auto scrollbar-none pb-4">
+        <div className={`lg:col-span-2 space-y-2 lg:overflow-y-auto scrollbar-none pb-4 ${mobilePosSection === 'menu' ? '' : 'hidden lg:block'}`}>
           <div className="sticky top-0 bg-stone-50/95 backdrop-blur-sm pb-2 pt-1 z-10 hidden lg:block">
             <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider pl-1">Menú</h3>
           </div>
@@ -740,7 +763,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         </div>
 
         {/* Middle Column: Products Grid (6 cols) */}
-        <div className="lg:col-span-6 space-y-4 lg:overflow-y-auto pb-6 scrollbar-none">
+        <div className={`lg:col-span-6 space-y-4 lg:overflow-y-auto pb-6 scrollbar-none ${mobilePosSection === 'menu' ? '' : 'hidden lg:block'}`}>
           
           {/* Search Bar & Subcategory Navigation */}
           <div className="flex flex-col gap-3 sticky top-0 bg-stone-50/95 backdrop-blur-sm z-10 pt-1 pb-3">
@@ -858,7 +881,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
           )}
 
           {/* Clean Menu Items Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-2 sm:gap-3 md:grid-cols-3">
             {filteredMenuItems.length === 0 ? (
               <div className="col-span-full py-16 text-center bg-stone-50 border border-dashed border-stone-200 rounded-3xl p-6">
                 <div className="w-10 h-1 rounded-full bg-stone-200 mx-auto mb-4" aria-hidden="true" />
@@ -880,7 +903,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                     key={item.id}
                     onClick={() => handleAddItem(item)}
                     disabled={isOutOfStock}
-                    className={`group relative p-4 bg-white border rounded-2xl text-left transition-all duration-150 flex flex-col justify-between ${
+                    className={`group relative p-3 sm:p-4 bg-white border rounded-2xl text-left transition-all duration-150 flex flex-col justify-between ${
                       isOutOfStock
                         ? 'opacity-60 bg-stone-50 border-dashed border-red-200 cursor-not-allowed'
                         : qtyInOrder > 0
@@ -946,7 +969,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         </div>
 
         {/* Right Column: Live Order Ticket & Totals (4 cols) */}
-        <div className="lg:col-span-4 bg-white border border-stone-200 rounded-3xl p-4 lg:p-5 shadow-sm flex flex-col justify-between h-[600px] lg:h-full lg:sticky lg:top-4 overflow-hidden">
+        <div className={`lg:col-span-4 bg-white border border-stone-200 rounded-3xl p-4 lg:p-5 shadow-sm flex flex-col justify-between h-[60dvh] min-h-[420px] max-h-[640px] lg:h-full lg:min-h-0 lg:max-h-none lg:sticky lg:top-4 overflow-hidden ${mobilePosSection === 'order' ? '' : 'hidden lg:flex'}`}>
           
           <div className="flex-1 flex flex-col min-h-0">
             {/* Ticket Header */}

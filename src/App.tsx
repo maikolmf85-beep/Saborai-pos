@@ -1626,7 +1626,7 @@ export function App() {
   }
 
   return (
-    <div data-pos-theme={activeTab === 'landing' ? 'light' : posTheme} className="pos-theme-root h-screen w-screen overflow-hidden flex flex-col sm:flex-row font-sans selection:bg-[#a9b994]/30">
+    <div data-pos-theme={activeTab === 'landing' ? 'light' : posTheme} className="pos-theme-root h-screen h-[100dvh] w-full min-h-0 overflow-hidden flex flex-col sm:w-screen sm:flex-row font-sans selection:bg-[#a9b994]/30">
       
       <GuidedTour />
       
@@ -1662,7 +1662,7 @@ export function App() {
       <div className="hidden sm:block w-[68px] h-full shrink-0 z-0 bg-stone-950/20"></div>
 
       {/* Main Workspace Container */}
-      <div className="flex-1 h-full min-w-0 flex flex-col overflow-hidden relative pb-16 sm:pb-0">
+      <div className="min-h-0 min-w-0 flex-1 flex flex-col overflow-hidden relative pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
         {/* Demo Mode Banner */}
         {subscription?.mode === 'DEMO' && activeTab !== 'landing' && (
           <div className="bg-gradient-to-r from-stone-800 to-stone-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between shadow-sm shrink-0 gap-3">
@@ -1702,7 +1702,7 @@ export function App() {
         )}
 
         {/* Main Dynamic Operational Content */}
-        <main className="flex-1 h-full min-h-0 overflow-y-auto">
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain">
           <Suspense fallback={
             <div className="flex items-center justify-center h-full w-full">
               <div className="w-8 h-8 border-3 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>

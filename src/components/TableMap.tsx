@@ -513,11 +513,11 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   return (
-    <div className="tour-table-map w-full h-full flex flex-col p-2.5 sm:p-3.5 gap-2.5 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
+    <div className="tour-table-map w-full h-auto min-h-full lg:h-full flex flex-col p-3 sm:p-3.5 gap-3 overflow-visible lg:overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
       {/* Top Header & Compact Live Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-stone-200/80 shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 pb-3 border-b border-stone-200/80 shrink-0">
+        <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:gap-3 min-w-0">
           <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
             <span>Plano del Salón</span>
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
@@ -526,7 +526,7 @@ export const TableMap: React.FC<TableMapProps> = ({
           </h1>
 
           {/* Zone Filter Navigation Inline */}
-          <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1 w-full sm:w-auto max-w-full bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
             {effectiveZones.length === 0 ? (
               <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
                 Sin salones
@@ -583,7 +583,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         )}
 
         {/* Right Action Controls & Metrics & Fullscreen */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap justify-between sm:justify-start gap-2">
           {/* Interactive Status Filter & Live Metrics */}
           <div className="hidden md:flex items-center gap-1.5 text-xs font-bold">
             <button
@@ -696,10 +696,10 @@ export const TableMap: React.FC<TableMapProps> = ({
       </div>
 
       {/* Main Floor Plan & Table Details Workspace Container */}
-      <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-3 overflow-hidden">
+      <div className="flex-none lg:flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-3 overflow-visible lg:overflow-hidden">
         
         {/* Interactive Floor Plan Map (Takes 100% height and dynamic width) */}
-        <div className="flex-1 h-full min-h-0 bg-white border border-stone-200/90 rounded-2xl p-3 shadow-xs relative overflow-hidden flex flex-col justify-between">
+        <div className="flex-none w-full h-[40vh] h-[40dvh] min-h-[260px] max-h-[420px] lg:flex-1 lg:h-full lg:min-h-0 bg-white border border-stone-200/90 rounded-2xl p-3 shadow-xs relative overflow-hidden flex flex-col justify-between">
           
           {/* Edit Mode Notice Banner */}
           {isEditMode && (
@@ -848,7 +848,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
         {/* Selected Table Detail Drawer (Collapsible for 100% full-width floor plan) */}
         {showDetailsDrawer && (
-          <div className="w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex flex-col justify-between h-[45vh] lg:h-full overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200">
+          <div className="w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex flex-col justify-between h-auto min-h-0 lg:h-full overflow-visible lg:overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200">
           
           {selectedTable ? (
             <div className="space-y-4">

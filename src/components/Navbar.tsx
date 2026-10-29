@@ -375,7 +375,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Barra Inferior Fija Limpia (4 Botones con espacio ergonómico) */}
         <nav 
           aria-label="Barra de navegación móvil"
-          className="h-16 bg-stone-950/98 border-t border-stone-800/90 backdrop-blur-xl px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
+          className="h-16 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-stone-950/98 border-t border-stone-800/90 backdrop-blur-xl px-2 sm:px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
         >
           {/* 1. Mesas */}
           <button
