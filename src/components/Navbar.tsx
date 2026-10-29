@@ -21,8 +21,6 @@ import {
   Menu,
   X,
   ChevronUp,
-  ChevronLeft,
-  ChevronRight
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
@@ -170,7 +168,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Panel Desplegable Flotante hacia arriba (Bottom Sheet) */}
         {mobileMenuOpen && (
-          <div className="relative z-50 mx-3 mb-2 bg-stone-900/98 border border-stone-800 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl animate-in slide-in-from-bottom-5 duration-200 max-h-[75vh] overflow-y-auto">
+          <div className="relative z-50 mx-3 mb-2 bg-[#1A1819] border border-stone-800 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl animate-in slide-in-from-bottom-5 duration-200 max-h-[75vh] overflow-y-auto">
             
             {/* Header del Menú Desplegable */}
             <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-stone-800">
@@ -381,7 +379,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Barra Inferior Fija Limpia (4 Botones con espacio ergonómico) */}
         <nav 
           aria-label="Barra de navegación móvil"
-          className="h-16 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-stone-950/98 border-t border-stone-800/90 backdrop-blur-xl px-2 sm:px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
+          className="h-16 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-[#1A1819] border-t border-stone-800/90 backdrop-blur-xl px-2 sm:px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
         >
           {/* 1. Mesas */}
           <button
@@ -458,7 +456,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         onMouseLeave={() => {
           if (!isSidebarCollapsed) onToggleSidebar();
         }}
-        className={`hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-[#3b3733] text-[#fcfeff] flex-col justify-between items-start py-3 border-r border-[#6b686d]/30 shadow-2xl z-50 overflow-y-auto overflow-x-hidden transition-[width] duration-300 ease-out scrollbar-none`}
+        className={`hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-[#1A1819] text-[#fcfeff] flex-col justify-between items-start py-3 border-r border-[#6b686d]/30 shadow-2xl z-50 overflow-y-auto overflow-x-hidden transition-[width] duration-300 ease-out scrollbar-none`}
         aria-label="Navegación vertical SaborAI POS"
       >
         {/* Top Group: Brand Logo & Operational Modules */}
@@ -482,16 +480,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {tenant.name}
                 </span>
               </div>
-            </button>
-            <button
-              type="button"
-              onClick={onToggleSidebar}
-              aria-label={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
-              aria-expanded={!isSidebarCollapsed}
-              title={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
-              className="shrink-0 w-6 h-6 rounded-full bg-[#6b686d]/25 hover:bg-[#6b686d]/45 text-[#fcfeff]/80 hover:text-[#fcfeff] flex items-center justify-center transition-colors cursor-pointer"
-            >
-              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
             </button>
           </div>
 
