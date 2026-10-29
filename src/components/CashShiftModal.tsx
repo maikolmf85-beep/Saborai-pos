@@ -544,10 +544,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                 {activeShift ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-                    <span>Turno #{activeShift.shiftNumber} Abierto</span>
+                  <span>Turno #{activeShift.shiftNumber} Abierto</span>
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-700 border border-stone-300">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
                     Caja Cerrada
                   </span>
                 )}
@@ -587,7 +587,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     const regShift = cashShiftService.getActiveShift(r.id);
                     return (
                       <option key={r.id} value={r.id}>
-                        {r.name} (DGT: {r.terminalCode}) — {regShift ? `🟢 Turno #${regShift.shiftNumber}` : '⚪ Cerrada'}
+                        {r.name} (DGT: {r.terminalCode}) — {regShift ? `🟢 Turno #${regShift.shiftNumber}` : '🔴 Cerrada'}
                       </option>
                     );
                   })
@@ -1485,8 +1485,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           {/* STATE B3b: TAB "CLOSE" WITHOUT ACTIVE SHIFT */}
           {activeTab === 'close' && !activeShift && (
             <div className="py-12 px-4 max-w-md mx-auto text-center space-y-4 animate-in fade-in">
-              <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-3xl flex items-center justify-center mx-auto shadow-xs">
-                <Store className="w-8 h-8 text-amber-700" />
+              <div className="w-16 h-16 bg-red-50 text-red-700 rounded-3xl flex items-center justify-center mx-auto shadow-xs">
+                <Store className="w-8 h-8 text-red-700" />
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-stone-900">Esta Caja se Encuentra Cerrada</h3>
@@ -1991,9 +1991,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                           <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
                             regShift
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : 'bg-stone-100 text-stone-600 border border-stone-200'
+                              : 'bg-red-50 text-red-700 border border-red-200'
                           }`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${regShift ? 'bg-emerald-500 animate-pulse' : 'bg-stone-400'}`} />
+                            <span className={`w-1.5 h-1.5 rounded-full ${regShift ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                             <span>{regShift ? `Turno #${regShift.shiftNumber}` : 'Cerrada'}</span>
                           </span>
                         </div>

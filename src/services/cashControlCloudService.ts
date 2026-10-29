@@ -1,6 +1,7 @@
 import type { CashRegister, CashShift } from '../types/cashShift';
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
+import { writePosOperation } from './serverWriteService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
@@ -282,155 +283,29 @@ class CashControlCloudService {
     };
   }
 
-  async importLocalConfiguration(tenantId: string, options: { deviceName?: string; overwriteExisting?: boolean } = {}): Promise<CashControlMigrationResult> {
-    if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
-    const preview = await this.previewLocalMigration(tenantId);
-    const deviceKey = preview.deviceKey;
-    const cloud = await this.getCloudSnapshot(tenantId);
-    const importedRegisterIds = new Map<string, CloudRegister>();
-    const conflicts: string[] = [];
-    let importedRegisters = 0;
-    let skippedExisting = 0;
-
-    for (const local of preview.localRegisters) {
-      const branchResult = await this.resolveBranch(tenantId, local.branchCode, cloud.branches);
-      const existing = cloud.registers.find(remote => remote.legacy_id === local.id)
-        || cloud.registers.find(remote => remote.branch_id === branchResult.id && remote.terminal_code === local.terminalCode);
-
-      if (existing && !options.overwriteExisting) {
-        importedRegisterIds.set(local.id, existing);
-        skippedExisting += 1;
-        if (!existing.legacy_id) {
-          await supabaseClient.from('pos_cash_registers').update({ legacy_id: local.id, source_device_key: deviceKey }).eq('id', existing.id);
-        }
-        continue;
-      }
-
-      const payload = {
-        tenant_id: tenantId,
-        branch_id: branchResult.id,
-        name: local.name,
-        terminal_code: local.terminalCode,
-        allows_billing: local.allowsBilling,
-        allows_ordering: local.allowsOrdering,
-        is_default: Boolean(local.isDefault),
-        linked_zones: local.linkedZones || (local.linkedZone ? [local.linkedZone] : []),
-        notes: local.notes || null,
-        legacy_id: local.id,
-        source_device_key: deviceKey,
-        is_active: local.isActive !== false
-      };
-
-      const result = existing
-        ? await supabaseClient.from('pos_cash_registers').update(payload).eq('id', existing.id).select('*').single()
-        : await supabaseClient.from('pos_cash_registers').insert(payload).select('*').single();
-      if (result.error || !result.data) {
-        conflicts.push(`No se pudo importar la caja "${local.name}": ${result.error?.message || 'respuesta vacía'}`);
-        continue;
-      }
-      importedRegisterIds.set(local.id, result.data as CloudRegister);
-      importedRegisters += existing ? 0 : 1;
-    }
-
-    let importedShifts = 0;
-    const allLocalShifts = uniqueShifts(
+  async importLocalConfiguration(
+    tenantId: string,
+    options: { deviceName?: string; overwriteExisting?: boolean; mode?: 'sync' | 'import' } = {}
+  ): Promise<CashControlMigrationResult> {
+    const mode = options.mode || 'import';
+    const action = mode === 'sync' ? 'CASH_CONTROL_SYNC' : 'CASH_CONTROL_IMPORT';
+    const deviceKey = getOrCreateDeviceKey();
+    const registers = getTenantItem<CashRegister[]>('cash_registers', tenantId) || [];
+    const shifts = uniqueShifts(
       getTenantItem<Record<string, CashShift>>('shifts_map', tenantId),
       getTenantItem<CashShift[]>('shifts_history', tenantId) || []
     );
-    for (const shift of allLocalShifts) {
-      const register = importedRegisterIds.get(shift.cashRegisterId || '');
-      if (!register) {
-        conflicts.push(`Se omitió el turno ${shift.shiftNumber}: no se encontró su caja central.`);
-        continue;
-      }
-      const status = shift.status === 'OPEN' ? 'OPEN' : shift.status === 'CLOSING' ? 'CLOSED' : shift.status;
-      const existing = cloud.shifts.find(remote => remote.legacy_id === shift.id);
-      if (existing) {
-        skippedExisting += 1;
-        continue;
-      }
-      if (status === 'OPEN' && cloud.shifts.some(remote => remote.cash_register_id === register.id && remote.status === 'OPEN')) {
-        conflicts.push(`Se omitió el turno abierto ${shift.shiftNumber}: la caja "${register.name}" ya tiene un turno abierto en Supabase.`);
-        continue;
-      }
-
-      const result = await supabaseClient.from('pos_cash_shifts').insert({
-        tenant_id: tenantId,
-        branch_id: register.branch_id,
-        cash_register_id: register.id,
-        opened_by: null,
-        closed_by: null,
-        status,
-        opening_float: shift.initialCashFloat || 0,
-        expected_cash: shift.systemSummary?.expectedCashInDrawer || 0,
-        counted_cash: shift.countedCash ?? null,
-        difference: shift.cashDifference ?? null,
-        opened_at: shift.openedAt,
-        closed_at: shift.closedAt || null,
-        notes: shift.notes || null,
-        shift_number: shift.shiftNumber,
-        participants: shift.participants || [],
-        movements: shift.movements || [],
-        system_summary: shift.systemSummary || {},
-        cash_breakdown: shift.cashBreakdown || null,
-        counted_cards: shift.countedCards ?? null,
-        dataphones_breakdown: shift.dataphonesBreakdown || null,
-        counted_sinpe: shift.countedSinpe ?? null,
-        difference_reason: shift.differenceReason || null,
-        z_report_generated: Boolean(shift.zReportGenerated),
-        legacy_id: shift.id,
-        source_device_key: deviceKey
-      }).select('id').single();
-      if (result.error) conflicts.push(`No se pudo importar el turno ${shift.shiftNumber}: ${result.error.message}`);
-      else importedShifts += 1;
-    }
-
-    const currentLocalId = getTenantItem<string>('current_terminal_id', tenantId);
-    const currentRegister = importedRegisterIds.get(currentLocalId || '') || importedRegisterIds.values().next().value;
-    let assignedTerminal = false;
-    if (currentRegister) {
-      const terminalResult = await supabaseClient.from('pos_terminals').upsert({
-        tenant_id: tenantId,
-        branch_id: currentRegister.branch_id,
-        cash_register_id: currentRegister.id,
-        device_key: deviceKey,
-        device_name: options.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'),
-        last_seen_at: new Date().toISOString(),
-        is_active: true
-      }, { onConflict: 'tenant_id,device_key' }).select('id').single();
-      if (terminalResult.error) conflicts.push(`No se pudo asignar este dispositivo a la caja: ${terminalResult.error.message}`);
-      else assignedTerminal = true;
-    }
-
-    const marker = new Date().toISOString();
-    this.setMigrationMarker(tenantId, marker);
-    return { importedRegisters, importedShifts, assignedTerminal, skippedExisting, conflicts, migrationMarker: marker };
-  }
-
-  private async resolveBranch(tenantId: string, branchCode: string, branches: CloudBranch[]): Promise<CloudBranch> {
-    const normalizedCode = String(branchCode || '001').replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
-    const exact = branches.find(branch => branch.code === normalizedCode);
-    if (exact) return exact;
-    if (branches.length === 1) return branches[0];
-
-    if (branches.length === 0 && supabaseClient) {
-      const created = await supabaseClient
-        .from('pos_branches')
-        .insert({
-          tenant_id: tenantId,
-          name: 'Sucursal Principal',
-          code: normalizedCode,
-          timezone: 'America/Costa_Rica',
-          currency: 'CRC',
-          is_active: true
-        })
-        .select('id, tenant_id, code, name')
-        .single();
-      if (!created.error && created.data) return created.data as CloudBranch;
-      throw new Error(`No se pudo crear la sucursal principal (${normalizedCode}): ${created.error?.message || 'respuesta vacía'}`);
-    }
-
-    throw new Error(`No se encontró una sucursal para el código ${branchCode || '(vacío)'} del tenant ${tenantId}.`);
+    const result = await writePosOperation<CashControlMigrationResult>(action, tenantId, {
+      mode,
+      registers,
+      shifts,
+      deviceKey,
+      deviceName: options.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'),
+      currentTerminalId: getTenantItem<string>('current_terminal_id', tenantId) || '',
+      overwriteExisting: options.overwriteExisting === true
+    });
+    if (result.migrationMarker) this.setMigrationMarker(tenantId, result.migrationMarker);
+    return result;
   }
 
   subscribe(tenantId: string, onChange: () => void): () => void {

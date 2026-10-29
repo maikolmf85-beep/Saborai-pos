@@ -43,6 +43,7 @@ interface TableMapProps {
   hasActiveShift?: boolean;
   onOpenCashShift?: () => void;
   currentUser?: UserProfile | null;
+  onAuthenticateStaff: (staff: UserProfile, pin: string) => Promise<UserProfile>;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -59,7 +60,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   activeShiftZones,
   hasActiveShift = false,
   onOpenCashShift,
-  currentUser
+  currentUser,
+  onAuthenticateStaff
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -1178,7 +1180,12 @@ export const TableMap: React.FC<TableMapProps> = ({
         }}
         table={tableForPinAuth}
         staffList={staffList}
-        onConfirm={handlePinValidated}
+        tenantId={tenant.id}
+        onConfirm={async (staff, pin) => {
+          const authenticatedStaff = await onAuthenticateStaff(staff, pin);
+          handlePinValidated(authenticatedStaff);
+          return authenticatedStaff;
+        }}
       />
 
       <TableReservationsModal

@@ -45,9 +45,13 @@ class CashShiftService {
   private cloudSyncInFlight = false;
   private cloudHydrating = false;
   private cloudRealtimeUnsubscribe: (() => void) | null = null;
+  private readonly handleOnline = (): void => {
+    this.queueCloudSync();
+  };
 
   constructor() {
     this.resetInMemoryState();
+    if (typeof window !== 'undefined') window.addEventListener('online', this.handleOnline);
   }
 
   setTenantContext(tenantId: string): void {
@@ -497,6 +501,7 @@ class CashShiftService {
     this.cloudSyncInFlight = true;
     try {
       const result = await cashControlCloudService.importLocalConfiguration(this.tenantId, {
+        mode: 'sync',
         deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
       });
       // Si PostgreSQL rechazó una operación por concurrencia (por ejemplo, dos
@@ -509,7 +514,7 @@ class CashShiftService {
     }
   }
 
-  private async reconcileWithCloud(tenantId: string): Promise<void> {
+  private async reconcileWithCloud(_tenantId: string): Promise<void> {
     if (!cashControlCloudService.isAvailable()) return;
     try {
       // Al iniciar o cambiar de tenant, Supabase es la fuente de verdad.

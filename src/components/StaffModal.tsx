@@ -25,7 +25,7 @@ interface StaffModalProps {
   currentUser: UserProfile | null;
   currentTenant: TenantInfo;
   staffList: UserProfile[];
-  onAddStaffMember: (newMember: UserProfile) => void;
+  onAddStaffMember: (newMember: UserProfile) => void | Promise<void>;
   onSelectUser: (user: UserProfile) => void;
   onToggleUserActive?: (userId: string) => void;
   onOpenQuickSwitch?: () => void;
@@ -89,9 +89,13 @@ export const StaffModal: React.FC<StaffModalProps> = ({
     }
   ];
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+    if (!/^\d{4}$/.test(pin.trim())) {
+      setFeedback('Define un PIN de cuatro dígitos para registrar al colaborador.');
+      return;
+    }
 
     setIsSubmitting(true);
     setFeedback(null);
@@ -103,27 +107,26 @@ export const StaffModal: React.FC<StaffModalProps> = ({
       phone: phone.trim() || '+506 2200-0000',
       restaurantName: currentTenant.name,
       role: role,
-      pin: pin.trim() || '1234',
+      pin: pin.trim(),
       active: true
     };
 
-    // Save locally
-    onAddStaffMember(newStaff);
-
-    // Sync in background to Notion
-    notionService.recordUserRegistration(newStaff, currentTenant).catch(() => {});
-
-    setIsSubmitting(false);
-    setFeedback(`¡Colaborador "${newStaff.name}" (${formatUserRole(newStaff.role)}) registrado con éxito!`);
-    
-    // Reset form
-    setName('');
-    setEmail('');
-    setPhone('');
-    setPin('');
-    setRole('SALONERO');
-
-    setTimeout(() => setFeedback(null), 3500);
+    try {
+      await onAddStaffMember(newStaff);
+      const { pin: _pin, ...safeStaff } = newStaff;
+      notionService.recordUserRegistration(safeStaff as UserProfile, currentTenant).catch(() => {});
+      setFeedback(`¡Colaborador "${newStaff.name}" (${formatUserRole(newStaff.role)}) registrado con éxito!`);
+      setName('');
+      setEmail('');
+      setPhone('');
+      setPin('');
+      setRole('SALONERO');
+      setTimeout(() => setFeedback(null), 3500);
+    } catch (error: any) {
+      setFeedback(error?.message || 'No se pudo sincronizar el colaborador con el servidor.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -216,10 +219,13 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                 <label className="text-[11px] font-bold text-stone-700">PIN Rápido (4 dígitos)</label>
                 <input
                   type="password"
+                  required
                   maxLength={4}
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  placeholder="ej. 1234"
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  placeholder="4 dígitos"
                   className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 placeholder:text-stone-400 font-mono focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
                 />
               </div>
@@ -343,9 +349,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                             <div className="text-[10px] text-stone-400">{member.phone}</div>
                           </td>
 
-                          <td className="px-4 py-3 font-mono text-stone-500 text-[11px]">
-                            {currentUser?.role === 'ADMIN' ? (member.pin || '1234') : (member.pin ? '••••' : '1234')}
-                          </td>
+                          <td className="px-4 py-3 font-mono text-stone-500 text-[11px]">PIN protegido</td>
 
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">

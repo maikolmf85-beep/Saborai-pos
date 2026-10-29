@@ -196,6 +196,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setCloudMigrationMessage(null);
     try {
       const result = await cashControlCloudService.importLocalConfiguration(tenant.id, {
+        mode: 'import',
         deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
       });
       setCloudMigrationMessage(`Migración completada: ${result.importedRegisters} cajas nuevas, ${result.importedShifts} turnos nuevos y ${result.skippedExisting} registros ya existentes.`);
@@ -896,7 +897,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       >
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-stone-900">{reg.name}</span>
-                          <span className={`w-2 h-2 rounded-full ${shift ? 'bg-emerald-500 animate-pulse' : 'bg-stone-300'}`} title={shift ? 'Turno abierto' : 'Turno cerrado'} />
+                          <span className={`w-2 h-2 rounded-full ${shift ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} title={shift ? 'Turno abierto' : 'Turno cerrado'} />
                         </div>
                         <div className="flex items-center gap-2 mt-1.5 text-[11px] text-stone-500 font-medium">
                           <span>Terminal DGT: <strong className="text-stone-800">{reg.terminalCode}</strong></span>
@@ -904,7 +905,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <span>Suc: {reg.branchCode}</span>
                         </div>
                         <div className="mt-2 flex items-center justify-between text-[10px]">
-                          <span className={`px-1.5 py-0.2 rounded font-bold ${shift ? 'bg-emerald-50 text-emerald-800' : 'bg-stone-100 text-stone-600'}`}>
+                          <span className={`px-1.5 py-0.2 rounded font-bold ${shift ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
                             {shift ? 'Turno Abierto' : 'Cerrada'}
                           </span>
                           {isSelected && (
@@ -1148,7 +1149,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                             shift 
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-300' 
-                              : 'bg-stone-100 text-stone-600 border-stone-200'
+                              : 'bg-red-50 text-red-700 border-red-200'
                           }`}>
                             {shift ? `Turno #${shift.shiftNumber} Abierto` : 'Caja Cerrada'}
                           </span>

@@ -1,4 +1,5 @@
 import { supabaseClient } from '../lib/supabaseClient';
+import { writePosOperation } from './serverWriteService';
 
 export type TableLayoutShape = 'square' | 'round' | 'bar';
 
@@ -129,14 +130,8 @@ export async function upsertTableLayout(tenantId: string, layout: unknown): Prom
   const validated = validateTableLayout(layout);
   if (!isCloudTenantUuid(tenantId) || !supabaseClient || !validated) return false;
   try {
-    const { error } = await supabaseClient
-      .from('pos_table_layouts')
-      .upsert({
-        tenant_id: tenantId,
-        layout: validated,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'tenant_id' });
-    return !error;
+    await writePosOperation('SAVE_TABLE_LAYOUT', tenantId, { layout: validated });
+    return true;
   } catch {
     return false;
   }
@@ -157,15 +152,7 @@ export async function seedTableLayoutIfMissing(
   const existing = await readTableLayout(tenantId);
   if (!existing.available || existing.exists) return existing;
   try {
-    const { error } = await supabaseClient
-      .from('pos_table_layouts')
-      .upsert({
-        tenant_id: tenantId,
-        layout: validated,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'tenant_id', ignoreDuplicates: true });
-    if (error) return { available: false, exists: false, record: null };
-    return await readTableLayout(tenantId);
+    return await writePosOperation<TableLayoutReadResult>('SEED_TABLE_LAYOUT', tenantId, { layout: validated });
   } catch {
     return { available: false, exists: false, record: null };
   }

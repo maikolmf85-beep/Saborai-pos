@@ -20,6 +20,8 @@ export interface OfflineSyncQueueItem {
   payload: any;
   timestamp: string;
   tenantId?: string;
+  actorUserId?: string;
+  actorEmployeeId?: string | null;
   synced: boolean;
   status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
   attemptCount?: number;
@@ -167,12 +169,16 @@ export class SaboraiLocalDB {
 
   async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
     const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+    const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
+    const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const item: OfflineSyncQueueItem = {
       id: operationId,
       action,
       payload,
       timestamp: new Date().toISOString(),
       tenantId: tenantId || (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') || undefined : undefined),
+      actorUserId,
+      actorEmployeeId,
       synced: false,
       status: 'PENDING',
       attemptCount: 0,
@@ -272,17 +278,30 @@ export class SaboraiLocalDB {
     }
 
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
-    if (!token) {
-      for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada para sincronizar.');
-      const remainingCount = await this.getPendingCount();
-      this.notify(this.isOnline(), remainingCount);
+    const accountUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') : null;
+    const employeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
+    const activeTenantId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') : null;
+    if (!token || !accountUserId) {
       this.syncInFlight = false;
-      return { syncedCount: 0, failedCount: pending.length, remainingCount };
+      return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
     }
 
     let syncedCount = 0;
     let failedCount = 0;
     for (const originalItem of pending) {
+      if (!originalItem.actorUserId || !originalItem.tenantId) {
+        await this.updateQueueItem({
+          ...originalItem,
+          status: 'FAILED',
+          synced: false,
+          lastError: 'No se puede verificar el tenant o la identidad original de esta operación. Se conserva localmente y no se enviará automáticamente.'
+        });
+        failedCount += 1;
+        continue;
+      }
+      if (originalItem.actorUserId !== accountUserId
+        || (originalItem.actorEmployeeId || null) !== (employeeId || null)
+        || originalItem.tenantId !== activeTenantId) continue;
       if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
 
       const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
@@ -295,6 +314,8 @@ export class SaboraiLocalDB {
             operationId: processingItem.id,
             tenantId: processingItem.tenantId,
             action: processingItem.action,
+            actorUserId: processingItem.actorUserId,
+            actorEmployeeId: processingItem.actorEmployeeId || null,
             payload: processingItem.payload,
             occurredAt: processingItem.timestamp
           })

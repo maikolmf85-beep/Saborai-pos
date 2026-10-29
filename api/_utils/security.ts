@@ -1,12 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from './supabase.js';
+import { hasRolePermission } from './rolePermissions.js';
+import { buildEmployeeAuthContext } from './employeeSession.js';
 
 export interface AuthContext {
   userId: string;
   email: string;
   role?: string;
   tenantId?: string;
+  employeeId?: string;
+  employeeExternalId?: string;
+  employeeName?: string;
 }
 
 function configuredOrigins(): string[] {
@@ -51,11 +56,40 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
   const token = authHeader.slice('Bearer '.length).trim();
   if (!token) return null;
 
-  let decoded: { userId?: string; email?: string };
+  let decoded: { userId?: string; email?: string; employeeId?: string; tenantId?: string };
   try {
     decoded = jwt.verify(token, getJwtSecret()) as { userId?: string; email?: string };
   } catch {
     return null;
+  }
+
+  if (decoded.employeeId) {
+    if (!decoded.userId || !decoded.email || !decoded.tenantId) return null;
+
+    const { data: employee, error: employeeError } = await supabaseAdmin
+      .from('pos_employees')
+      .select('id, tenant_id, external_id, name, email, role, is_active')
+      .eq('id', decoded.employeeId)
+      .eq('tenant_id', decoded.tenantId)
+      .maybeSingle();
+    if (employeeError || !employee || employee.is_active === false) return null;
+
+    const { data: tenant, error: tenantError } = await supabaseAdmin
+      .from('tenants')
+      .select('id, user_id')
+      .eq('id', employee.tenant_id)
+      .maybeSingle();
+    if (tenantError || !tenant || tenant.user_id !== decoded.userId) return null;
+
+    const { data: owner, error: ownerError } = await supabaseAdmin
+      .from('users')
+      .select('id, email, active')
+      .eq('id', tenant.user_id)
+      .maybeSingle();
+    if (ownerError || !owner || owner.active === false) return null;
+    if (String(owner.email).toLowerCase() !== String(decoded.email).toLowerCase()) return null;
+
+    return buildEmployeeAuthContext(employee, tenant, owner);
   }
 
   if (!decoded.userId || !decoded.email) return null;
@@ -94,12 +128,19 @@ export async function requireAuth(
     return null;
   }
 
-  if (allowedRoles && (!context.role || !allowedRoles.includes(context.role))) {
-    res.status(403).json({ error: 'No tienes permisos para realizar esta operación.' });
-    return null;
-  }
+  if (allowedRoles && !requireRole(context, res, allowedRoles)) return null;
 
   return context;
+}
+
+export function requireRole(
+  context: AuthContext,
+  res: VercelResponse,
+  allowedRoles: readonly string[]
+): boolean {
+  if (hasRolePermission(context.role, allowedRoles)) return true;
+  res.status(403).json({ error: 'No tienes permisos para realizar esta operación.' });
+  return false;
 }
 
 export function allowedOriginForRedirect(origin?: string): string {

@@ -122,109 +122,82 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   /* ── TiloPay Return Interceptor ──── */
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    if (searchParams.get('tilopay_success') === 'true') {
-      const email = searchParams.get('email');
-      const name = searchParams.get('name');
-      const phone = searchParams.get('phone');
-      const pwd = searchParams.get('pwd');
-      const plan = searchParams.get('planId') || 'pro';
-      const token = searchParams.get('token') || searchParams.get('id');
+    if (searchParams.get('tilopay_success') !== 'true') return;
 
-      if (email && pwd) {
-        setIsProcessing(true);
-        setView('WELCOME'); // Prevent showing forms while loading
-        
-        const registerUser = async () => {
+    const reference = searchParams.get('ref');
+    const paymentToken = searchParams.get('token') || undefined;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setView('WELCOME');
+
+    if (!reference) {
+      setError('El enlace de registro no es válido o expiró. Inicia el registro otra vez.');
+      setIsProcessing(false);
+      return;
+    }
+
+    setIsProcessing(true);
+    const completeSignup = async () => {
+      try {
+        const regData = await tilopayService.completeSignup(reference, paymentToken);
+
+        localStorage.setItem('saborai_token', regData.token);
+        if (supabaseClient && regData.supabaseSession?.access_token && regData.supabaseSession?.refresh_token) {
           try {
-            if (token) {
-              await tilopayService.createSubscription(plan, token, email);
-            }
-
-            const regRes = await fetch('/api/auth/register', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email,
-                password: pwd,
-                name: name || 'Admin',
-                phone: phone || '',
-                restaurantName: name || 'Restaurante',
-                plan
-              })
+            await supabaseClient.auth.setSession({
+              access_token: regData.supabaseSession.access_token,
+              refresh_token: regData.supabaseSession.refresh_token
             });
-            
-            const regData = await regRes.json();
-            
-            if (!regRes.ok) {
-              setError(regData.error || 'Error al crear la cuenta en el backend.');
-              setIsProcessing(false);
-              return;
-            }
-            
-            localStorage.setItem('saborai_token', regData.token);
-            if (supabaseClient && regData.supabaseSession?.access_token && regData.supabaseSession?.refresh_token) {
-              try {
-                await supabaseClient.auth.setSession({
-                  access_token: regData.supabaseSession.access_token,
-                  refresh_token: regData.supabaseSession.refresh_token
-                });
-              } catch (sessionError) {
-                console.warn('[Auth Bridge] No se pudo guardar sesión Supabase en el navegador:', sessionError);
-              }
-            }
-            localStorage.removeItem('saborai_user');
-            localStorage.removeItem('saborai_tenant');
-            
-            const user: UserProfile = {
-              id: regData.user.id,
-              name: regData.user.name,
-              email: regData.user.email,
-              phone: regData.user.phone,
-              restaurantName: regData.user.restaurant_name,
-              role: regData.user.role,
-              active: regData.user.active
-            };
-            
-            const tenantObj: TenantInfo = {
-              id: regData.tenant.id,
-              name: regData.tenant.name,
-              cedulaJuridica: regData.tenant.cedula_juridica || '3-101-998877',
-              email: regData.tenant.email,
-              phone: regData.tenant.phone,
-              location: regData.tenant.location || 'Costa Rica',
-              plan: regData.tenant.plan,
-              status: regData.tenant.status,
-              currency: regData.tenant.currency,
-              monthlyFee: regData.tenant.monthly_fee || 45000,
-              onboardingCompleted: regData.tenant.onboarding_completed ?? false
-            };
-
-            notionService.recordUserRegistration(user, tenantObj).catch(() => {});
-            
-            const sub: SaboraiSubscription = {
-              mode: 'TRIAL',
-              email: regData.subscription.email,
-              restaurantName: user.restaurantName,
-              plan: regData.subscription.plan,
-              trialEndsAt: regData.subscription.trial_ends_at,
-              activatedAt: regData.subscription.activated_at,
-            };
-            
-            window.history.replaceState({}, document.title, window.location.pathname);
-            setView('TRIAL_SUCCESS');
-            setTimeout(() => onSubscriptionActivated(sub, user, tenantObj), 2200);
-
-          } catch (err) {
-            console.error(err);
-            setError('Error finalizando la suscripción.');
-            setIsProcessing(false);
-            window.history.replaceState({}, document.title, window.location.pathname);
+          } catch (sessionError) {
+            console.warn('[Auth Bridge] No se pudo guardar sesión Supabase en el navegador:', sessionError);
           }
+        }
+        localStorage.removeItem('saborai_user');
+        localStorage.removeItem('saborai_tenant');
+
+        const user: UserProfile = {
+          id: regData.user.id,
+          name: regData.user.name,
+          email: regData.user.email,
+          phone: regData.user.phone,
+          restaurantName: regData.user.restaurant_name,
+          role: regData.user.role,
+          active: regData.user.active
         };
 
-        registerUser();
+        const tenantObj: TenantInfo = {
+          id: regData.tenant.id,
+          name: regData.tenant.name,
+          cedulaJuridica: regData.tenant.cedula_juridica || '3-101-998877',
+          email: regData.tenant.email,
+          phone: regData.tenant.phone,
+          location: regData.tenant.location || 'Costa Rica',
+          plan: regData.tenant.plan,
+          status: regData.tenant.status,
+          currency: regData.tenant.currency,
+          monthlyFee: regData.tenant.monthly_fee || 45000,
+          onboardingCompleted: regData.tenant.onboarding_completed ?? false
+        };
+
+        notionService.recordUserRegistration(user, tenantObj).catch(() => {});
+
+        const sub: SaboraiSubscription = {
+          mode: 'TRIAL',
+          email: regData.subscription.email,
+          restaurantName: user.restaurantName,
+          plan: regData.subscription.plan,
+          trialEndsAt: regData.subscription.trial_ends_at,
+          activatedAt: regData.subscription.activated_at,
+        };
+
+        setView('TRIAL_SUCCESS');
+        setTimeout(() => onSubscriptionActivated(sub, user, tenantObj), 2200);
+      } catch {
+        setError('No se pudo completar el registro. Inicia el proceso otra vez.');
+        setIsProcessing(false);
       }
-    }
+    };
+
+    completeSignup();
   }, []);
 
   /* ─────────────────────────────────────────────────────────── */
@@ -269,13 +242,13 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
     setIsProcessing(true);
     resetError();
     try {
-      const url = await tilopayService.getPaymentUrl({
+      const reference = await tilopayService.createSignupHandoff({
         email: trialEmail,
-        firstName: restaurantName || 'Admin',
-        lastName: 'Saborai',
-        planId: 'pro',
-        redirect: window.location.origin + `?tilopay_success=true&planId=pro&email=${encodeURIComponent(trialEmail)}&name=${encodeURIComponent(restaurantName)}&phone=${encodeURIComponent(trialPhone)}&pwd=${encodeURIComponent(trialPassword)}`
+        password: trialPassword,
+        restaurantName,
+        phone: trialPhone
       });
+      const url = await tilopayService.getPaymentUrl({ reference });
 
       // Redirigir a TiloPay
       window.location.href = url;

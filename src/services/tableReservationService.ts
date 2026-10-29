@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabaseClient } from '../lib/supabaseClient';
 import { getTenantItem, setTenantItem } from './tenantStorage';
+import { currentServerWriteActor, writePosOperation, type ServerWriteActor } from './serverWriteService';
 import type { TableReservation, TableReservationInput, TableReservationStatus } from '../types/tableReservation';
 
 const TABLE = 'pos_table_reservations';
@@ -8,10 +9,18 @@ const CACHE_KEY = 'table_reservations';
 const OUTBOX_KEY = 'table_reservations_outbox';
 const ACTIVE_STATUSES: TableReservationStatus[] = ['CONFIRMED', 'ARRIVED', 'SEATED'];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+let lastOutboxTenantId: string | null = null;
+
+type OutboxOperationBase = {
+  id: string;
+  operationId: string;
+  actorUserId: string | null;
+  actorEmployeeId: string | null;
+};
 
 type OutboxOperation =
-  | { id: string; kind: 'upsert'; record: TableReservation }
-  | { id: string; kind: 'delete' };
+  | (OutboxOperationBase & { kind: 'upsert'; record: TableReservation })
+  | (OutboxOperationBase & { kind: 'delete' });
 
 interface ReservationRow {
   id: string;
@@ -68,28 +77,6 @@ function writeOutbox(tenantId: string, operations: OutboxOperation[]): void {
   setTenantItem(OUTBOX_KEY, operations, tenantId);
 }
 
-function toRow(reservation: TableReservation): ReservationRow {
-  return {
-    id: reservation.id,
-    tenant_id: reservation.tenantId,
-    table_id: reservation.tableId,
-    table_name: reservation.tableName,
-    zone: reservation.zone,
-    customer_name: reservation.customerName,
-    customer_phone: reservation.customerPhone,
-    customer_email: reservation.customerEmail || null,
-    reserved_at: reservation.reservedAt,
-    duration_minutes: reservation.durationMinutes,
-    party_size: reservation.partySize,
-    status: reservation.status,
-    notes: reservation.notes,
-    arrived_at: reservation.arrivedAt || null,
-    seated_at: reservation.seatedAt || null,
-    created_at: reservation.createdAt,
-    updated_at: reservation.updatedAt
-  };
-}
-
 function fromRow(row: ReservationRow): TableReservation {
   return {
     id: row.id,
@@ -125,6 +112,7 @@ function overlayPending(
 }
 
 function enqueue(tenantId: string, operation: OutboxOperation): void {
+  lastOutboxTenantId = tenantId;
   const operations = readOutbox(tenantId).filter(item => item.id !== operation.id);
   operations.push(operation);
   writeOutbox(tenantId, operations);
@@ -140,11 +128,25 @@ function canUseDatabase(tenantId: string): boolean {
 
 async function pushOperation(tenantId: string, operation: OutboxOperation): Promise<boolean> {
   if (!supabaseClient || !isUuid(tenantId)) return false;
+  const currentActor = currentServerWriteActor();
+  const actor: ServerWriteActor | null = operation.actorUserId
+    ? { actorUserId: operation.actorUserId, actorEmployeeId: operation.actorEmployeeId }
+    : currentActor?.actorEmployeeId === null ? currentActor : null;
+  if (!actor || !currentActor
+    || actor.actorUserId !== currentActor.actorUserId
+    || actor.actorEmployeeId !== currentActor.actorEmployeeId) return false;
   try {
-    const result = operation.kind === 'delete'
-      ? await supabaseClient.from(TABLE).delete().eq('tenant_id', tenantId).eq('id', operation.id)
-      : await supabaseClient.from(TABLE).upsert(toRow(operation.record), { onConflict: 'id' });
-    if (result.error) return false;
+    if (operation.kind === 'delete') {
+      await writePosOperation('DELETE_TABLE_RESERVATION', tenantId, { reservationId: operation.id }, {
+        operationId: operation.operationId || `reservation_delete_${operation.id}`,
+        actor
+      });
+    } else {
+      await writePosOperation('UPSERT_TABLE_RESERVATION', tenantId, { reservation: operation.record }, {
+        operationId: operation.operationId || `reservation_upsert_${operation.id}_${operation.record.updatedAt}`,
+        actor
+      });
+    }
     updateQueued(tenantId, operation.id);
     return true;
   } catch {
@@ -154,11 +156,18 @@ async function pushOperation(tenantId: string, operation: OutboxOperation): Prom
 
 async function syncPending(tenantId: string): Promise<void> {
   if (!canUseDatabase(tenantId)) return;
+  lastOutboxTenantId = tenantId;
   // Keep order: a later update/delete for an ID supersedes earlier queued writes.
   for (const operation of readOutbox(tenantId)) {
     const succeeded = await pushOperation(tenantId, operation);
     if (!succeeded) break;
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    if (lastOutboxTenantId) void syncPending(lastOutboxTenantId);
+  });
 }
 
 async function fetchCanonical(tenantId: string): Promise<TableReservation[] | null> {
@@ -180,6 +189,21 @@ function applyMutationToCache(tenantId: string, reservation: TableReservation): 
   const cache = readCache(tenantId).filter(item => item.id !== reservation.id);
   cache.push(reservation);
   writeCache(tenantId, cache);
+}
+
+function createOutboxBase(
+  tenantId: string,
+  id: string,
+  operationKind: 'upsert' | 'delete',
+  updatedAt = nowIso()
+): OutboxOperationBase {
+  const actor = currentServerWriteActor();
+  return {
+    id,
+    operationId: `reservation_${operationKind}_${tenantId}_${id}_${Date.parse(updatedAt) || Date.now()}`.slice(0, 160),
+    actorUserId: actor?.actorUserId || null,
+    actorEmployeeId: actor?.actorEmployeeId || null
+  };
 }
 
 export async function loadTableReservations(tenantId: string): Promise<TableReservation[]> {
@@ -215,8 +239,9 @@ export async function createTableReservation(
     updatedAt: timestamp
   };
   applyMutationToCache(tenantId, reservation);
-  enqueue(tenantId, { id: reservation.id, kind: 'upsert', record: reservation });
-  if (await pushOperation(tenantId, { id: reservation.id, kind: 'upsert', record: reservation })) {
+  const operation: OutboxOperation = { ...createOutboxBase(tenantId, reservation.id, 'upsert', reservation.updatedAt), kind: 'upsert', record: reservation };
+  enqueue(tenantId, operation);
+  if (await pushOperation(tenantId, operation)) {
     const canonical = await fetchCanonical(tenantId);
     if (canonical) writeCache(tenantId, overlayPending(canonical, readOutbox(tenantId)));
   }
@@ -229,8 +254,9 @@ export async function updateTableReservation(
 ): Promise<TableReservation> {
   const updated = { ...reservation, tenantId, updatedAt: nowIso() };
   applyMutationToCache(tenantId, updated);
-  enqueue(tenantId, { id: updated.id, kind: 'upsert', record: updated });
-  if (await pushOperation(tenantId, { id: updated.id, kind: 'upsert', record: updated })) {
+  const operation: OutboxOperation = { ...createOutboxBase(tenantId, updated.id, 'upsert', updated.updatedAt), kind: 'upsert', record: updated };
+  enqueue(tenantId, operation);
+  if (await pushOperation(tenantId, operation)) {
     const canonical = await fetchCanonical(tenantId);
     if (canonical) writeCache(tenantId, overlayPending(canonical, readOutbox(tenantId)));
   }
@@ -239,8 +265,9 @@ export async function updateTableReservation(
 
 export async function deleteTableReservation(tenantId: string, reservationId: string): Promise<void> {
   writeCache(tenantId, readCache(tenantId).filter(item => item.id !== reservationId));
-  enqueue(tenantId, { id: reservationId, kind: 'delete' });
-  await pushOperation(tenantId, { id: reservationId, kind: 'delete' });
+  const operation: OutboxOperation = { ...createOutboxBase(tenantId, reservationId, 'delete'), kind: 'delete' };
+  enqueue(tenantId, operation);
+  await pushOperation(tenantId, operation);
 }
 
 export async function syncPendingTableReservations(tenantId: string): Promise<void> {

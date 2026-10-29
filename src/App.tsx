@@ -35,6 +35,7 @@ import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { posCloudService, SaleCloudPayload } from './services/posCloudService';
+import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -155,6 +156,10 @@ function mergeTenantZones(...lists: Array<string[] | null | undefined>): string[
   return Array.from(new Set(lists.flatMap(list => Array.isArray(list) ? list : [])
     .map(zone => zone.trim())
     .filter(Boolean)));
+}
+
+function redactEmployeePins(staff: UserProfile[]): UserProfile[] {
+  return staff.map(member => withoutEmployeePin(member) as UserProfile);
 }
 
 function syncTenantZonesWithServer(zones: string[]): void {
@@ -331,6 +336,11 @@ export function App() {
         const data = await res.json();
 
         if (res.ok && data.success) {
+          try {
+            localStorage.setItem('saborai_account_user_id', String(data.accountUserId || data.user.id));
+            if (data.employeeSession && data.employeeId) localStorage.setItem('saborai_employee_id', String(data.employeeId));
+            else localStorage.removeItem('saborai_employee_id');
+          } catch {}
           setActiveTenantId(data.tenant.id);
           migrateLegacyDataToTenant(data.tenant.id);
           cashShiftService.setTenantContext(data.tenant.id);
@@ -383,7 +393,10 @@ export function App() {
           setTenant(tenantObj);
           setMenuItems(getTenantItem<MenuItem[]>('menu', tenantObj.id) || []);
           setTables(normalizeTablePositions(getTenantItem<Table[]>('tables', tenantObj.id) || []));
-          setStaffList(getTenantItem<UserProfile[]>('staff', tenantObj.id) || [effectiveUser]);
+          const cachedStaff = getTenantItem<UserProfile[]>('staff', tenantObj.id) || [effectiveUser];
+          const effectiveStaff = data.employeeSession ? redactEmployeePins(cachedStaff) : cachedStaff;
+          setStaffList(effectiveStaff);
+          if (data.employeeSession) setTenantItem('staff', effectiveStaff, tenantObj.id);
           setSubscription(sub);
           persistSubscription(sub, tenantObj.id);
           try {
@@ -396,6 +409,8 @@ export function App() {
         } else {
           // Token invalid or expired
           localStorage.removeItem('saborai_token');
+          localStorage.removeItem('saborai_account_user_id');
+          localStorage.removeItem('saborai_employee_id');
         }
       } catch (err) {
         console.error('Failed to validate session', err);
@@ -527,12 +542,13 @@ export function App() {
   };
 
   const handleUpdateStaff = (newStaff: UserProfile[], skipBroadcast = false) => {
-    setStaffList(newStaff);
+    const staffForStorage = isCloudTenantUuid(tenant.id) ? redactEmployeePins(newStaff) : newStaff;
+    setStaffList(staffForStorage);
     if (!skipBroadcast && broadcastStaffRef.current) {
-      broadcastStaffRef.current(newStaff);
+      broadcastStaffRef.current(staffForStorage);
     }
     try {
-      setTenantItem('staff', newStaff, tenant.id);
+      setTenantItem('staff', staffForStorage, tenant.id);
     } catch {}
   };
 
@@ -780,16 +796,38 @@ export function App() {
     return [adminUser];
   });
 
-  const handleAddStaffMember = (newMember: UserProfile) => {
+  const handleAddStaffMember = async (newMember: UserProfile) => {
     const updated = [newMember, ...staffList];
+    if (isCloudTenantUuid(tenant.id)) {
+      if (currentUser?.role !== 'ADMIN') throw new Error('Solo un administrador puede sincronizar colaboradores.');
+      await syncEmployeeRoster(tenant.id, updated);
+      handleUpdateStaff(redactEmployeePins(updated));
+      return;
+    }
     handleUpdateStaff(updated);
   };
 
-  const handleSelectUser = (user: UserProfile) => {
+  const activateStaffSession = async (staff: UserProfile, pin?: string): Promise<UserProfile> => {
+    let user = staff;
+    if (isCloudTenantUuid(tenant.id)) {
+      const session = await createEmployeeSession(tenant.id, staff.id, pin);
+      user = session.user;
+      localStorage.setItem('saborai_token', session.token);
+      localStorage.setItem('saborai_account_user_id', session.accountUserId);
+      localStorage.setItem('saborai_employee_id', session.employeeId);
+      if (staffList.some(member => Boolean(member.pin))) {
+        handleUpdateStaff(redactEmployeePins(staffList));
+      }
+    }
     setCurrentUser(user);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
     } catch {}
+    return user;
+  };
+
+  const handleSelectUser = async (staff: UserProfile) => {
+    const user = await activateStaffSession(staff);
 
     // Cambiar de colaborador no abre ni reemplaza el turno de caja activo.
     // Solo registra al usuario como participante del mismo turno.
@@ -798,10 +836,14 @@ export function App() {
       broadcastShifts(cashShiftService.getAllActiveShiftsMap());
     }
     setShiftsVersion(v => v + 1);
+    return user;
   };
 
-  const handleSwitchWaiter = (staff: UserProfile) => {
-    handleSelectUser(staff);
+  const handleSwitchWaiter = async (staff: UserProfile, pin?: string): Promise<UserProfile> => {
+    const user = await activateStaffSession(staff, pin);
+    const activeShift = cashShiftService.registerUserOnActiveShift(user);
+    if (activeShift) broadcastShifts(cashShiftService.getAllActiveShiftsMap());
+    setShiftsVersion(v => v + 1);
 
     // If currently editing/taking order on a table, update server immediately
     if (selectedTableForOrder) {
@@ -814,7 +856,7 @@ export function App() {
             subAccounts: [{ id: 1, name: 'Cuenta 1' }],
             items: []
           }),
-          server: staff.name
+          server: user.name
         }
       };
       setSelectedTableForOrder(updatedTable);
@@ -825,11 +867,41 @@ export function App() {
       id: `switch_${Date.now()}`,
       type: 'ORDER_READY',
       title: 'Usuario cambiado',
-      message: `${staff.name} se incorporó al turno activo. El turno de caja continúa abierto.`,
-      server: staff.name,
+      message: `${user.name} se incorporó al turno activo. El turno de caja continúa abierto.`,
+      server: user.name,
       timestamp: new Date()
     });
+    return user;
   };
+
+  const employeeRosterSyncRef = useRef<string>('');
+  const employeeRosterUserId = currentUser?.id;
+  const employeeRosterRole = currentUser?.role;
+  useEffect(() => {
+    if (isLoadingAuth || !employeeRosterUserId || !isCloudTenantUuid(tenant.id)) return;
+    const token = localStorage.getItem('saborai_token');
+    if (!token) return;
+    const syncKey = `${tenant.id}:${token}`;
+    if (employeeRosterSyncRef.current === syncKey) return;
+    employeeRosterSyncRef.current = syncKey;
+
+    const migration = employeeRosterRole === 'ADMIN'
+      ? syncEmployeeRoster(tenant.id, staffList)
+      : Promise.resolve();
+    void migration
+      .then(() => fetchEmployeeRoster(tenant.id))
+      .then(serverStaff => {
+        const serverHasEmployees = serverStaff.length > 1;
+        const effectiveStaff = serverHasEmployees
+          ? serverStaff
+          : [serverStaff[0], ...staffList.filter(member => member.id !== serverStaff[0]?.id)];
+        handleUpdateStaff(redactEmployeePins(effectiveStaff));
+      })
+      .catch(error => {
+        employeeRosterSyncRef.current = '';
+        console.warn('[POS] No se pudo cargar o sincronizar el padrón de colaboradores:', error);
+      });
+  }, [isLoadingAuth, employeeRosterUserId, employeeRosterRole, tenant.id, staffList, handleUpdateStaff]);
 
   // Network & Sync state
   const [isOnline, setIsOnline] = useState<boolean>(true);
@@ -966,7 +1038,7 @@ export function App() {
         tenant,
         menuItems,
         tables,
-        staff: staffList,
+        staff: isCloudTenantUuid(tenant.id) ? redactEmployeePins(staffList) : staffList,
         kdsOrders
       });
     }, 350);
@@ -1001,6 +1073,8 @@ export function App() {
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
       localStorage.setItem('saborai_tenant', JSON.stringify(restoredTenant));
+      localStorage.setItem('saborai_account_user_id', user.id);
+      localStorage.removeItem('saborai_employee_id');
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
       setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
       syncTenantZonesWithServer(restoredTenant.zones || []);
@@ -1034,9 +1108,12 @@ export function App() {
 
   const handleLogout = () => {
     try {
+      void supabaseClient?.auth.signOut().catch(() => {});
       localStorage.removeItem('saborai_user');
       localStorage.removeItem('saborai_token');
       localStorage.removeItem('saborai_tenant');
+      localStorage.removeItem('saborai_account_user_id');
+      localStorage.removeItem('saborai_employee_id');
     } catch {}
     setCurrentUser(null);
   };
@@ -1044,6 +1121,8 @@ export function App() {
   const handleStartDemo = (plan: SubscriptionPlan) => {
     const demoTenantId = `tenant_demo_${Date.now()}`;
     startCleanDemoSession(demoTenantId);
+    localStorage.removeItem('saborai_account_user_id');
+    localStorage.removeItem('saborai_employee_id');
     cashShiftService.setTenantContext(demoTenantId);
     printerService.setTenantContext(demoTenantId);
     setMenuItems([]);
@@ -1690,6 +1769,7 @@ export function App() {
                   onSplitBill={handleSplitBill}
                   isAdmin={currentUser?.role === 'ADMIN'}
                   currentUser={currentUser}
+                  onAuthenticateStaff={handleSwitchWaiter}
                   staffList={staffList}
                   tenant={tenant}
                   onUpdateTenant={handleUpdateTenant}
@@ -1836,7 +1916,8 @@ export function App() {
         onClose={() => setIsQuickSwitchOpen(false)}
         staffList={staffList}
         currentUser={currentUser}
-        onSwitchUser={handleSwitchWaiter}
+        tenantId={tenant.id}
+        onSwitchUser={async (staff, pin) => { await handleSwitchWaiter(staff, pin); }}
         onAddStaffMember={handleAddStaffMember}
         restaurantName={tenant.name}
       />

@@ -23,14 +23,16 @@ import {
 } from 'lucide-react';
 import { UserProfile, UserRole } from '../types';
 import { soundService } from '../services/soundEffects';
+import { isCloudTenantId } from '../services/employeeSessionService';
 
 interface QuickWaiterSwitchModalProps {
   isOpen: boolean;
   onClose: () => void;
   staffList: UserProfile[];
   currentUser: UserProfile | null;
-  onSwitchUser: (staff: UserProfile) => void;
-  onAddStaffMember?: (newMember: UserProfile) => void;
+  tenantId: string;
+  onSwitchUser: (staff: UserProfile, pin?: string) => void | Promise<void>;
+  onAddStaffMember?: (newMember: UserProfile) => void | Promise<void>;
   restaurantName?: string;
 }
 
@@ -39,6 +41,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
   onClose,
   staffList,
   currentUser,
+  tenantId,
   onSwitchUser,
   onAddStaffMember,
   restaurantName = 'SaborAI Restaurant'
@@ -86,11 +89,12 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isErrorShake, setIsErrorShake] = useState<boolean>(false);
   const [isSuccess, setIsSuccess] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   // New Quick User Form state
   const [newName, setNewName] = useState<string>('');
   const [newRole, setNewRole] = useState<UserRole>('SALONERO');
-  const [newPin, setNewPin] = useState<string>('1234');
+  const [newPin, setNewPin] = useState<string>('');
   const [newPhone, setNewPhone] = useState<string>('');
   const [newFormError, setNewFormError] = useState<string | null>(null);
 
@@ -101,9 +105,11 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
       setErrorMessage(null);
       setIsErrorShake(false);
       setIsSuccess(false);
+      setIsVerifying(false);
       setSearchTerm('');
       setModalTab('switch');
       setNewFormError(null);
+      setNewPin('');
       if (defaultSelected) {
         setSelectedStaff(defaultSelected);
       }
@@ -111,7 +117,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
   }, [isOpen, defaultSelected]);
 
   const handleDigit = (digit: string) => {
-    if (isSuccess) return;
+    if (isSuccess || isVerifying) return;
     if (pin.length < 4) {
       soundService.playKeyClickSound();
       const nextPin = pin + digit;
@@ -126,66 +132,68 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
   };
 
   const handleBackspace = () => {
-    if (isSuccess) return;
+    if (isSuccess || isVerifying) return;
     soundService.playKeyClickSound();
     setPin(prev => prev.slice(0, -1));
     setErrorMessage(null);
   };
 
   const handleClear = () => {
-    if (isSuccess) return;
+    if (isSuccess || isVerifying) return;
     soundService.playKeyClickSound();
     setPin('');
     setErrorMessage(null);
   };
 
-  const handleInstantSwitch = (staff: UserProfile) => {
+  const handleInstantSwitch = async (staff: UserProfile) => {
     if (!canUseFastMode) {
       setErrorMessage('Solo un administrador puede entrar sin PIN.');
       return;
     }
-    soundService.playSuccessChime();
-    setIsSuccess(true);
     setSelectedStaff(staff);
-    setTimeout(() => {
-      onSwitchUser(staff);
-      onClose();
-    }, 350);
+    setIsVerifying(true);
+    try {
+      await onSwitchUser(staff);
+      soundService.playSuccessChime();
+      setIsSuccess(true);
+      setTimeout(onClose, 350);
+    } catch (error: any) {
+      setErrorMessage(error?.message || 'No se pudo iniciar la sesión del colaborador.');
+      setIsVerifying(false);
+    }
   };
 
-  const validatePin = (inputPin: string) => {
+  const validatePin = async (inputPin: string) => {
     if (!selectedStaff) {
       setErrorMessage('Selecciona primero al colaborador');
       return;
     }
 
-    const expectedPin = selectedStaff.pin || '1234';
-
-    if (inputPin === expectedPin) {
-      // Success!
+    setIsVerifying(true);
+    try {
+      if (!isCloudTenantId(tenantId) && inputPin !== (selectedStaff.pin || '1234')) {
+        throw new Error('PIN incorrecto. Intenta de nuevo.');
+      }
+      await onSwitchUser(selectedStaff, inputPin);
       soundService.playSuccessChime();
       setIsSuccess(true);
       setErrorMessage(null);
-
-      setTimeout(() => {
-        onSwitchUser(selectedStaff);
-        onClose();
-      }, 400);
-    } else {
-      // Failure
+      setTimeout(onClose, 400);
+    } catch (error: any) {
       soundService.playErrorBuzz();
-      setErrorMessage('PIN incorrecto. Intenta de nuevo.');
+      setErrorMessage(error?.message || 'No se pudo validar el PIN. Intenta de nuevo.');
       setIsErrorShake(true);
       setTimeout(() => {
         setIsErrorShake(false);
         setPin('');
+        setIsVerifying(false);
       }, 450);
     }
   };
 
   // Keyboard navigation & numpad handler (for PIN tab)
   useEffect(() => {
-    if (!isOpen || isSuccess || modalTab !== 'switch') return;
+    if (!isOpen || isSuccess || isVerifying || modalTab !== 'switch') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in the search input
@@ -206,7 +214,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, pin, selectedStaff, isSuccess, modalTab]);
+  }, [isOpen, pin, selectedStaff, isSuccess, isVerifying, modalTab]);
 
   if (!isOpen) return null;
 
@@ -222,7 +230,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
 
 
   // Handle Quick Create User
-  const handleCreateQuickUserSubmit = (e: React.FormEvent) => {
+  const handleCreateQuickUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setNewFormError(null);
 
@@ -236,8 +244,13 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
       soundService.playErrorBuzz();
       return;
     }
+    if (!/^\d{4}$/.test(newPin)) {
+      setNewFormError('Define un PIN único de cuatro dígitos o genera uno al azar.');
+      soundService.playErrorBuzz();
+      return;
+    }
 
-    const formattedPin = (newPin || '1234').padStart(4, '0').slice(0, 4);
+    const formattedPin = newPin;
 
     const newMember: UserProfile = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -250,13 +263,14 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
       active: true
     };
 
-    if (onAddStaffMember) {
-      onAddStaffMember(newMember);
+    try {
+      if (onAddStaffMember) await onAddStaffMember(newMember);
+      await onSwitchUser(newMember);
+      soundService.playSuccessChime();
+      onClose();
+    } catch (error: any) {
+      setNewFormError(error?.message || 'No se pudo registrar o activar al colaborador.');
     }
-
-    soundService.playSuccessChime();
-    onSwitchUser(newMember);
-    onClose();
   };
 
   const generateRandomPin = () => {
@@ -778,9 +792,11 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                   type="text"
                   maxLength={4}
                   required
+                  inputMode="numeric"
+                  pattern="[0-9]{4}"
                   value={newPin}
                   onChange={(e) => setNewPin(e.target.value.replace(/[^0-9]/g, '').slice(0, 4))}
-                  placeholder="1234"
+                  placeholder="4 dígitos"
                   className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-center text-base font-mono font-black text-stone-900 tracking-widest focus:bg-white focus:ring-2 focus:ring-stone-900 outline-none"
                 />
               </div>

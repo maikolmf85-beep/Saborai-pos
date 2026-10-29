@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 import dotenv from 'dotenv';
-import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
 
 try {
   dotenv.config();
@@ -29,6 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const auth = await requireAuth(req, res);
   if (!auth) return;
+  if (!requireRole(auth, res, ['ADMIN', 'CAJERO'])) return;
 
   const {
     to,

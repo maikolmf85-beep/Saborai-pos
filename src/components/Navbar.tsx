@@ -281,7 +281,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span
                     aria-label={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
                     title={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
-                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse shadow-[0_0_7px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`}
+                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse shadow-[0_0_7px_rgba(52,211,153,0.8)]' : 'bg-red-500'}`}
                   />
                   <span className="text-[10px] font-bold text-emerald-400 uppercase">Gestionar</span>
                 </button>
