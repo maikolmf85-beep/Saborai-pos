@@ -21,9 +21,6 @@ import {
   Calculator,
   Menu,
   X,
-  ChevronUp,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
@@ -464,7 +461,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <div className={`p-1 rounded-xl transition-all ${mobileMenuOpen ? 'bg-[#a9b994]/20 scale-105' : ''}`}>
-              {mobileMenuOpen ? <ChevronUp className="w-5 h-5 text-[#a9b994]" /> : <Menu className="w-5 h-5" />}
+              {mobileMenuOpen ? <X className="w-5 h-5 text-[#a9b994]" /> : <Menu className="w-5 h-5" />}
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">
               {mobileMenuOpen ? 'Cerrar' : 'Más'}
@@ -477,37 +474,20 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* 2. ESCRITORIO / TABLET: SIDEBAR VERTICAL ORIGINAL        */}
       {/* ======================================================== */}
       <aside
-        onMouseEnter={(event) => {
-          const target = event.target;
-          const enteredOnToggle = target instanceof Element && target.closest('[data-sidebar-toggle]');
-          if (isSidebarCollapsed && !enteredOnToggle) onToggleSidebar(false);
+        onMouseEnter={() => {
+          if (isSidebarCollapsed) onToggleSidebar(false);
         }}
         onMouseLeave={() => {
           if (!isSidebarCollapsed) onToggleSidebar(true);
         }}
-        className={`hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-black text-[#fcfeff] flex-col justify-between items-start py-2 border-r border-white/10 shadow-[8px_0_32px_rgba(0,0,0,0.32)] z-50 overflow-y-auto overflow-x-hidden transition-[width,box-shadow,border-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none scrollbar-none`}
+        className={`group/sidebar hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-black text-[#fcfeff] flex-col justify-between items-start py-2 border-r border-white/10 shadow-[8px_0_32px_rgba(0,0,0,0.32)] z-50 overflow-y-auto overflow-x-hidden transition-[width,box-shadow,border-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none scrollbar-none`}
         aria-label="Navegación vertical SaborAI POS"
         data-sidebar-state={isSidebarCollapsed ? 'collapsed' : 'expanded'}
       >
         {/* Top Group: Brand Logo & Operational Modules */}
         <div className="w-full h-auto flex flex-col items-start gap-0">
-          <div className="mb-1 flex w-full justify-end px-2">
-            <button
-              type="button"
-              onClick={() => onToggleSidebar(!isSidebarCollapsed)}
-              aria-label={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
-              aria-expanded={!isSidebarCollapsed}
-              aria-controls="desktop-primary-navigation"
-              data-sidebar-toggle
-              title={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-stone-300 transition-colors duration-200 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994] motion-reduce:transition-none cursor-pointer"
-            >
-              {isSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
-            </button>
-          </div>
-
           {/* Brand Isotype / Logo */}
-          <div className="flex w-full items-center px-2 mb-3">
+          <div className="flex w-full items-center px-2 mb-2">
             <button
               type="button"
               onClick={() => setActiveTab('pos')}
@@ -680,16 +660,23 @@ export const Navbar: React.FC<NavbarProps> = ({
               id="nav-copilot-btn"
               type="button"
               onClick={onOpenCopilot}
-              className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/35 hover:bg-[#a9b994]/25 hover:text-white transition-all duration-200 cursor-pointer"
+              aria-label="Abrir Nyza Copilot IA"
+              className={`min-w-0 rounded-2xl flex items-center bg-[#a9b994]/15 text-[#a9b994] border border-[#a9b994]/35 hover:bg-[#a9b994]/25 hover:text-white transition-all duration-200 cursor-pointer ${isSidebarCollapsed ? 'w-full h-14 flex-col justify-center gap-0 px-0' : 'flex-1 h-11 justify-start px-2.5'}`}
               title="Abrir Nyza Copilot IA"
             >
               <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
                 <Sparkles className="w-5 h-5 text-[#a9b994]" />
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400 border border-stone-950" />
               </div>
-              <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-36 transition-all duration-300 delay-75">
-                <span className="text-sm font-bold text-white">Nyza Copilot</span>
-                <span className="text-[10px] text-[#a9b994] block truncate">Asistente & Autodiagnóstico</span>
+              <div className={`flex flex-col items-start overflow-hidden whitespace-nowrap transition-all duration-300 delay-75 ${isSidebarCollapsed ? 'mt-0.5 w-full items-center text-[9px] font-bold leading-none text-white opacity-100' : 'ml-3 min-w-0 w-36 opacity-100'}`}>
+                {isSidebarCollapsed ? (
+                  <span>Nyza</span>
+                ) : (
+                  <>
+                    <span className="text-sm font-bold text-white">Nyza Copilot</span>
+                    <span className="text-[10px] text-[#a9b994] block truncate">Asistente & Autodiagnóstico</span>
+                  </>
+                )}
               </div>
             </button>
 
@@ -698,7 +685,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="nav-nyza-hub-btn"
                 type="button"
                 onClick={onOpenNyzaHub}
-                className="hidden group-hover/sidebar:flex shrink-0 w-9 h-11 rounded-2xl bg-stone-900 hover:bg-stone-800 border border-stone-800 text-[#a9b994] items-center justify-center transition-all cursor-pointer"
+                aria-label="Abrir centro de aprendizaje de Nyza"
+                className={`shrink-0 w-9 h-11 rounded-2xl bg-stone-900 hover:bg-stone-800 border border-stone-800 text-[#a9b994] items-center justify-center transition-all cursor-pointer ${isSidebarCollapsed ? 'hidden' : 'flex'}`}
                 title="Centro de Aprendizaje Global Nyza IA"
               >
                 <BrainCircuit className="w-4 h-4" />
@@ -708,16 +696,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Barra Compacta de Estado (Wi-Fi, Sonido y Régimen) */}
           <div className="w-full px-2">
-            <div className="w-full rounded-2xl bg-stone-900/90 border border-stone-800/80 p-1.5 flex flex-col group-hover/sidebar:flex-row items-center justify-between gap-1">
+            <div className={`w-full rounded-2xl bg-stone-900/90 border border-stone-800/80 p-1.5 flex items-center justify-between gap-1 ${isSidebarCollapsed ? 'flex-col' : 'flex-row'}`}>
               <button
                 id="nav-network-btn"
                 type="button"
                 onClick={onOpenOfflineModal}
-                className="relative w-full group-hover/sidebar:flex-1 h-8 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors cursor-pointer"
+                aria-label={isOnline ? 'Conectado; ver cola de sincronización' : 'Sin conexión; ver cola de sincronización'}
+                className={`relative min-w-0 h-8 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors cursor-pointer ${isSidebarCollapsed ? 'w-full' : 'flex-1'}`}
                 title={isOnline ? "Conectado a la nube (Clic para ver cola)" : "Modo Local Offline"}
               >
                 {isOnline ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" /> : <WifiOff className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />}
-                <span className="hidden group-hover/sidebar:inline text-[11px] text-stone-300 truncate">
+                <span className={`${isSidebarCollapsed ? 'hidden' : 'inline'} text-[11px] text-stone-300 truncate`}>
                   {isOnline ? 'Online' : 'Offline'}
                 </span>
                 {pendingCount > 0 && (
@@ -731,10 +720,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                 id="nav-sound-btn"
                 type="button"
                 onClick={onToggleMute}
-                className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-xs transition-colors cursor-pointer"
-                title={isMuted ? "Sonidos silenciados" : "Sonidos activos"}
+                aria-label={isMuted ? 'Activar sonidos de la aplicación' : 'Silenciar sonidos de la aplicación'}
+                aria-pressed={!isMuted}
+                className={`h-9 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1 text-xs transition-colors cursor-pointer ${isSidebarCollapsed ? 'w-full flex-col gap-0' : 'flex-1 px-2.5'}`}
+                title={isMuted ? "Activar sonidos de la aplicación" : "Silenciar sonidos de la aplicación"}
               >
                 {isMuted ? <VolumeX className="w-4 h-4 text-stone-500" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                <span className={isSidebarCollapsed ? 'text-[9px] leading-none text-stone-300' : 'text-[10px] text-stone-300'}>Sonido</span>
               </button>
 
               {user?.role === 'ADMIN' && (
@@ -742,11 +734,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   id="nav-regime-btn"
                   type="button"
                   onClick={onOpenSettings}
-                  className="hidden group-hover/sidebar:flex h-8 px-2.5 rounded-xl hover:bg-stone-800 items-center justify-center gap-1 text-[10px] font-bold text-stone-300 transition-colors cursor-pointer"
+                  aria-label={tenant.taxRegime === 'SIMPLIFIED' ? 'Régimen fiscal simplificado, IVA 0%' : 'Régimen fiscal tradicional, IVA 13%'}
+                  className={`h-9 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1 text-[10px] font-bold text-stone-300 transition-colors cursor-pointer ${isSidebarCollapsed ? 'w-full flex-col gap-0 px-0 text-[9px] leading-none' : 'flex-1 px-2.5'}`}
                   title={tenant.taxRegime === 'SIMPLIFIED' ? "Régimen Simplificado (0% IVA)" : "Régimen Tradicional (13% IVA)"}
                 >
                   <Building2 className="w-3.5 h-3.5 text-[#a9b994]" />
-                  <span>{tenant.taxRegime === 'SIMPLIFIED' ? 'Simp.' : '13%'}</span>
+                  <span>{isSidebarCollapsed ? (tenant.taxRegime === 'SIMPLIFIED' ? '0%' : '13%') : (tenant.taxRegime === 'SIMPLIFIED' ? 'IVA 0%' : 'IVA 13%')}</span>
                 </button>
               )}
             </div>

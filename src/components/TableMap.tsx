@@ -511,30 +511,30 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   return (
-    <div className="tour-table-map w-full h-full flex flex-col p-2.5 sm:p-3.5 gap-2.5 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
+    <div className="tour-table-map w-full h-full flex flex-col p-2 sm:p-3 gap-2 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
       {/* Encabezado superior y barra de controles agrupados */}
-      <header className="shrink-0 rounded-2xl border border-stone-200 bg-white p-3 shadow-xs sm:p-4">
-        <div className="flex flex-col gap-4">
+      <header className="shrink-0 rounded-2xl border border-stone-200 bg-white p-2.5 shadow-xs sm:p-3">
+        <div className="flex flex-col gap-2.5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-xl font-black tracking-tight text-stone-900 sm:text-2xl">Plano del Salón</h1>
-                <span className="rounded-full border border-[#a9b994]/50 bg-[#a9b994]/15 px-2.5 py-1 text-xs font-black text-[#3b3733]">
+                <h1 className="text-lg font-black tracking-tight text-stone-900 sm:text-xl">Plano del Salón</h1>
+                <span className="rounded-full border border-[#a9b994]/50 bg-[#a9b994]/15 px-2 py-0.5 text-[11px] font-black text-[#3b3733]">
                   {filteredTables.length} {filteredTables.length === 1 ? 'mesa' : 'mesas'}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-stone-500">
+              <p className="mt-0.5 text-[11px] text-stone-500">
                 {tenantZones.length > 0 ? `Salón seleccionado: ${selectedZone}` : 'Organiza las mesas y crea salones para tu restaurante.'}
               </p>
             </div>
 
-            <div className="grid w-full grid-cols-2 gap-2 text-xs font-bold sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+            <div className="grid w-full grid-cols-2 gap-1.5 text-[11px] font-bold sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
               <button
                 type="button"
                 onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
                 aria-pressed={statusFilter === 'AVAILABLE'}
-                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-center transition-all cursor-pointer sm:min-h-10 ${
+                className={`flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-center transition-all cursor-pointer sm:min-h-9 ${
                   statusFilter === 'AVAILABLE'
                     ? 'border-emerald-700 bg-emerald-600 text-white shadow-xs'
                     : 'border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
@@ -548,7 +548,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 type="button"
                 onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
                 aria-pressed={statusFilter === 'OCCUPIED'}
-                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-center transition-all cursor-pointer sm:min-h-10 ${
+                className={`flex min-h-10 items-center justify-center gap-1.5 rounded-lg border px-2 py-1.5 text-center transition-all cursor-pointer sm:min-h-9 ${
                   statusFilter === 'OCCUPIED'
                     ? 'border-[#3b3733] bg-[#3b3733] text-white shadow-xs'
                     : 'border-[#a9b994] bg-[#e7eee2] text-[#3b3733] hover:bg-[#dce7d5]'
@@ -562,13 +562,13 @@ export const TableMap: React.FC<TableMapProps> = ({
                 <button
                   type="button"
                   onClick={() => setStatusFilter('ALL')}
-                  className="col-span-2 flex min-h-11 items-center justify-center rounded-lg bg-stone-100 px-2.5 py-2 text-center text-[11px] font-bold text-stone-700 transition-colors hover:bg-stone-200 cursor-pointer sm:col-span-1 sm:min-h-10"
+                  className="col-span-2 flex min-h-10 items-center justify-center rounded-lg bg-stone-100 px-2 py-1.5 text-center text-[10px] font-bold text-stone-700 transition-colors hover:bg-stone-200 cursor-pointer sm:col-span-1 sm:min-h-9"
                   title="Mostrar todas las mesas"
                 >
                   Ver todas
                 </button>
               )}
-              <span className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 text-center text-stone-800 sm:col-span-1 sm:min-h-10" title="Ventas en curso">
+              <span className="col-span-2 flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2 py-1.5 text-center text-stone-800 sm:col-span-1 sm:min-h-9" title="Ventas en curso">
                 <CreditCard className="h-3.5 w-3.5 text-[#588157]" />
                 <span>En curso: ₡{totalSalesInProgress.toLocaleString()}</span>
               </span>
@@ -577,12 +577,12 @@ export const TableMap: React.FC<TableMapProps> = ({
 
           <div className="h-px bg-stone-100" />
 
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+          <div className="flex flex-col gap-2.5 xl:flex-row xl:items-end xl:justify-between">
             <div className="flex min-w-0 flex-col gap-1.5">
-              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">Salones</span>
-              <div className="flex max-w-full flex-wrap items-center gap-2">
+              <span className="text-[9px] font-black uppercase tracking-[0.14em] text-stone-400">Salones</span>
+              <div className="flex max-w-full flex-wrap items-center gap-1.5">
                 {effectiveZones.length === 0 ? (
-                  <span className="rounded-lg border border-dashed border-stone-200 px-3 py-1.5 text-xs text-stone-400">
+                  <span className="rounded-lg border border-dashed border-stone-200 px-2.5 py-1.5 text-[11px] text-stone-400">
                     Sin salones configurados
                   </span>
                 ) : (
@@ -592,7 +592,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                       type="button"
                       onClick={() => setSelectedZone(zone)}
                       aria-pressed={selectedZone === zone}
-                      className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition-all cursor-pointer sm:min-h-10 ${
+                      className={`min-h-10 shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition-all cursor-pointer sm:min-h-9 ${
                         selectedZone === zone
                           ? 'bg-[#3b3733] text-white shadow-xs'
                           : 'border border-stone-200 bg-white text-stone-600 hover:border-[#a9b994] hover:bg-[#a9b994]/10 hover:text-stone-900'
@@ -611,7 +611,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsZoneModalOpen(true)}
-                    className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-3 py-2 text-xs font-bold text-[#3b3733] transition-colors hover:bg-[#a9b994]/30 cursor-pointer sm:min-h-10"
+                    className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-2.5 py-1.5 text-[11px] font-bold text-[#3b3733] transition-colors hover:bg-[#a9b994]/30 cursor-pointer sm:min-h-9"
                     title="Añadir o quitar salones"
                   >
                     <Pencil className="h-3.5 w-3.5 text-[#588157]" />
@@ -621,14 +621,14 @@ export const TableMap: React.FC<TableMapProps> = ({
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:flex-wrap xl:items-center xl:justify-end">
+            <div className="flex w-full flex-col gap-2.5 xl:w-auto xl:flex-row xl:flex-wrap xl:items-center xl:justify-end">
               {isAdmin && (
-                <div className="grid w-full grid-cols-2 items-stretch gap-2 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
+                <div className="grid w-full grid-cols-2 items-stretch gap-1.5 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
                   <button
                     type="button"
                     onClick={() => setIsEditMode(!isEditMode)}
                     aria-pressed={isEditMode}
-                    className={`flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold transition-all cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs ${
+                    className={`flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px] ${
                       isEditMode
                         ? 'border-[#a9b994] bg-[#a9b994] text-[#3b3733] shadow-xs'
                         : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
@@ -646,7 +646,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                       setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
                       setShowAddModal(true);
                     }}
-                    className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl bg-[#3b3733] px-2 py-2 text-center text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                    className="flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl bg-[#3b3733] px-2 py-1.5 text-center text-[10px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px]"
                   >
                     <Plus className="h-3.5 w-3.5 text-[#a9b994]" />
                     <span>Agregar mesa</span>
@@ -654,12 +654,12 @@ export const TableMap: React.FC<TableMapProps> = ({
                 </div>
               )}
 
-              <div className="grid w-full grid-cols-2 items-stretch gap-2 sm:grid-cols-3 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
+              <div className="grid w-full grid-cols-2 items-stretch gap-1.5 sm:grid-cols-3 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
                 <button
                   type="button"
                   onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
                   aria-pressed={showDetailsDrawer}
-                  className={`flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold transition-all cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs ${
+                  className={`flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px] ${
                     showDetailsDrawer
                       ? 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
                       : 'border-[#a9b994] bg-[#a9b994]/20 text-stone-950'
@@ -674,7 +674,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   type="button"
                   onClick={toggleFullscreen}
                   aria-pressed={isFullscreen}
-                  className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-800 bg-stone-900 px-2 py-2 text-center text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                  className="flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-800 bg-stone-900 px-2 py-1.5 text-center text-[10px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px]"
                   title={isFullscreen ? 'Salir del modo pantalla completa' : 'Activar pantalla completa'}
                 >
                   {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-[#a9b994]" /> : <Maximize2 className="h-3.5 w-3.5 text-[#a9b994]" />}
@@ -684,7 +684,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsReservationsOpen(true)}
-                  className="col-span-2 flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-2 py-2 text-center text-[11px] font-bold text-violet-900 transition-colors hover:bg-violet-100 cursor-pointer sm:col-span-1 xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                  className="col-span-2 flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-2 py-1.5 text-center text-[10px] font-bold text-violet-900 transition-colors hover:bg-violet-100 cursor-pointer sm:col-span-1 xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px]"
                   title="Ver y gestionar reservas"
                 >
                   <CalendarDays className="h-3.5 w-3.5" />
@@ -695,7 +695,7 @@ export const TableMap: React.FC<TableMapProps> = ({
           </div>
 
           {!selectedZoneHasActiveShift && (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 shadow-xs">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] text-red-900 shadow-xs">
               <div className="flex items-center gap-2">
                 <Lock className="h-3.5 w-3.5 shrink-0 text-red-700" />
                 <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
@@ -704,7 +704,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 <button
                   type="button"
                   onClick={onOpenCashShift}
-                  className="min-h-11 shrink-0 whitespace-nowrap rounded-lg bg-[#3b3733] px-3 py-2 text-[11px] font-bold text-white transition-colors hover:bg-stone-800"
+                  className="min-h-10 shrink-0 whitespace-nowrap rounded-lg bg-[#3b3733] px-2.5 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-stone-800 sm:min-h-9"
                 >
                   Abrir turno
                 </button>
@@ -715,10 +715,10 @@ export const TableMap: React.FC<TableMapProps> = ({
       </header>
 
       {/* Main Floor Plan & Table Details Workspace Container */}
-      <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-3 overflow-hidden">
+      <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-2 overflow-hidden">
         
         {/* Interactive Floor Plan Map (Takes 100% height and dynamic width) */}
-        <div className="flex-1 h-full min-h-0 bg-white border border-stone-200/90 rounded-2xl p-3 shadow-xs relative overflow-hidden flex flex-col justify-between">
+        <div className="flex-1 h-full min-h-0 bg-white border border-stone-200/90 rounded-2xl p-2.5 shadow-xs relative overflow-hidden flex flex-col justify-between">
           
           {/* Edit Mode Notice Banner */}
           {isEditMode && (
@@ -853,7 +853,7 @@ export const TableMap: React.FC<TableMapProps> = ({
           </div>
 
           {/* Canvas Footer bar */}
-          <div className="pt-3 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
+          <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#588157]" />
               <span>Salón conectado en tiempo real</span>
