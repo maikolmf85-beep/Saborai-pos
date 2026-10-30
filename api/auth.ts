@@ -9,6 +9,7 @@ import { buildEmployeeTokenClaims, isEmployeeRole, normalizeEmployeeRoster } fro
 import { processTilopaySubscription } from './_utils/tilopayClient.js';
 import { consumeTilopaySignupHandoff, getTilopaySignupHandoff } from './_utils/tilopaySignupHandoff.js';
 import { consumePasswordResetToken, createPasswordResetToken } from './_utils/passwordReset.js';
+import { isUserActive } from './_utils/userStatus.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -374,6 +375,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       if (!isPasswordValid) {
+        return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
+      }
+
+      if (!isUserActive(user.active)) {
         return res.status(401).json({ error: 'Correo o contraseña incorrectos' });
       }
 

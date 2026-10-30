@@ -34,7 +34,7 @@ import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
-import { posCloudService, SaleCloudPayload } from './services/posCloudService';
+import { posCloudService, saleOperationIds, SaleCloudPayload } from './services/posCloudService';
 import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
@@ -1338,8 +1338,14 @@ export function App() {
   };
 
   const handleRegisterPayment = (sale: SaleCloudPayload) => {
+    const orderNumber = sale.table.activeOrder?.orderNumber;
+    if (!orderNumber) {
+      console.error('[POS Cloud] No se puede sincronizar la venta sin número de orden.');
+      return;
+    }
+    const operationIds = saleOperationIds(tenant.id, sale);
     const invoicePayload = {
-      orderNumber: sale.table.activeOrder?.orderNumber,
+      orderNumber,
       clave: sale.invoice.clave50Digitos,
       consecutivo: sale.invoice.consecutivo,
       documentType: sale.invoice.tipoDocumento || 'TE',
@@ -1348,7 +1354,7 @@ export function App() {
       xmlContent: sale.invoice.xmlContent
     };
     const paymentPayload = {
-      orderNumber: sale.table.activeOrder?.orderNumber,
+      orderNumber,
       payments: [{
         amount: sale.total,
         method: sale.paymentMethod === '01-Efectivo' ? 'CASH' : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : 'SINPE',
@@ -1357,23 +1363,26 @@ export function App() {
       closeOrder: sale.closeOrder
     };
     const inventoryPayload = {
-      orderNumber: sale.table.activeOrder?.orderNumber,
+      orderNumber,
       items: sale.items
+    };
+    const enqueueSaleOperations = async (description: string) => {
+      await localDB.enqueueOfflineAction('UPDATE_TABLE', sale.table, `${description}: orden`, tenant.id, operationIds.order);
+      await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, `${description}: pago`, tenant.id, operationIds.payment);
+      await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, `${description}: inventario`, tenant.id, operationIds.inventory);
+      await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, `${description}: factura`, tenant.id, operationIds.invoice);
+      if (localDB.isOnline()) void localDB.syncAllPending();
     };
 
     if (localDB.isOnline()) {
       void posCloudService.syncSale(tenant.id, sale).catch(async error => {
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
-        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id);
+        await enqueueSaleOperations('Venta pendiente de sincronización');
       });
       return;
     }
 
-    void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id);
+    void enqueueSaleOperations('Venta guardada sin conexión');
   };
 
   const handleSaveOrder = (updatedTable: Table) => {

@@ -11,6 +11,18 @@ export interface SaleCloudPayload {
   items: Array<{ name: string; quantity: number; menuItemId?: string }>;
 }
 
+export function saleOperationIds(tenantId: string, sale: SaleCloudPayload) {
+  const orderNumber = sale.table.activeOrder?.orderNumber;
+  if (!orderNumber) throw new Error('La venta no tiene número de orden.');
+  const prefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
+  return {
+    order: `${prefix}:order`,
+    payment: `${prefix}:payment`,
+    inventory: `${prefix}:inventory`,
+    invoice: `${prefix}:invoice`
+  };
+}
+
 function createOperationId(action: PosCloudAction): string {
   const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
   return `pos_${action.toLowerCase()}_${Date.now()}_${randomId}`;
@@ -56,9 +68,8 @@ class PosCloudService {
   async syncSale(tenantId: string, sale: SaleCloudPayload): Promise<void> {
     const orderNumber = sale.table.activeOrder?.orderNumber;
     if (!orderNumber) throw new Error('La venta no tiene número de orden.');
-
-    const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
-    await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
+    const operationIds = saleOperationIds(tenantId, sale);
+    await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, operationIds.order);
     await this.syncOperation('PAYMENT', {
       orderNumber,
       payments: [{
@@ -69,11 +80,11 @@ class PosCloudService {
         provider: 'POS_ONLINE'
       }],
       closeOrder: sale.closeOrder
-    }, tenantId, `${operationPrefix}:payment`);
+    }, tenantId, operationIds.payment);
     await this.syncOperation('DEDUCT_INVENTORY', {
       orderNumber,
       items: sale.items
-    }, tenantId, `${operationPrefix}:inventory`);
+    }, tenantId, operationIds.inventory);
     await this.syncOperation('EMIT_INVOICE', {
       orderNumber,
       clave: sale.invoice.clave50Digitos,
@@ -82,7 +93,7 @@ class PosCloudService {
       total: sale.invoice.totalComprobante,
       invoiceData: sale.invoice,
       xmlContent: sale.invoice.xmlContent
-    }, tenantId, `${operationPrefix}:invoice`);
+    }, tenantId, operationIds.invoice);
   }
 }
 

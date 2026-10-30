@@ -3,6 +3,11 @@ import { supabaseAdmin } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
 import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
+import {
+  assertOperationalScopeMatchesOrder,
+  isPayableOrderStatus,
+  isTerminalOrderStatus
+} from '../_utils/offlineSyncValidation.js';
 
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
@@ -98,23 +103,37 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
     updated_at: new Date().toISOString()
   };
 
+  const activeOrder = table.activeOrder;
+  const hasActiveOrder = activeOrder && typeof activeOrder.orderNumber === 'string' && activeOrder.orderNumber.trim();
+  const orderKey = hasActiveOrder ? `order:${tenantId}:${activeOrder.orderNumber.trim()}` : null;
+  let existingOrder: any = null;
+  if (orderKey) {
+    const orderLookup = await supabaseAdmin
+      .from('pos_orders')
+      .select('id, status, table_id')
+      .eq('tenant_id', tenantId)
+      .eq('idempotency_key', orderKey)
+      .maybeSingle();
+    if (orderLookup.error) throw new Error('No se pudo verificar la orden en la nube.');
+    existingOrder = orderLookup.data;
+    if (existingOrder && isTerminalOrderStatus(existingOrder.status)) {
+      await releaseTableAfterClosedOrder(
+        tenantId,
+        existingOrder.id,
+        existingOrder.table_id || existingTable?.id || null
+      );
+      return { tableId: existingOrder.table_id || existingTable?.id || null, orderId: existingOrder.id };
+    }
+  }
+
   if (existingTable) tableRow.id = existingTable.id;
   const tableResult = await supabaseAdmin.from('pos_tables').upsert(tableRow, { onConflict: 'id' }).select('id').single();
   if (tableResult.error || !tableResult.data) throw new Error('No se pudo guardar la mesa en la nube.');
 
-  const activeOrder = table.activeOrder;
   let orderId: string | null = null;
-  if (activeOrder && typeof activeOrder.orderNumber === 'string' && activeOrder.orderNumber.trim()) {
-    const orderKey = `order:${tenantId}:${activeOrder.orderNumber.trim()}`;
-    const existingOrder = await supabaseAdmin
-      .from('pos_orders')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('idempotency_key', orderKey)
-      .maybeSingle();
-
-    if (existingOrder.data) {
-      orderId = existingOrder.data.id;
+  if (hasActiveOrder && orderKey) {
+    if (existingOrder) {
+      orderId = existingOrder.id;
       const updateResult = await supabaseAdmin
         .from('pos_orders')
         .update({
@@ -123,8 +142,7 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
           ...(scope.cashShiftId ? { cash_shift_id: scope.cashShiftId } : {}),
           ...(scope.terminalId ? { terminal_id: scope.terminalId } : {}),
           table_id: tableResult.data.id,
-          server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
-          status: 'OPEN'
+          server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null
         })
         .eq('id', orderId)
         .eq('tenant_id', tenantId);
@@ -193,6 +211,28 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
   return { tableId: tableResult.data.id, orderId };
 }
 
+async function releaseTableAfterClosedOrder(tenantId: string, orderId: string, tableId: string | null) {
+  if (!tableId) return;
+  const anotherOpenOrder = await supabaseAdmin
+    .from('pos_orders')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('table_id', tableId)
+    .neq('id', orderId)
+    .in('status', ['OPEN', 'SENT', 'IN_PREPARATION', 'READY', 'SERVED'])
+    .limit(1)
+    .maybeSingle();
+  if (anotherOpenOrder.error) throw new Error('No se pudo comprobar si la mesa tiene otra orden abierta.');
+  if (anotherOpenOrder.data) return;
+
+  const { error } = await supabaseAdmin
+    .from('pos_tables')
+    .update({ status: 'AVAILABLE', updated_at: new Date().toISOString() })
+    .eq('tenant_id', tenantId)
+    .eq('id', tableId);
+  if (error) throw new Error('No se pudo liberar la mesa después del cobro.');
+}
+
 async function syncPayment(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   const scope = readOperationalScope(payload);
   const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
@@ -201,41 +241,55 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
 
   const orderResult = await supabaseAdmin
     .from('pos_orders')
-    .select('id, branch_id, cash_shift_id, cash_register_id, terminal_id')
+    .select('id, status, table_id, branch_id, cash_shift_id, cash_register_id, terminal_id')
     .eq('tenant_id', tenantId)
     .eq('idempotency_key', `order:${tenantId}:${orderNumber}`)
     .maybeSingle();
   if (orderResult.error || !orderResult.data) {
     throw new Error('La orden aún no existe en la nube; se reintentará después de sincronizar la comanda.');
   }
+  assertOperationalScopeMatchesOrder(scope, orderResult.data);
+
+  const requestedPayments: Array<{ payment: any; index: number; amount: number; idempotencyKey: string }> = payments
+    .map((payment: any, index: number) => ({ payment, index, amount: safeNumber(payment?.amount, 0) }))
+    .filter((entry: { amount: number }) => entry.amount > 0)
+    .map((entry: { payment: any; index: number; amount: number }) => ({
+      ...entry,
+      idempotencyKey: `${operationId}:${entry.index}`
+    }));
+  if (requestedPayments.length === 0) throw new Error('El desglose no contiene montos de pago válidos.');
+
+  const existingResult = await supabaseAdmin
+    .from('pos_payments')
+    .select('id, idempotency_key')
+    .eq('tenant_id', tenantId)
+    .in('idempotency_key', requestedPayments.map(entry => entry.idempotencyKey));
+  if (existingResult.error) throw new Error('No se pudo comprobar si el pago ya fue registrado.');
+  const existingByKey = new Map<string, string>();
+  for (const row of existingResult.data || []) existingByKey.set(row.idempotency_key, row.id);
+  const allPaymentsAlreadyExist = requestedPayments.every(entry => existingByKey.has(entry.idempotencyKey));
+  if (!isPayableOrderStatus(orderResult.data.status) && !allPaymentsAlreadyExist) {
+    throw new Error('La orden ya está cerrada o cancelada y no acepta nuevos pagos.');
+  }
 
   const allowedMethods = new Set(['CASH', 'CARD', 'SINPE', 'MIXED', 'CREDIT']);
   const inserted: string[] = [];
-  for (const [index, payment] of payments.entries()) {
-    const amount = safeNumber(payment?.amount, 0);
-    if (amount <= 0) continue;
-    const method = allowedMethods.has(payment?.method) ? payment.method : 'CASH';
-    const idempotencyKey = `${operationId}:${index}`;
-    const existing = await supabaseAdmin
-      .from('pos_payments')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('idempotency_key', idempotencyKey)
-      .maybeSingle();
-    if (existing.data) {
-      inserted.push(existing.data.id);
+  for (const { payment, amount, idempotencyKey } of requestedPayments) {
+    const existingId = existingByKey.get(idempotencyKey);
+    if (existingId) {
+      inserted.push(existingId);
       continue;
     }
-
+    const method = allowedMethods.has(payment?.method) ? payment.method : 'CASH';
     const paymentResult = await supabaseAdmin
       .from('pos_payments')
       .insert({
         tenant_id: tenantId,
         order_id: orderResult.data.id,
-        branch_id: scope.branchId || orderResult.data.branch_id,
-        cash_shift_id: scope.cashShiftId || orderResult.data.cash_shift_id,
-        cash_register_id: scope.cashRegisterId || orderResult.data.cash_register_id,
-        terminal_id: scope.terminalId || orderResult.data.terminal_id,
+        branch_id: orderResult.data.branch_id,
+        cash_shift_id: orderResult.data.cash_shift_id,
+        cash_register_id: orderResult.data.cash_register_id,
+        terminal_id: orderResult.data.terminal_id,
         amount,
         method,
         provider: typeof payment?.provider === 'string' ? payment.provider.slice(0, 80) : 'POS_OFFLINE_SYNC',
@@ -254,8 +308,19 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
       .from('pos_orders')
       .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
       .eq('id', orderResult.data.id)
-      .eq('tenant_id', tenantId);
+      .eq('tenant_id', tenantId)
+      .in('status', ['OPEN', 'SENT', 'IN_PREPARATION', 'READY', 'SERVED'])
+      .select('id')
+      .maybeSingle();
     if (closeResult.error) throw new Error('No se pudo cerrar la orden en la nube.');
+    if (!closeResult.data) {
+      const currentOrder = await supabaseAdmin.from('pos_orders').select('status')
+        .eq('id', orderResult.data.id).eq('tenant_id', tenantId).maybeSingle();
+      if (currentOrder.error || currentOrder.data?.status !== 'CLOSED') {
+        throw new Error('La orden cambió y no se pudo confirmar su cierre.');
+      }
+    }
+    await releaseTableAfterClosedOrder(tenantId, orderResult.data.id, orderResult.data.table_id);
   }
 
   await supabaseAdmin.from('pos_audit_events').insert({

@@ -167,12 +167,12 @@ export class SaboraiLocalDB {
     });
   }
 
-  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
-    const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string, operationId?: string): Promise<void> {
+    const queueId = operationId || `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
     const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const item: OfflineSyncQueueItem = {
-      id: operationId,
+      id: queueId,
       action,
       payload,
       timestamp: new Date().toISOString(),

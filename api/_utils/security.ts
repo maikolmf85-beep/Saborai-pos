@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { supabaseAdmin } from './supabase.js';
 import { hasRolePermission } from './rolePermissions.js';
 import { buildEmployeeAuthContext } from './employeeSession.js';
+import { isUserActive } from './userStatus.js';
 
 export interface AuthContext {
   userId: string;
@@ -72,7 +73,7 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
       .eq('id', decoded.employeeId)
       .eq('tenant_id', decoded.tenantId)
       .maybeSingle();
-    if (employeeError || !employee || employee.is_active === false) return null;
+    if (employeeError || !employee || !isUserActive(employee.is_active)) return null;
 
     const { data: tenant, error: tenantError } = await supabaseAdmin
       .from('tenants')
@@ -86,7 +87,7 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
       .select('id, email, active')
       .eq('id', tenant.user_id)
       .maybeSingle();
-    if (ownerError || !owner || owner.active === false) return null;
+    if (ownerError || !owner || !isUserActive(owner.active)) return null;
     if (String(owner.email).toLowerCase() !== String(decoded.email).toLowerCase()) return null;
 
     return buildEmployeeAuthContext(employee, tenant, owner);
@@ -100,7 +101,7 @@ export async function authenticateRequest(req: VercelRequest): Promise<AuthConte
     .eq('id', decoded.userId)
     .maybeSingle();
 
-  if (error || !user || user.active === false) return null;
+  if (error || !user || !isUserActive(user.active)) return null;
   if (String(user.email).toLowerCase() !== String(decoded.email).toLowerCase()) return null;
 
   const { data: tenant } = await supabaseAdmin

@@ -25,6 +25,7 @@ import { PosNotification } from './NotificationToast';
 import { printerService } from '../services/printerService';
 import { inventoryService } from '../services/inventoryService';
 import { getConfiguredOrRecommendedModifiers } from '../services/modifierRecommendationService';
+import { addOrIncrementUnsentOrderItem, shouldCloseOrderAfterPayment } from '../services/orderItemUtils';
 
 interface OrderTakingProps {
   table: Table;
@@ -200,34 +201,20 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const _executeAddItem = (product: MenuItem, modifiers: { modifierName: string; choiceName: string; extraPrice: number }[]) => {
-    // Buscar un ítem idéntico que AÚN NO se haya enviado al KDS
-    const existingIndex = currentOrderItems.findIndex(
-      i => i.name === product.name && 
-           i.subAccountId === selectedSubAccount && 
-           !i.kdsStatus &&
-           JSON.stringify(i.selectedModifiers || []) === JSON.stringify(modifiers)
-    );
-
-    if (existingIndex > -1) {
-      const updated = [...currentOrderItems];
-      updated[existingIndex].quantity += 1;
-      setCurrentOrderItems(updated);
-    } else {
-      const extraPrice = modifiers.reduce((sum, mod) => sum + (mod.extraPrice || 0), 0);
-      const newItem: TableItem = {
-        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        name: product.name,
-        price: product.price + extraPrice,
-        quantity: 1,
-        subAccountId: selectedSubAccount,
-        dinerName: currentDiner.name,
-        cabysCode: product.cabysCode,
-        taxRate: product.taxRate,
-        category: product.station === 'Bar' ? 'Bar' : 'Cocina',
-        selectedModifiers: modifiers.length > 0 ? modifiers : undefined
-      };
-      setCurrentOrderItems([...currentOrderItems, newItem]);
-    }
+    const extraPrice = modifiers.reduce((sum, mod) => sum + (mod.extraPrice || 0), 0);
+    const newItem: TableItem = {
+      id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: product.name,
+      price: product.price + extraPrice,
+      quantity: 1,
+      subAccountId: selectedSubAccount,
+      dinerName: currentDiner.name,
+      cabysCode: product.cabysCode,
+      taxRate: product.taxRate,
+      category: product.station === 'Bar' ? 'Bar' : 'Cocina',
+      selectedModifiers: modifiers.length > 0 ? modifiers : undefined
+    };
+    setCurrentOrderItems(prev => addOrIncrementUnsentOrderItem(prev, newItem));
     
     if (selectedProductForMods) {
       setSelectedProductForMods(null);
@@ -349,27 +336,18 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
     // Si el ítem ya fue enviado al KDS y se intenta aumentar la cantidad, crear una nueva línea
     if (itemToUpdate.kdsStatus && delta > 0) {
-      const unsentIndex = currentOrderItems.findIndex(
-        i => i.name === itemToUpdate.name && i.subAccountId === itemToUpdate.subAccountId && !i.kdsStatus
-      );
-      if (unsentIndex > -1) {
-        const updated = [...currentOrderItems];
-        updated[unsentIndex].quantity += delta;
-        setCurrentOrderItems(updated);
-      } else {
-        const newItem: TableItem = {
-          ...itemToUpdate,
-          id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-          quantity: delta,
-          kdsStatus: undefined,
-          kdsOrderId: undefined
-        };
-        setCurrentOrderItems([...currentOrderItems, newItem]);
-      }
+      const newItem: TableItem = {
+        ...itemToUpdate,
+        id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        quantity: delta,
+        kdsStatus: undefined,
+        kdsOrderId: undefined
+      };
+      setCurrentOrderItems(prev => addOrIncrementUnsentOrderItem(prev, newItem));
       return;
     }
 
-    const updated = currentOrderItems
+    setCurrentOrderItems(prev => prev
       .map(item => {
         if (item.id === itemId) {
           const newQty = item.quantity + delta;
@@ -377,9 +355,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         }
         return item;
       })
-      .filter((item): item is TableItem => item !== null);
-
-    setCurrentOrderItems(updated);
+      .filter((item): item is TableItem => item !== null));
   };
 
   const handleOpenNotes = (item: TableItem) => {
@@ -511,9 +487,10 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
 
   const handlePaymentComplete = (_method: string, _amount: number) => {
     const isAll = paymentTargetDiner.id === 'ALL';
-    const remainingItems = isAll ? [] : currentOrderItems.filter(i => i.subAccountId !== paymentTargetDiner.id);
+    const willCloseOrder = shouldCloseOrderAfterPayment(currentOrderItems, paymentTargetDiner.id);
+    const remainingItems = willCloseOrder ? [] : currentOrderItems.filter(i => i.subAccountId !== paymentTargetDiner.id);
 
-    if (isAll || remainingItems.length === 0) {
+    if (isAll || willCloseOrder || remainingItems.length === 0) {
       const updatedTable: Table = {
         ...table,
         status: 'AVAILABLE',

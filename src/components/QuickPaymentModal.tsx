@@ -21,6 +21,7 @@ import { printerService } from '../services/printerService';
 import { getTenantItem } from '../services/tenantStorage';
 import { localDB } from '../services/db';
 import { PosNotification } from './NotificationToast';
+import { shouldCloseOrderAfterPayment } from '../services/orderItemUtils';
 
 interface QuickPaymentModalProps {
   isOpen: boolean;
@@ -357,6 +358,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       'PAYMENT',
       {
         orderNumber: table.activeOrder?.orderNumber,
+        closeOrder: shouldCloseOrderAfterPayment(rawItems, subAccountId),
         tableNumber: table.number,
         payments: paymentRows,
         total,

@@ -68,10 +68,12 @@ export const TableMap: React.FC<TableMapProps> = ({
   const tenantZones = tenant.zones || [];
   
   const [tables, setTables] = useState<Table[]>(() => initialTablesList);
+  const tablesRef = useRef<Table[]>(initialTablesList);
 
   useEffect(() => {
     // The parent state is hydrated from the central floor-plan record. Do not
     // prefer component-local coordinates over a newer synchronized layout.
+    tablesRef.current = initialTablesList;
     setTables(initialTablesList);
     setSelectedTable(prev => {
       if (!prev) return null;
@@ -218,34 +220,41 @@ export const TableMap: React.FC<TableMapProps> = ({
   };
 
   // Pointer move
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!draggingId || !canvasRef.current || !isEditMode) return;
+  const updateDraggedTablePosition = (clientX: number, clientY: number): Table[] => {
+    if (!draggingId || !canvasRef.current || !isEditMode) return tablesRef.current;
 
     const rect = canvasRef.current.getBoundingClientRect();
-    const rawX = e.clientX - rect.left - dragOffset.x;
-    const rawY = e.clientY - rect.top - dragOffset.y;
-
-    // Constrain within canvas bounds (leaving 40px margin)
+    const rawX = clientX - rect.left - dragOffset.x;
+    const rawY = clientY - rect.top - dragOffset.y;
     const clampedX = Math.max(30, Math.min(rawX, rect.width - 70));
     const clampedY = Math.max(30, Math.min(rawY, rect.height - 70));
+    const percentX = Math.round((clampedX / rect.width) * 100);
+    const percentY = Math.round((clampedY / rect.height) * 100);
+    const nextTables = tablesRef.current.map(table => table.id === draggingId
+      ? { ...table, x: percentX, y: percentY }
+      : table);
 
-    // Convert to percentage for responsive positioning
-    const percentX = Math.round(((clampedX) / rect.width) * 100);
-    const percentY = Math.round(((clampedY) / rect.height) * 100);
+    tablesRef.current = nextTables;
+    setTables(nextTables);
+    return nextTables;
+  };
 
-    setTables(prev => prev.map(t => t.id === draggingId ? { ...t, x: percentX, y: percentY } : t));
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!draggingId || !canvasRef.current || !isEditMode) return;
+    updateDraggedTablePosition(e.clientX, e.clientY);
   };
 
   // Pointer drag end
   const handlePointerUp = (e: React.PointerEvent) => {
     if (draggingId) {
+      const nextTables = updateDraggedTablePosition(e.clientX, e.clientY);
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch {
         // ignore
       }
       // Persist the completed drag through the parent, which saves it centrally.
-      onUpdateTables?.(tables);
+      onUpdateTables?.(nextTables);
       setDraggingId(null);
     }
   };
