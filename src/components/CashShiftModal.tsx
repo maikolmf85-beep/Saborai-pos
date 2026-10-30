@@ -522,9 +522,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       message: `¿Estás seguro de eliminar la terminal "${name}"? Esta acción no se puede deshacer y no debe realizarse si la caja tiene turnos en curso.`,
       confirmLabel: 'Eliminar terminal',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         try {
-          cashShiftService.deleteCashRegister(regId);
+          await cashShiftService.deleteCashRegister(regId);
           soundService.playSuccessChime();
           refreshData();
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));

@@ -15,6 +15,7 @@ import { UserProfile, TenantInfo } from '../types';
 import { clearLegacyCashControlData, getTenantItem, removeTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
+import { deleteCashRegisterFromState } from './cashRegisterDeletion';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -239,15 +240,21 @@ class CashShiftService {
     return this.registers[index];
   }
 
-  deleteCashRegister(id: string): boolean {
-    if (this.activeShiftsMap[id]) {
-      throw new Error('No se puede eliminar una caja con un turno abierto. Primero debe cerrarse el turno.');
-    }
-
-    this.registers = this.registers.filter(r => r.id !== id);
-    if (this.currentTerminalId === id) {
-      this.currentTerminalId = this.registers[0]?.id || '';
-    }
+  async deleteCashRegister(id: string): Promise<boolean> {
+    const tenantId = this.tenantId;
+    const nextState = await deleteCashRegisterFromState(
+      this.registers,
+      this.activeShiftsMap,
+      this.currentTerminalId,
+      id,
+      async () => {
+        if (tenantId && cashControlCloudService.isAvailable()) {
+          await cashControlCloudService.deactivateCashRegister(tenantId, id);
+        }
+      }
+    );
+    this.registers = nextState.registers;
+    this.currentTerminalId = nextState.currentTerminalId;
     this.saveToStorage();
     return true;
   }

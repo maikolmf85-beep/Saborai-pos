@@ -168,9 +168,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setSavedRegFeedback(null), 3000);
   };
 
-  const handleDeleteRegister = (id: string) => {
+  const handleDeleteRegister = async (id: string) => {
     try {
-      cashShiftService.deleteCashRegister(id);
+      await cashShiftService.deleteCashRegister(id);
       setRegistersList(cashShiftService.getCashRegisters());
       setCurrentRegister(cashShiftService.getCurrentRegister());
     } catch (err: any) {
