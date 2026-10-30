@@ -26,6 +26,7 @@ interface StaffModalProps {
   currentTenant: TenantInfo;
   staffList: UserProfile[];
   onAddStaffMember: (newMember: UserProfile) => void;
+  onResetStaffPin?: (userId: string, newPin: string) => void;
   onSelectUser: (user: UserProfile) => void;
   onToggleUserActive?: (userId: string) => void;
   onOpenQuickSwitch?: () => void;
@@ -38,6 +39,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   currentTenant,
   staffList,
   onAddStaffMember,
+  onResetStaffPin,
   onSelectUser,
   onToggleUserActive,
   onOpenQuickSwitch
@@ -49,6 +51,8 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [resetPinFor, setResetPinFor] = useState<UserProfile | null>(null);
+  const [resetPin, setResetPin] = useState('');
 
   if (!isOpen) return null;
 
@@ -124,6 +128,16 @@ export const StaffModal: React.FC<StaffModalProps> = ({
     setRole('SALONERO');
 
     setTimeout(() => setFeedback(null), 3500);
+  };
+
+  const handleResetPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUser?.role !== 'ADMIN' || !resetPinFor || !/^\d{4}$/.test(resetPin)) return;
+    onResetStaffPin?.(resetPinFor.id, resetPin);
+    setFeedback(`PIN restablecido para "${resetPinFor.name}". El PIN anterior quedó invalidado.`);
+    setResetPinFor(null);
+    setResetPin('');
+    setTimeout(() => setFeedback(null), 4000);
   };
 
   return (
@@ -293,7 +307,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                       <th className="px-4 py-2.5">Colaborador</th>
                       <th className="px-4 py-2.5">Rol Asignado</th>
                       <th className="px-4 py-2.5">Contacto</th>
-                      <th className="px-4 py-2.5">PIN Rápido</th>
+                      <th className="px-4 py-2.5">PIN</th>
                       <th className="px-4 py-2.5 text-right">Acción</th>
                     </tr>
                   </thead>
@@ -344,7 +358,16 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                           </td>
 
                           <td className="px-4 py-3 font-mono text-stone-500 text-[11px]">
-                            {currentUser?.role === 'ADMIN' ? (member.pin || '1234') : (member.pin ? '••••' : '1234')}
+                            <span className="text-stone-400">No visible</span>
+                            {currentUser?.role === 'ADMIN' && onResetStaffPin && (
+                              <button
+                                type="button"
+                                onClick={() => { setResetPinFor(member); setResetPin(''); }}
+                                className="ml-2 px-2 py-1 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-900 hover:text-white font-sans font-bold transition-colors"
+                              >
+                                Restablecer
+                              </button>
+                            )}
                           </td>
 
                           <td className="px-4 py-3 text-right">
@@ -377,6 +400,34 @@ export const StaffModal: React.FC<StaffModalProps> = ({
               </div>
             </div>
           </div>
+
+          {resetPinFor && currentUser?.role === 'ADMIN' && (
+            <form onSubmit={handleResetPin} className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold text-amber-950 uppercase tracking-wider">Restablecer PIN</h3>
+                  <p className="text-xs text-amber-800 mt-1">Define un PIN nuevo para {resetPinFor.name}. El PIN anterior no se puede recuperar ni volverá a funcionar.</p>
+                </div>
+                <button type="button" onClick={() => setResetPinFor(null)} className="text-amber-700 hover:text-amber-950"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="flex items-end gap-2">
+                <label className="flex-1 text-[11px] font-bold text-amber-950">
+                  Nuevo PIN de 4 dígitos
+                  <input
+                    autoFocus
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={resetPin}
+                    onChange={event => setResetPin(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="mt-1 w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-sm font-mono text-stone-900"
+                    placeholder="••••"
+                  />
+                </label>
+                <button type="submit" disabled={!/^\d{4}$/.test(resetPin)} className="px-4 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 disabled:bg-amber-300 text-white text-xs font-bold">Guardar nuevo PIN</button>
+              </div>
+            </form>
+          )}
 
         </div>
 

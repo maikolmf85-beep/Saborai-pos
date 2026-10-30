@@ -785,6 +785,17 @@ export function App() {
     handleUpdateStaff(updated);
   };
 
+  const handleResetStaffPin = (userId: string, newPin: string) => {
+    if (currentUser?.role !== 'ADMIN' || !/^\d{4}$/.test(newPin)) return;
+    const updated = staffList.map(member => member.id === userId ? { ...member, pin: newPin } : member);
+    handleUpdateStaff(updated);
+    if (currentUser.id === userId) {
+      const updatedCurrentUser = { ...currentUser, pin: newPin };
+      setCurrentUser(updatedCurrentUser);
+      try { localStorage.setItem('saborai_user', JSON.stringify(updatedCurrentUser)); } catch {}
+    }
+  };
+
   const handleSelectUser = (user: UserProfile) => {
     setCurrentUser(user);
     try {
@@ -1826,6 +1837,7 @@ export function App() {
         currentTenant={tenant}
         staffList={staffList}
         onAddStaffMember={handleAddStaffMember}
+        onResetStaffPin={handleResetStaffPin}
         onSelectUser={handleSelectUser}
         onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
       />
