@@ -513,185 +513,206 @@ export const TableMap: React.FC<TableMapProps> = ({
   return (
     <div className="tour-table-map w-full h-full flex flex-col p-2.5 sm:p-3.5 gap-2.5 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
-      {/* Top Header & Compact Live Control Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 pb-2.5 border-b border-stone-200/80 shrink-0">
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
-            <span>Plano del Salón</span>
-            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
-              {filteredTables.length} mesas
-            </span>
-          </h1>
-
-          {/* Zone Filter Navigation Inline */}
-          <div className="flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200/80 overflow-x-auto scrollbar-none">
-            {effectiveZones.length === 0 ? (
-              <span className="text-[11px] text-stone-400 font-medium px-2 py-0.5">
-                Sin salones
-              </span>
-            ) : (
-              effectiveZones.map((zone) => (
-                <button
-                  key={zone}
-                  onClick={() => setSelectedZone(zone)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all shrink-0 cursor-pointer ${
-                    selectedZone === zone
-                      ? 'bg-stone-900 text-white shadow-xs'
-                      : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
-                  }`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    {zone}
-                    {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
-                      <Lock className="w-3 h-3 text-amber-600" aria-label="Sin turno activo" />
-                    )}
-                  </span>
-                </button>
-              ))
-            )}
-            {isAdmin && effectiveZones.length === tenantZones.length && (
-              <button
-                onClick={() => setIsZoneModalOpen(true)}
-                className="px-2 py-1 ml-1 rounded-lg text-[11px] font-bold text-[#a9b994] bg-[#a9b994]/10 hover:bg-[#a9b994]/20 border border-[#a9b994]/30 flex items-center gap-1 cursor-pointer transition-colors"
-                title="Gestionar Salones"
-              >
-                <Plus className="w-3 h-3" />
-                <span>Salones</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {!selectedZoneHasActiveShift && (
-          <div className="px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs flex items-center justify-between gap-3 shadow-xs">
-            <div className="flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-              <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
+      {/* Encabezado superior y barra de controles agrupados */}
+      <header className="shrink-0 rounded-2xl border border-stone-200 bg-white p-3 shadow-xs sm:p-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h1 className="text-xl font-black tracking-tight text-stone-900 sm:text-2xl">Plano del Salón</h1>
+                <span className="rounded-full border border-[#a9b994]/50 bg-[#a9b994]/15 px-2.5 py-1 text-xs font-black text-[#3b3733]">
+                  {filteredTables.length} {filteredTables.length === 1 ? 'mesa' : 'mesas'}
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">
+                {tenantZones.length > 0 ? `Salón seleccionado: ${selectedZone}` : 'Organiza las mesas y crea salones para tu restaurante.'}
+              </p>
             </div>
-            {onOpenCashShift && (
+
+            <div className="grid w-full grid-cols-2 gap-2 text-xs font-bold sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
               <button
                 type="button"
-                onClick={onOpenCashShift}
-                className="px-2.5 py-1 bg-amber-900 text-white rounded-lg text-[11px] font-bold whitespace-nowrap hover:bg-amber-800"
-              >
-                Abrir turno
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Right Action Controls & Metrics & Fullscreen */}
-        <div className="flex items-center gap-2">
-          {/* Interactive Status Filter & Live Metrics */}
-          <div className="hidden md:flex items-center gap-1.5 text-xs font-bold">
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
-              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
-                statusFilter === 'AVAILABLE'
-                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
-              }`}
-              title="Filtrar solo mesas libres"
-            >
-              <span className={`w-2 h-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
-              <span>{availableCount} Libres</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
-              className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 border transition-all cursor-pointer ${
-                statusFilter === 'OCCUPIED'
-                  ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
-                  : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
-              }`}
-              title="Filtrar solo mesas ocupadas"
-            >
-              <span className={`w-2 h-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-amber-500'}`} />
-              <span>{occupiedCount} Ocupadas</span>
-            </button>
-            {statusFilter !== 'ALL' && (
-              <button
-                type="button"
-                onClick={() => setStatusFilter('ALL')}
-                className="px-2 py-1 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-[11px] font-bold transition-colors cursor-pointer"
-                title="Mostrar todas las mesas"
-              >
-                Ver Todas
-              </button>
-            )}
-            <span className="px-2.5 py-1 bg-stone-100 text-stone-800 border border-stone-200 rounded-lg flex items-center gap-1">
-              <CreditCard className="w-3.5 h-3.5 text-[#588157]" />
-              <span>₡{totalSalesInProgress.toLocaleString()}</span>
-            </span>
-          </div>
-
-          {/* Toggle Drawer Button (Ocultar/Ver Info de Mesa para Pantalla Completa Pura) */}
-          <button
-            type="button"
-            onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
-            className={`h-8 px-2.5 flex items-center gap-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-              showDetailsDrawer 
-                ? 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200' 
-                : 'bg-[#a9b994]/25 text-stone-950 border-[#a9b994] font-black'
-            }`}
-            title={showDetailsDrawer ? "Ocultar panel lateral para maximizar plano a pantalla completa" : "Mostrar panel de detalles de mesa"}
-          >
-            {showDetailsDrawer ? <PanelRightClose className="w-3.5 h-3.5 text-stone-600" /> : <PanelRight className="w-3.5 h-3.5 text-stone-900" />}
-            <span className="hidden lg:inline">{showDetailsDrawer ? "Ocultar Panel" : "Ver Panel"}</span>
-          </button>
-
-          {/* Botón de Pantalla Completa Inmersiva */}
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="h-8 px-2.5 sm:px-3 flex items-center gap-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-white transition-all shadow-xs border border-stone-800 cursor-pointer"
-            title={isFullscreen ? "Salir del modo pantalla completa" : "Activar pantalla completa para terminales táctiles y monitores"}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-amber-300" /> : <Maximize2 className="w-3.5 h-3.5 text-[#a9b994]" />}
-            <span className="hidden sm:inline">{isFullscreen ? "Salir Completa" : "Pantalla Completa"}</span>
-          </button>
-
-          {/* Admin Editing & Add Buttons */}
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => setIsEditMode(!isEditMode)}
-                className={`h-8 flex items-center gap-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  isEditMode
-                    ? 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-300 animate-pulse'
-                    : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
+                onClick={() => setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE')}
+                aria-pressed={statusFilter === 'AVAILABLE'}
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-center transition-all cursor-pointer sm:min-h-10 ${
+                  statusFilter === 'AVAILABLE'
+                    ? 'border-emerald-700 bg-emerald-600 text-white shadow-xs'
+                    : 'border-emerald-200 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
                 }`}
-                title={isEditMode ? 'Guardar y salir del modo edición' : 'Editar plano y mover mesas'}
+                title="Filtrar solo mesas libres"
               >
-                {isEditMode ? <Unlock className="w-3.5 h-3.5" /> : <Pencil className="w-3.5 h-3.5 text-[#588157]" />}
-                <span className="hidden xl:inline">{isEditMode ? "Listo" : "Editar"}</span>
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
+                <span>{availableCount} libres</span>
               </button>
-
               <button
-                data-nyza-target="create-table"
-                onClick={() => {
-                  setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
-                  setShowAddModal(true);
-                }}
-                className="h-8 flex items-center gap-1.5 px-3 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-all shadow-xs cursor-pointer"
+                type="button"
+                onClick={() => setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED')}
+                aria-pressed={statusFilter === 'OCCUPIED'}
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-center transition-all cursor-pointer sm:min-h-10 ${
+                  statusFilter === 'OCCUPIED'
+                    ? 'border-[#3b3733] bg-[#3b3733] text-white shadow-xs'
+                    : 'border-[#a9b994] bg-[#e7eee2] text-[#3b3733] hover:bg-[#dce7d5]'
+                }`}
+                title="Filtrar solo mesas ocupadas"
               >
-                <Plus className="w-3.5 h-3.5 text-[#a9b994]" />
-                <span className="hidden xl:inline">+ Mesa</span>
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-[#588157]'}`} />
+                <span>{occupiedCount} ocupadas</span>
               </button>
-            </>
+              {statusFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('ALL')}
+                  className="col-span-2 flex min-h-11 items-center justify-center rounded-lg bg-stone-100 px-2.5 py-2 text-center text-[11px] font-bold text-stone-700 transition-colors hover:bg-stone-200 cursor-pointer sm:col-span-1 sm:min-h-10"
+                  title="Mostrar todas las mesas"
+                >
+                  Ver todas
+                </button>
+              )}
+              <span className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2.5 py-2 text-center text-stone-800 sm:col-span-1 sm:min-h-10" title="Ventas en curso">
+                <CreditCard className="h-3.5 w-3.5 text-[#588157]" />
+                <span>En curso: ₡{totalSalesInProgress.toLocaleString()}</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="h-px bg-stone-100" />
+
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <span className="text-[10px] font-black uppercase tracking-[0.14em] text-stone-400">Salones</span>
+              <div className="flex max-w-full flex-wrap items-center gap-2">
+                {effectiveZones.length === 0 ? (
+                  <span className="rounded-lg border border-dashed border-stone-200 px-3 py-1.5 text-xs text-stone-400">
+                    Sin salones configurados
+                  </span>
+                ) : (
+                  effectiveZones.map((zone) => (
+                    <button
+                      key={zone}
+                      type="button"
+                      onClick={() => setSelectedZone(zone)}
+                      aria-pressed={selectedZone === zone}
+                      className={`min-h-11 shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition-all cursor-pointer sm:min-h-10 ${
+                        selectedZone === zone
+                          ? 'bg-[#3b3733] text-white shadow-xs'
+                          : 'border border-stone-200 bg-white text-stone-600 hover:border-[#a9b994] hover:bg-[#a9b994]/10 hover:text-stone-900'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        {zone}
+                        {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
+                          <Lock className="h-3 w-3 text-stone-400" aria-label="Sin turno activo" />
+                        )}
+                      </span>
+                    </button>
+                  ))
+                )}
+                {isAdmin && effectiveZones.length === tenantZones.length && (
+                  <button
+                    type="button"
+                    onClick={() => setIsZoneModalOpen(true)}
+                    className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-3 py-2 text-xs font-bold text-[#3b3733] transition-colors hover:bg-[#a9b994]/30 cursor-pointer sm:min-h-10"
+                    title="Añadir o quitar salones"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-[#588157]" />
+                    <span>Editar salones</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex w-full flex-col gap-3 xl:w-auto xl:flex-row xl:flex-wrap xl:items-center xl:justify-end">
+              {isAdmin && (
+                <div className="grid w-full grid-cols-2 items-stretch gap-2 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditMode(!isEditMode)}
+                    aria-pressed={isEditMode}
+                    className={`flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold transition-all cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs ${
+                      isEditMode
+                        ? 'border-[#a9b994] bg-[#a9b994] text-[#3b3733] shadow-xs'
+                        : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50'
+                    }`}
+                    title={isEditMode ? 'Guardar y salir del modo edición' : 'Editar plano y mover mesas'}
+                  >
+                    {isEditMode ? <Unlock className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5 text-[#588157]" />}
+                    <span>{isEditMode ? 'Terminar edición' : 'Editar plano'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-nyza-target="create-table"
+                    onClick={() => {
+                      setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
+                      setShowAddModal(true);
+                    }}
+                    className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl bg-[#3b3733] px-2 py-2 text-center text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-[#a9b994]" />
+                    <span>Agregar mesa</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="grid w-full grid-cols-2 items-stretch gap-2 sm:grid-cols-3 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
+                <button
+                  type="button"
+                  onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
+                  aria-pressed={showDetailsDrawer}
+                  className={`flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold transition-all cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs ${
+                    showDetailsDrawer
+                      ? 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
+                      : 'border-[#a9b994] bg-[#a9b994]/20 text-stone-950'
+                  }`}
+                  title={showDetailsDrawer ? 'Ocultar panel lateral' : 'Mostrar panel de detalles de mesa'}
+                >
+                  {showDetailsDrawer ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRight className="h-3.5 w-3.5" />}
+                  <span>{showDetailsDrawer ? 'Ocultar panel' : 'Ver panel'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  aria-pressed={isFullscreen}
+                  className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-stone-800 bg-stone-900 px-2 py-2 text-center text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-stone-800 cursor-pointer xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                  title={isFullscreen ? 'Salir del modo pantalla completa' : 'Activar pantalla completa'}
+                >
+                  {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-[#a9b994]" /> : <Maximize2 className="h-3.5 w-3.5 text-[#a9b994]" />}
+                  <span>{isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsReservationsOpen(true)}
+                  className="col-span-2 flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-2 py-2 text-center text-[11px] font-bold text-violet-900 transition-colors hover:bg-violet-100 cursor-pointer sm:col-span-1 xl:h-10 xl:min-h-10 xl:w-auto xl:px-3 xl:text-xs"
+                  title="Ver y gestionar reservas"
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  <span>Reservas</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {!selectedZoneHasActiveShift && (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 shadow-xs">
+              <div className="flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 shrink-0 text-red-700" />
+                <span><strong>{selectedZone}</strong> no tiene un turno activo. Puedes ver y configurar sus mesas.</span>
+              </div>
+              {onOpenCashShift && (
+                <button
+                  type="button"
+                  onClick={onOpenCashShift}
+                  className="min-h-11 shrink-0 whitespace-nowrap rounded-lg bg-[#3b3733] px-3 py-2 text-[11px] font-bold text-white transition-colors hover:bg-stone-800"
+                >
+                  Abrir turno
+                </button>
+              )}
+            </div>
           )}
-          <button
-            type="button"
-            onClick={() => setIsReservationsOpen(true)}
-            className="h-8 flex items-center gap-1.5 px-3 rounded-xl border border-violet-200 bg-violet-50 text-violet-900 text-xs font-bold hover:bg-violet-100 transition-colors cursor-pointer"
-            title="Ver y gestionar reservas"
-          >
-            <CalendarDays className="w-3.5 h-3.5" />
-            <span>Reservas</span>
-          </button>
         </div>
-      </div>
+      </header>
 
       {/* Main Floor Plan & Table Details Workspace Container */}
       <div className="flex-1 w-full min-h-0 flex flex-col lg:flex-row gap-3 overflow-hidden">
@@ -701,16 +722,16 @@ export const TableMap: React.FC<TableMapProps> = ({
           
           {/* Edit Mode Notice Banner */}
           {isEditMode && (
-            <div className="absolute top-3 left-4 right-4 z-20 px-3 py-2 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs">
+            <div className="absolute top-3 left-4 right-4 z-20 px-3 py-2 bg-[#e7eee2] border border-[#a9b994] text-[#3b3733] rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs">
               <div className="flex items-center gap-2">
-                <Move className="w-3.5 h-3.5 text-amber-600 animate-bounce" />
+                <Move className="w-3.5 h-3.5 text-[#588157] animate-bounce" />
                 <span>
                   <strong>Modo Edición:</strong> Haz clic o toca cualquier mesita circular y arrástrala para reposicionarla libremente.
                 </span>
               </div>
               <button
                 onClick={() => setIsEditMode(false)}
-                className="px-2.5 py-1 bg-amber-900 text-white rounded-lg text-[10px] font-bold hover:bg-black"
+                className="px-2.5 py-1 bg-[#3b3733] text-white rounded-lg text-[10px] font-bold hover:bg-stone-800"
               >
                 Terminar
               </button>
@@ -723,7 +744,7 @@ export const TableMap: React.FC<TableMapProps> = ({
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
             className={`relative w-full flex-1 min-h-0 h-full rounded-xl select-none touch-none overflow-hidden transition-colors ${
-              isEditMode ? 'cursor-move bg-amber-50/20' : 'cursor-default bg-stone-50/70'
+              isEditMode ? 'cursor-move bg-[#e7eee2]/40' : 'cursor-default bg-stone-50/70'
             }`}
             style={{
               backgroundImage: 'radial-gradient(var(--pos-map-dot) 1.2px, transparent 1.2px)',
@@ -763,7 +784,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
               // Circular Table Colors
               const tableBgClass = isOccupied
-                ? 'bg-amber-100 text-amber-900 border-amber-400 ring-2 ring-amber-300/50'
+                ? 'bg-[#e7eee2] text-[#3b3733] border-[#588157] ring-2 ring-[#a9b994]/50'
                 : isPreCheck
                 ? 'bg-blue-100 text-blue-900 border-blue-400 ring-2 ring-blue-300/50'
                 : isReserved
@@ -810,7 +831,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
                       {/* Small Status Dot or Price */}
                       {isOccupied ? (
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-600 mt-0.5 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#588157] mt-0.5 animate-pulse" />
                       ) : isPreCheck ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-600 mt-0.5" />
                       ) : (
@@ -821,7 +842,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
                     {/* Order Price Tag if occupied */}
                     {isOccupied && total > 0 && (
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs pointer-events-none whitespace-nowrap">
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#3b3733] text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs pointer-events-none whitespace-nowrap">
                         ₡{(total / 1000).toFixed(0)}k
                       </div>
                     )}
@@ -863,7 +884,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                   selectedTable.status === 'OCCUPIED'
-                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    ? 'bg-[#e7eee2] text-[#3b3733] border border-[#a9b994]'
                     : selectedTable.status === 'PRE_CHECK'
                     ? 'bg-blue-100 text-blue-900 border border-blue-300'
                     : selectedTable.status === 'RESERVED'
@@ -936,8 +957,8 @@ export const TableMap: React.FC<TableMapProps> = ({
 
               {/* Edit Mode specific actions */}
               {isEditMode && (
-                <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs space-y-2">
-                  <span className="font-bold text-amber-900 block text-[11px] uppercase">Ajustes de Mesa</span>
+                <div className="p-3 bg-[#f3f6f0] rounded-2xl border border-[#d4dfcd] text-xs space-y-2">
+                  <span className="font-bold text-[#3b3733] block text-[11px] uppercase">Ajustes de Mesa</span>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleRotateTable(selectedTable.id)}
@@ -948,7 +969,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                     </button>
                     <button
                       onClick={() => handleDeleteTable(selectedTable.id)}
-                      className="flex-1 py-2 bg-white text-red-600 hover:bg-red-50 border border-red-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"
+                      className="flex-1 py-2 bg-white text-stone-700 hover:bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Eliminar</span>
@@ -1144,7 +1165,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                           </div>
                           <button
                             onClick={() => handleDeleteZone(zone)}
-                            className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            className="p-1.5 text-stone-400 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
                             title="Eliminar salón"
                           >
                             <Trash2 className="w-4 h-4" />

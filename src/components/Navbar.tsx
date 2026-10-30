@@ -21,7 +21,9 @@ import {
   Calculator,
   Menu,
   X,
-  ChevronUp
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
@@ -30,6 +32,8 @@ export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu' | 'report
 interface NavbarProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  isSidebarCollapsed: boolean;
+  onToggleSidebar: (collapsed: boolean) => void;
   tenant: TenantInfo;
   user: UserProfile | null;
   onLogout: () => void;
@@ -60,6 +64,7 @@ interface NavItemProps {
   isActive?: boolean;
   variant?: 'default' | 'accent' | 'warning' | 'danger' | 'success';
   className?: string;
+  collapsed?: boolean;
 }
 
 const NavVerticalItem: React.FC<NavItemProps> = ({
@@ -71,12 +76,13 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
   badge,
   isActive = false,
   variant = 'default',
-  className = ''
+  className = '',
+  collapsed = false
 }) => {
-  let styleClasses = 'text-stone-400 hover:text-white hover:bg-stone-900/90';
+  let styleClasses = 'text-[#fcfeff]/65 hover:text-[#fcfeff] hover:bg-white/[0.06]';
 
   if (isActive) {
-    styleClasses = 'bg-[#a9b994] text-white font-black shadow-[0_0_18px_rgba(169,185,148,0.45)] ring-1 ring-white/30';
+    styleClasses = 'bg-white/[0.10] text-[#fcfeff] font-bold border border-white/[0.08] shadow-sm';
   } else if (variant === 'warning') {
     styleClasses = 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-300';
   } else if (variant === 'danger') {
@@ -93,7 +99,8 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
         id={id}
         type="button"
         onClick={onClick}
-        className={`w-12 h-12 sm:w-full sm:h-11 rounded-full sm:rounded-2xl flex items-center justify-center sm:justify-start sm:px-2.5 transition-all duration-200 cursor-pointer ${styleClasses} ${className}`}
+        aria-current={isActive ? 'page' : undefined}
+        className={`w-12 h-12 sm:min-h-11 sm:w-full sm:min-w-0 rounded-full sm:rounded-2xl flex items-center justify-center ${collapsed ? 'sm:px-0 sm:justify-center' : 'sm:px-2.5 sm:justify-start'} transition-[background-color,color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994] focus-visible:ring-offset-2 focus-visible:ring-offset-black motion-reduce:transition-none cursor-pointer ${styleClasses} ${className}`}
         title={label}
       >
         <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
@@ -101,7 +108,7 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
           {badge}
         </div>
         
-        <div className="hidden sm:flex ml-3 flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
+        <div className={`hidden sm:flex min-w-0 flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] delay-75 motion-reduce:transition-none ${collapsed ? 'ml-0 opacity-0 w-0' : 'ml-3 opacity-100 w-44'}`}>
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-bold">{label}</span>
             {isActive && (
@@ -124,6 +131,8 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
+  isSidebarCollapsed,
+  onToggleSidebar,
   tenant,
   user,
   onLogout,
@@ -167,12 +176,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Panel Desplegable Flotante hacia arriba (Bottom Sheet) */}
         {mobileMenuOpen && (
-          <div className="relative z-50 mx-3 mb-2 bg-stone-900/98 border border-stone-800 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl animate-in slide-in-from-bottom-5 duration-200 max-h-[75vh] overflow-y-auto">
+          <div id="mobile-navigation-sheet" className="relative z-50 mx-3 mb-2 bg-black border border-zinc-800 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl animate-in slide-in-from-bottom-5 duration-300 max-h-[75vh] overflow-y-auto motion-reduce:animate-none">
             
             {/* Header del Menú Desplegable */}
             <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-stone-800">
               <div className="flex items-center gap-2.5">
-                <BrandLogo variant="isotype" size="sm" />
+                <BrandLogo variant="isotype" size="sm" className="brightness-0 invert" />
                 <div>
                   <h3 className="font-black text-sm text-white">SaborAI POS</h3>
                   <p className="text-[11px] text-[#a9b994] font-medium truncate max-w-[170px]">{tenant.name}</p>
@@ -181,7 +190,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
-                className="w-8 h-8 rounded-full bg-stone-800 text-stone-400 hover:text-white flex items-center justify-center cursor-pointer"
+                className="w-11 h-11 shrink-0 rounded-full bg-zinc-900 text-stone-300 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994] flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -392,12 +401,13 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Barra Inferior Fija Limpia (4 Botones con espacio ergonómico) */}
         <nav 
           aria-label="Barra de navegación móvil"
-          className="h-16 bg-stone-950/98 border-t border-stone-800/90 backdrop-blur-xl px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
+          className="min-h-16 h-[calc(4rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] bg-black border-t border-zinc-800/90 px-2 sm:px-4 flex items-center justify-between shadow-[0_-8px_30px_rgba(0,0,0,0.6)]"
         >
           {/* 1. Mesas */}
           <button
             type="button"
             onClick={() => handleMobileNavClick('pos')}
+            aria-current={activeTab === 'pos' ? 'page' : undefined}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
               activeTab === 'pos' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -412,6 +422,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => handleMobileNavClick('kds')}
+            aria-current={activeTab === 'kds' ? 'page' : undefined}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 relative transition-colors cursor-pointer ${
               activeTab === 'kds' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -431,6 +442,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => handleMobileNavClick('billing')}
+            aria-current={activeTab === 'billing' ? 'page' : undefined}
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
               activeTab === 'billing' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -445,6 +457,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation-sheet"
             className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
               mobileMenuOpen ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
             }`}
@@ -462,28 +476,52 @@ export const Navbar: React.FC<NavbarProps> = ({
       {/* ======================================================== */}
       {/* 2. ESCRITORIO / TABLET: SIDEBAR VERTICAL ORIGINAL        */}
       {/* ======================================================== */}
-      <aside 
-        className="hidden sm:flex group/sidebar fixed sm:absolute top-0 left-0 w-[68px] hover:w-[280px] h-screen bg-stone-950/95 text-white flex-col justify-between items-start py-3 border-r border-stone-800/80 shadow-2xl z-50 overflow-y-auto overflow-x-hidden backdrop-blur-xl scrollbar-none"
+      <aside
+        onMouseEnter={(event) => {
+          const target = event.target;
+          const enteredOnToggle = target instanceof Element && target.closest('[data-sidebar-toggle]');
+          if (isSidebarCollapsed && !enteredOnToggle) onToggleSidebar(false);
+        }}
+        onMouseLeave={() => {
+          if (!isSidebarCollapsed) onToggleSidebar(true);
+        }}
+        className={`hidden sm:flex fixed sm:absolute top-0 left-0 ${isSidebarCollapsed ? 'w-[68px]' : 'w-[280px]'} h-screen bg-black text-[#fcfeff] flex-col justify-between items-start py-2 border-r border-white/10 shadow-[8px_0_32px_rgba(0,0,0,0.32)] z-50 overflow-y-auto overflow-x-hidden transition-[width,box-shadow,border-color] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none scrollbar-none`}
         aria-label="Navegación vertical SaborAI POS"
+        data-sidebar-state={isSidebarCollapsed ? 'collapsed' : 'expanded'}
       >
         {/* Top Group: Brand Logo & Operational Modules */}
         <div className="w-full h-auto flex flex-col items-start gap-0">
-          
+          <div className="mb-1 flex w-full justify-end px-2">
+            <button
+              type="button"
+              onClick={() => onToggleSidebar(!isSidebarCollapsed)}
+              aria-label={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
+              aria-expanded={!isSidebarCollapsed}
+              aria-controls="desktop-primary-navigation"
+              data-sidebar-toggle
+              title={isSidebarCollapsed ? 'Expandir barra lateral' : 'Contraer barra lateral'}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-stone-300 transition-colors duration-200 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994] motion-reduce:transition-none cursor-pointer"
+            >
+              {isSidebarCollapsed ? <ChevronRight className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
+            </button>
+          </div>
+
           {/* Brand Isotype / Logo */}
-          <div className="flex relative items-center justify-start w-full mb-2 px-1.5 sm:px-2">
+          <div className="flex w-full items-center px-2 mb-3">
             <button
               type="button"
               onClick={() => setActiveTab('pos')}
-              className="w-full h-11 rounded-2xl flex items-center justify-start px-2.5 bg-stone-900 border border-stone-800 hover:border-[#a9b994]/80 transition-all duration-200 cursor-pointer shadow-sm overflow-hidden"
+              aria-label="Ir a Mesas y Salones"
+              className={`h-12 min-w-0 w-full rounded-2xl flex items-center overflow-hidden ${isSidebarCollapsed ? 'justify-center px-0' : 'justify-start px-3'} bg-white/[0.03] border border-white/[0.08] hover:border-[#a9b994]/60 transition-[background-color,border-color,box-shadow] duration-200 cursor-pointer shadow-sm`}
               title="SaborAI POS"
             >
-              <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                <BrandLogo variant="isotype" size="sm" />
+              <div className="w-10 h-10 shrink-0 flex items-center justify-center">
+                <BrandLogo variant="isotype" size="sm" className="brightness-0 invert" />
               </div>
-              
-              <div className="ml-3 flex flex-col items-start overflow-hidden whitespace-nowrap opacity-0 w-0 group-hover/sidebar:opacity-100 group-hover/sidebar:w-44 transition-all duration-300 delay-75">
-                <span className="font-extrabold text-[#a9b994] text-sm">SaborAI POS</span>
-                <span className="text-[10px] text-stone-400 mt-0.5 truncate w-full text-left">
+
+              <div className={`min-w-0 flex flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] delay-75 motion-reduce:transition-none ${isSidebarCollapsed ? 'ml-0 opacity-0 w-0' : 'ml-3 opacity-100 w-40'}`}>
+                <span className="font-extrabold text-white text-sm">SaborAI POS</span>
+                <span className="text-[10px] text-[#fcfeff]/60 mt-0.5 truncate w-full text-left">
                   {tenant.name}
                 </span>
               </div>
@@ -495,9 +533,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Operational Modules Navigation */}
-          <div className="w-full flex flex-col justify-start items-start gap-0.5">
+          <div id="desktop-primary-navigation" className="w-full flex flex-col justify-start items-start gap-0.5">
             {/* Mesas y Salones */}
             <NavVerticalItem
+              collapsed={isSidebarCollapsed}
               id="nav-tab-pos"
               onClick={() => setActiveTab('pos')}
               icon={<LayoutGrid className="w-5 h-5 transition-transform group-hover:scale-105" />}
@@ -509,6 +548,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Venta Rápida / Para Llevar (Mostrador) */}
             {onQuickTakeaway && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-tab-takeaway"
                 onClick={onQuickTakeaway}
                 icon={<ShoppingBag className="w-5 h-5 text-amber-400" />}
@@ -520,6 +560,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Cocina & Bar KDS */}
             <NavVerticalItem
+              collapsed={isSidebarCollapsed}
               id="nav-tab-kds"
               onClick={() => setActiveTab('kds')}
               icon={<ChefHat className="w-5 h-5 transition-transform group-hover:scale-105" />}
@@ -532,6 +573,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Menú y Catálogo */}
             {user?.role === 'ADMIN' && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-tab-menu"
                 onClick={() => setActiveTab('menu')}
                 icon={<UtensilsCrossed className="w-5 h-5 transition-transform group-hover:scale-105" />}
@@ -543,6 +585,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Caja & Facturación */}
             <NavVerticalItem
+              collapsed={isSidebarCollapsed}
               id="nav-tab-billing"
               onClick={() => setActiveTab('billing')}
               icon={<Receipt className="w-5 h-5 transition-transform group-hover:scale-105" />}
@@ -554,6 +597,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Reportes */}
             {['ADMIN', 'CAJERO'].includes(user?.role || '') && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-tab-reports"
                 onClick={() => setActiveTab('reports')}
                 icon={<TrendingUp className="w-5 h-5 transition-transform group-hover:scale-105" />}
@@ -572,6 +616,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex w-full flex-col items-start gap-0.5">
             {['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && onOpenCashShift && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-shift-btn"
                 onClick={() => onOpenCashShift(isShiftOpen ? 'status' : 'status')}
                 icon={<Calculator className="w-5 h-5" />}
@@ -599,6 +644,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="w-full flex flex-col items-start gap-0.5">
             {user && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-quick-user-switch-btn"
                 onClick={onOpenQuickSwitch || onOpenStaffModal || (() => {})}
                 icon={
@@ -613,6 +659,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {user?.role === 'ADMIN' && onOpenStaffModal && (
               <NavVerticalItem
+                collapsed={isSidebarCollapsed}
                 id="nav-register-user-btn"
                 onClick={onOpenStaffModal}
                 icon={<Users className="w-5 h-5 text-stone-400" />}
@@ -708,6 +755,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Settings */}
           {user?.role === 'ADMIN' && (
             <NavVerticalItem
+              collapsed={isSidebarCollapsed}
               id="nav-settings-btn"
               onClick={onOpenSettings}
               icon={<SettingsIcon className="w-5 h-5" />}
@@ -718,6 +766,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Logout Button */}
           <NavVerticalItem
+            collapsed={isSidebarCollapsed}
             id="nav-logout-btn"
             onClick={onLogout}
             icon={<LogOut className="w-5 h-5" />}
