@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
 import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
+import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
@@ -193,37 +194,25 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
   return { tableId: tableResult.data.id, orderId };
 }
 
-async function syncEmployeeCredit(tenantId: string, userId: string, operationId: string, orderId: string, payload: any, amount: number) {
-  const employeeId = typeof payload?.employeeCredit?.employeeId === 'string' ? payload.employeeCredit.employeeId : '';
-  const employeeName = typeof payload?.employeeCredit?.employeeName === 'string' ? payload.employeeCredit.employeeName.slice(0, 160) : '';
-  if (!employeeId || !employeeName || amount <= 0) return;
+async function syncEmployeeCredit(tenantId: string, userId: string, operationId: string, orderId: string, orderNumber: string, payload: any, amount: number) {
+  const employeeCredit = payload?.employeeCredit;
+  if (!employeeCredit || typeof employeeCredit !== 'object') return;
+  const employeeId = typeof employeeCredit.employeeId === 'string' ? employeeCredit.employeeId : '';
+  const idempotencyKey = typeof employeeCredit.idempotencyKey === 'string'
+    ? employeeCredit.idempotencyKey
+    : `credit:${operationId}`;
+  if (!employeeId || amount <= 0) throw new Error('La comanda ejecutiva no tiene un colaborador válido.');
 
-  const accountResult = await supabaseAdmin.from('pos_employee_credit_accounts').upsert({
-    tenant_id: tenantId,
-    employee_id: employeeId,
-    employee_name: employeeName,
-    updated_at: new Date().toISOString()
-  }, { onConflict: 'tenant_id,employee_id' }).select('id,balance').single();
-  if (accountResult.error || !accountResult.data) throw new Error('No se pudo crear la cuenta de crédito del trabajador.');
-
-  const balanceAfter = Number(accountResult.data.balance || 0) + amount;
-  const transactionResult = await supabaseAdmin.from('pos_employee_credit_transactions').insert({
-    tenant_id: tenantId,
-    account_id: accountResult.data.id,
-    employee_id: employeeId,
-    transaction_type: 'CHARGE',
+  await recordEmployeeCreditTransaction(supabaseAdmin, {
+    tenantId,
+    employeeId,
+    type: 'CHARGE',
     amount,
-    balance_after: balanceAfter,
-    order_id: orderId,
-    reference: operationId,
-    idempotency_key: `credit:${operationId}`,
-    created_by: userId
+    idempotencyKey,
+    orderId,
+    reference: orderNumber,
+    createdBy: userId
   });
-  if (transactionResult.error && transactionResult.error.code !== '23505') throw new Error('No se pudo registrar el saldo del trabajador.');
-  if (!transactionResult.error) {
-    const updateResult = await supabaseAdmin.from('pos_employee_credit_accounts').update({ balance: balanceAfter, updated_at: new Date().toISOString() }).eq('id', accountResult.data.id).eq('tenant_id', tenantId);
-    if (updateResult.error) throw new Error('No se pudo actualizar el saldo del trabajador.');
-  }
 }
 
 async function syncPayment(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
@@ -285,7 +274,7 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
   const creditAmount = payments
     .filter((payment: any) => payment?.method === 'CREDIT')
     .reduce((total: number, payment: any) => total + safeNumber(payment?.amount, 0), 0);
-  if (creditAmount > 0) await syncEmployeeCredit(tenantId, userId, operationId, orderResult.data.id, payload, creditAmount);
+  if (creditAmount > 0) await syncEmployeeCredit(tenantId, userId, operationId, orderResult.data.id, orderNumber, payload, creditAmount);
 
   if (payload?.closeOrder === true) {
     const closeResult = await supabaseAdmin

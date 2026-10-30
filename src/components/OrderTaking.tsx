@@ -442,6 +442,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       ...table,
       status: 'OCCUPIED',
       activeOrder: {
+        ...(table?.activeOrder || {}),
         orderNumber: table?.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
         server: assignedServerName,
         openedAt: table?.activeOrder?.openedAt || 'Ahora',
@@ -1343,6 +1344,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         table={{
           ...table,
           activeOrder: {
+            ...(table?.activeOrder || {}),
             orderNumber: table?.activeOrder?.orderNumber || 'ORD-NEW',
             server: assignedServerName,
             openedAt: table?.activeOrder?.openedAt || 'Ahora',

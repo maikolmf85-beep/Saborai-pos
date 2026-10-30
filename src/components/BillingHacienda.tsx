@@ -271,6 +271,7 @@ Medio de Pago: ${paymentMethod}
       onSaveTable({
         ...selectedTable,
         activeOrder: {
+          ...(selectedTable.activeOrder || {}),
           orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
           server: effectiveServerName,
           openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
@@ -324,6 +325,7 @@ Medio de Pago: ${paymentMethod}
       onSaveTable({
         ...selectedTable,
         activeOrder: {
+          ...(selectedTable.activeOrder || {}),
           orderNumber: selectedTable.activeOrder?.orderNumber || 'ORD-8921',
           server: effectiveServerName,
           openedAt: selectedTable.activeOrder?.openedAt || 'Ahora',
@@ -569,6 +571,7 @@ Medio de Pago: ${paymentMethod}
         ...effectiveTable,
         status: 'OCCUPIED',
         activeOrder: {
+          ...(selectedTable?.activeOrder || {}),
           orderNumber: selectedTable?.activeOrder?.orderNumber || 'ORD-8921',
           server: effectiveServerName,
           openedAt: selectedTable?.activeOrder?.openedAt || 'Ahora',
@@ -586,6 +589,7 @@ Medio de Pago: ${paymentMethod}
     const cloudTable: Table = {
       ...updatedTable,
       activeOrder: {
+        ...(updatedTable.activeOrder || selectedTable?.activeOrder || {}),
         orderNumber: selectedTable?.activeOrder?.orderNumber || updatedTable.activeOrder?.orderNumber || `ORD-${Date.now()}`,
         server: effectiveServerName,
         openedAt: selectedTable?.activeOrder?.openedAt || updatedTable.activeOrder?.openedAt || new Date().toISOString(),

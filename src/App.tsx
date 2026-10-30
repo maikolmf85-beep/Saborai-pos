@@ -35,7 +35,7 @@ import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
-import { posCloudService, SaleCloudPayload } from './services/posCloudService';
+import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
 import { employeeCreditService } from './services/employeeCreditService';
 import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
@@ -164,6 +164,14 @@ function mergeTenantZones(...lists: Array<string[] | null | undefined>): string[
 
 function redactEmployeePins(staff: UserProfile[]): UserProfile[] {
   return staff.map(member => withoutEmployeePin(member) as UserProfile);
+}
+
+function getAccountUserId(fallback?: string | null): string | null {
+  try {
+    return localStorage.getItem('saborai_account_user_id') || fallback || null;
+  } catch {
+    return fallback || null;
+  }
 }
 
 function syncTenantZonesWithServer(zones: string[]): void {
@@ -767,6 +775,8 @@ export function App() {
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isQuickSwitchOpen, setIsQuickSwitchOpen] = useState(false);
   const [isExecutiveOrderOpen, setIsExecutiveOrderOpen] = useState(false);
+  const [executiveOrderInitialView, setExecutiveOrderInitialView] = useState<'new-order' | 'ledger'>('new-order');
+  const [executiveModalSession, setExecutiveModalSession] = useState(0);
   const [isCashShiftModalOpen, setIsCashShiftModalOpen] = useState(false);
   const [cashShiftInitialTab, setCashShiftInitialTab] = useState<'status' | 'movements' | 'close' | 'history' | 'registers'>('status');
   const [cashShiftInitialZone, setCashShiftInitialZone] = useState<string | undefined>();
@@ -1316,7 +1326,7 @@ export function App() {
     setActiveTab('pos');
   };
 
-  const handleExecutiveOrder = (employee: UserProfile) => {
+  const handleExecutiveOrder = (employee: Pick<UserProfile, 'id' | 'name'>) => {
     if (!cashShiftService.getActiveShift()) {
       setCashShiftInitialTab('status');
       setIsCashShiftModalOpen(true);
@@ -1348,17 +1358,27 @@ export function App() {
     setActiveTab('pos');
   };
 
-  const handleEmployeeCreditPayment = (employee: UserProfile, amount: number) => {
+  const handleEmployeeCreditPayment = async (employee: Pick<UserProfile, 'id' | 'name'>, amount: number, idempotencyKey: string): Promise<void> => {
     if (!cashShiftService.getActiveShift()) {
       addNotification({ id: `credit_shift_${Date.now()}`, type: 'HACIENDA_UPDATE', title: 'Turno de Caja Requerido', message: 'Debes abrir un turno para registrar un abono.', timestamp: new Date() });
-      return;
+      throw new Error('Abre un turno de caja antes de registrar el abono.');
     }
+    if (!isOnline || !localDB.isOnline()) throw new Error('Conecta el dispositivo para guardar el abono en el registro central.');
     try {
-      employeeCreditService.recordPayment({ tenantId: tenant.id, employeeId: employee.id, employeeName: employee.name, amount, createdBy: currentUser?.id });
-      cashShiftService.recordSalePayment({ cashAmount: amount, subtotal: amount, tenantId: tenant.id, actor: currentUser || undefined, reference: `ABONO-EMPLEADO-${employee.id}` });
+      const recordedPayment = await employeeCreditService.recordPayment({
+        tenantId: tenant.id,
+        employeeId: employee.id,
+        amount,
+        reference: `ABONO-EMPLEADO-${employee.id}`,
+        idempotencyKey
+      });
+      if (!recordedPayment.alreadyApplied) {
+        cashShiftService.recordSalePayment({ cashAmount: amount, subtotal: amount, tenantId: tenant.id, actor: currentUser || undefined, reference: `ABONO-EMPLEADO-${employee.id}` });
+      }
       addNotification({ id: `credit_paid_${Date.now()}`, type: 'ORDER_READY', title: 'Abono registrado', message: `Se registró un abono de ₡${amount.toLocaleString('es-CR')} para ${employee.name}.`, timestamp: new Date() });
     } catch (error) {
       addNotification({ id: `credit_paid_error_${Date.now()}`, type: 'HACIENDA_UPDATE', title: 'No se pudo registrar el abono', message: error instanceof Error ? error.message : 'Verifica el saldo pendiente.', timestamp: new Date() });
+      throw error;
     }
   };
 
@@ -1368,6 +1388,15 @@ export function App() {
   };
 
   const handleRegisterPayment = (sale: SaleCloudPayload) => {
+    const paymentOperationId = salePaymentOperationId(tenant.id, sale);
+    const executiveEmployeeId = sale.table.activeOrder?.executiveEmployeeId;
+    const employeeCredit = sale.paymentMethod === '04-Credito' && executiveEmployeeId
+      ? {
+          employeeId: executiveEmployeeId,
+          employeeName: sale.table.activeOrder?.executiveEmployeeName || 'Colaborador',
+          idempotencyKey: `credit:${paymentOperationId}`
+        }
+      : undefined;
     const invoicePayload = {
       orderNumber: sale.table.activeOrder?.orderNumber,
       clave: sale.invoice.clave50Digitos,
@@ -1384,9 +1413,7 @@ export function App() {
         method: sale.paymentMethod === '01-Efectivo' ? 'CASH' : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : sale.paymentMethod === '04-Credito' ? 'CREDIT' : 'SINPE',
         provider: 'POS_OFFLINE_FALLBACK'
       }],
-      employeeCredit: sale.paymentMethod === '04-Credito' && sale.table.activeOrder?.executiveEmployeeId
-        ? { employeeId: sale.table.activeOrder.executiveEmployeeId, employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador' }
-        : undefined,
+      employeeCredit,
       closeOrder: sale.closeOrder
     };
     const inventoryPayload = {
@@ -1394,7 +1421,6 @@ export function App() {
       items: sale.items
     };
 
-    const executiveEmployeeId = sale.table.activeOrder?.executiveEmployeeId;
     if (sale.paymentMethod === '04-Credito' && executiveEmployeeId) {
       employeeCreditService.recordCharge({
         tenantId: tenant.id,
@@ -1403,12 +1429,15 @@ export function App() {
         amount: sale.total,
         orderNumber: sale.table.activeOrder?.orderNumber,
         invoiceClave: sale.invoice.clave50Digitos,
-        createdBy: currentUser?.id
+        createdBy: currentUser?.id,
+        idempotencyKey: employeeCredit?.idempotencyKey || `credit:${paymentOperationId}`
       });
     }
 
     if (localDB.isOnline()) {
-      void posCloudService.syncSale(tenant.id, sale).catch(async error => {
+      void posCloudService.syncSale(tenant.id, sale).then(() => {
+        void employeeCreditService.refreshLedger(tenant.id).catch(error => console.warn('[Employee Credit] No se pudo actualizar la vista local:', error));
+      }).catch(async error => {
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
         await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
         await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
@@ -1752,7 +1781,16 @@ export function App() {
         onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
         onOpenCashShift={(tab) => handleOpenCashShift(tab || 'status')}
         onQuickTakeaway={handleQuickTakeaway}
-        onOpenExecutiveOrder={() => setIsExecutiveOrderOpen(true)}
+        onOpenExecutiveOrder={() => {
+          setExecutiveModalSession(session => session + 1);
+          setExecutiveOrderInitialView('new-order');
+          setIsExecutiveOrderOpen(true);
+        }}
+        onOpenEmployeeCreditLedger={() => {
+          setExecutiveModalSession(session => session + 1);
+          setExecutiveOrderInitialView('ledger');
+          setIsExecutiveOrderOpen(true);
+        }}
         isShiftOpen={!!cashShiftService.getActiveShift()}
         activeRegisterName={cashShiftService.getCurrentRegister().name}
       />
@@ -2010,9 +2048,14 @@ export function App() {
       />
 
       <ExecutiveOrderModal
+        key={executiveModalSession}
         isOpen={isExecutiveOrderOpen}
         staffList={staffList}
+        ownerUserId={getAccountUserId(currentUser?.id)}
         tenantId={tenant.id}
+        currency={tenant.currency}
+        isOnline={isOnline && localDB.isOnline()}
+        initialView={executiveOrderInitialView}
         onClose={() => setIsExecutiveOrderOpen(false)}
         onSelectEmployee={handleExecutiveOrder}
         onRecordPayment={handleEmployeeCreditPayment}

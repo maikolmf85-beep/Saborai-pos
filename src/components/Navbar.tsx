@@ -18,6 +18,7 @@ import {
   BrainCircuit,
   ShoppingBag,
   BriefcaseBusiness,
+  History,
   Calculator,
   Menu,
   X,
@@ -47,6 +48,7 @@ interface NavbarProps {
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
   onQuickTakeaway?: () => void;
   onOpenExecutiveOrder?: () => void;
+  onOpenEmployeeCreditLedger?: () => void;
   isShiftOpen?: boolean;
   activeRegisterName?: string;
 }
@@ -146,6 +148,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCashShift,
   onQuickTakeaway,
   onOpenExecutiveOrder,
+  onOpenEmployeeCreditLedger,
   isShiftOpen,
   activeRegisterName
 }) => {
@@ -217,7 +220,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
 
-              {onOpenExecutiveOrder && (
+              {onOpenExecutiveOrder && ['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && (
                 <button
                   type="button"
                   onClick={() => { onOpenExecutiveOrder(); setMobileMenuOpen(false); }}
@@ -227,6 +230,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="flex-1">
                     <div className="font-bold text-xs">Comanda Ejecutiva</div>
                     <div className="text-[10px] text-stone-400">Crédito interno a trabajador</div>
+                  </div>
+                </button>
+              )}
+
+              {onOpenEmployeeCreditLedger && ['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && (
+                <button
+                  type="button"
+                  onClick={() => { onOpenEmployeeCreditLedger(); setMobileMenuOpen(false); }}
+                  className="w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 text-stone-200 hover:border-emerald-500/40 hover:bg-stone-900 flex items-center gap-3 text-left transition-all"
+                >
+                  <History className="w-5 h-5 shrink-0 text-emerald-400" />
+                  <div className="flex-1">
+                    <div className="font-bold text-xs">Registro de consumo</div>
+                    <div className="text-[10px] text-stone-400">Saldos por colaborador</div>
                   </div>
                 </button>
               )}
@@ -535,6 +552,29 @@ export const Navbar: React.FC<NavbarProps> = ({
                 label="Para Llevar"
                 sublabel="Venta rápida directa de mostrador"
                 variant="warning"
+              />
+            )}
+
+            {onOpenExecutiveOrder && ['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && (
+              <NavVerticalItem
+                collapsed={isSidebarCollapsed}
+                id="nav-executive-order"
+                onClick={onOpenExecutiveOrder}
+                icon={<BriefcaseBusiness className="w-5 h-5 text-[#a9b994]" />}
+                label="Comanda Ejecutiva"
+                sublabel="Crédito interno a colaborador"
+                variant="accent"
+              />
+            )}
+
+            {onOpenEmployeeCreditLedger && ['ADMIN', 'CAJERO', 'SALONERO_CAJA'].includes(user?.role || '') && (
+              <NavVerticalItem
+                collapsed={isSidebarCollapsed}
+                id="nav-employee-credit-ledger"
+                onClick={onOpenEmployeeCreditLedger}
+                icon={<History className="w-5 h-5 text-emerald-400" />}
+                label="Registro de consumo"
+                sublabel="Saldos de colaboradores"
               />
             )}
 

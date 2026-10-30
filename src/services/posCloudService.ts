@@ -11,6 +11,12 @@ export interface SaleCloudPayload {
   items: Array<{ name: string; quantity: number; menuItemId?: string }>;
 }
 
+export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  const orderNumber = sale.table.activeOrder?.orderNumber;
+  if (!orderNumber) throw new Error('La venta no tiene número de orden.');
+  return `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}:payment`;
+}
+
 function createOperationId(action: PosCloudAction): string {
   const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
   return `pos_${action.toLowerCase()}_${Date.now()}_${randomId}`;
@@ -58,6 +64,7 @@ class PosCloudService {
     if (!orderNumber) throw new Error('La venta no tiene número de orden.');
 
     const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
+    const paymentOperationId = salePaymentOperationId(tenantId, sale);
     await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
     await this.syncOperation('PAYMENT', {
       orderNumber,
@@ -71,11 +78,12 @@ class PosCloudService {
       employeeCredit: sale.paymentMethod === '04-Credito' && sale.table.activeOrder?.executiveEmployeeId
         ? {
             employeeId: sale.table.activeOrder.executiveEmployeeId,
-            employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador'
+            employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador',
+            idempotencyKey: `credit:${paymentOperationId}`
           }
         : undefined,
       closeOrder: sale.closeOrder
-    }, tenantId, `${operationPrefix}:payment`);
+    }, tenantId, paymentOperationId);
     await this.syncOperation('DEDUCT_INVENTORY', {
       orderNumber,
       items: sale.items
