@@ -103,9 +103,7 @@ export const TableMap: React.FC<TableMapProps> = ({
     typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
   );
   const [isMobileControlsOpen, setIsMobileControlsOpen] = useState<boolean>(false);
-  const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(() =>
-    typeof window === 'undefined' || window.matchMedia('(min-width: 768px)').matches
-  );
+  const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(false);
   const mobileControlsRef = useRef<HTMLElement | null>(null);
   const mobileControlsButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedZoneHasActiveShift = zoneHasActiveShift(selectedZone);
@@ -149,16 +147,15 @@ export const TableMap: React.FC<TableMapProps> = ({
 
   useEffect(() => {
     const desktopViewport = window.matchMedia('(min-width: 768px)');
-    const applyViewportDefaults = (isDesktop: boolean) => {
+    const syncViewport = (isDesktop: boolean) => {
       setIsMobileViewport(!isDesktop);
-      setShowDetailsDrawer(isDesktop);
       if (isDesktop) setIsMobileControlsOpen(false);
     };
     const handleViewportChange = (event: MediaQueryListEvent) => {
-      applyViewportDefaults(event.matches);
+      syncViewport(event.matches);
     };
 
-    applyViewportDefaults(desktopViewport.matches);
+    syncViewport(desktopViewport.matches);
     desktopViewport.addEventListener('change', handleViewportChange);
     return () => desktopViewport.removeEventListener('change', handleViewportChange);
   }, []);
@@ -581,19 +578,32 @@ export const TableMap: React.FC<TableMapProps> = ({
                 {tenantZones.length > 0 ? `Salón: ${selectedZone}` : 'Organiza las mesas de tu restaurante.'}
               </p>
             </div>
-            <button
-              ref={mobileControlsButtonRef}
-              type="button"
-              onClick={() => setIsMobileControlsOpen(open => !open)}
-              aria-expanded={isMobileControlsOpen}
-              aria-controls="table-map-mobile-controls"
-              aria-label={isMobileControlsOpen ? 'Ocultar controles del plano' : 'Mostrar controles del plano'}
-              className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[#3b3733] px-3 py-2 text-xs font-bold text-white shadow-xs transition-colors hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157] focus-visible:ring-offset-2"
-            >
-              <Menu className="h-4 w-4 text-[#a9b994]" />
-              <span>Controles</span>
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isMobileControlsOpen ? 'rotate-180' : ''}`} />
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => { setShowDetailsDrawer(open => !open); setIsMobileControlsOpen(false); }}
+                aria-expanded={showDetailsDrawer}
+                aria-controls="table-map-details-drawer"
+                aria-label={showDetailsDrawer ? 'Ocultar panel de detalles' : 'Mostrar panel de detalles'}
+                title={showDetailsDrawer ? 'Ocultar panel de detalles' : 'Mostrar panel de detalles'}
+                className="flex h-11 w-11 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 shadow-xs transition-colors hover:bg-stone-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157] focus-visible:ring-offset-2"
+              >
+                {showDetailsDrawer ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+              </button>
+              <button
+                ref={mobileControlsButtonRef}
+                type="button"
+                onClick={() => setIsMobileControlsOpen(open => !open)}
+                aria-expanded={isMobileControlsOpen}
+                aria-controls="table-map-mobile-controls"
+                aria-label={isMobileControlsOpen ? 'Ocultar controles del plano' : 'Mostrar controles del plano'}
+                className="flex min-h-11 items-center gap-2 rounded-xl bg-[#3b3733] px-3 py-2 text-xs font-bold text-white shadow-xs transition-colors hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157] focus-visible:ring-offset-2"
+              >
+                <Menu className="h-4 w-4 text-[#a9b994]" />
+                <span>Controles</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isMobileControlsOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
           </div>
 
           <div
@@ -715,16 +725,6 @@ export const TableMap: React.FC<TableMapProps> = ({
                   </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => { setShowDetailsDrawer(!showDetailsDrawer); setIsMobileControlsOpen(false); }}
-                aria-pressed={showDetailsDrawer}
-                title={showDetailsDrawer ? 'Ocultar panel lateral' : 'Mostrar panel de detalles de mesa'}
-                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold ${showDetailsDrawer ? 'border-stone-200 bg-stone-50 text-stone-700' : 'border-[#a9b994] bg-[#a9b994]/20 text-stone-950'}`}
-              >
-                {showDetailsDrawer ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRight className="h-3.5 w-3.5" />}
-                <span>{showDetailsDrawer ? 'Ocultar panel' : 'Mostrar panel'}</span>
-              </button>
               <button
                 type="button"
                 onClick={() => { toggleFullscreen(); setIsMobileControlsOpen(false); }}
@@ -907,6 +907,8 @@ export const TableMap: React.FC<TableMapProps> = ({
                   type="button"
                   onClick={() => setShowDetailsDrawer(!showDetailsDrawer)}
                   aria-pressed={showDetailsDrawer}
+                  aria-expanded={showDetailsDrawer}
+                  aria-controls="table-map-details-drawer"
                   className={`flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px] ${
                     showDetailsDrawer
                       ? 'border-stone-200 bg-stone-50 text-stone-700 hover:bg-stone-100'
@@ -1114,8 +1116,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         </div>
 
         {/* Selected Table Detail Drawer (Collapsible for 100% full-width floor plan) */}
-        {showDetailsDrawer && (
-          <div className="w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex flex-col justify-between h-[45vh] lg:h-full overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200">
+        <div id="table-map-details-drawer" className={`${showDetailsDrawer ? 'flex' : 'hidden'} w-full lg:w-80 xl:w-96 bg-white border border-stone-200/90 rounded-2xl p-4 shadow-xs flex-col justify-between h-[45vh] lg:h-full overflow-y-auto shrink-0 animate-in slide-in-from-right-4 duration-200`}>
           
           {selectedTable ? (
             <div className="space-y-4">
@@ -1259,8 +1260,7 @@ export const TableMap: React.FC<TableMapProps> = ({
             </div>
           )}
 
-          </div>
-        )}
+        </div>
 
       </div>
 
