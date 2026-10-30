@@ -5,7 +5,7 @@ export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | '
 export interface SaleCloudPayload {
   table: Table;
   invoice: ElectronicInvoiceCR;
-  paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+  paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
   total: number;
   closeOrder: boolean;
   items: Array<{ name: string; quantity: number; menuItemId?: string }>;
@@ -56,9 +56,15 @@ class PosCloudService {
         amount: sale.total,
         method: sale.paymentMethod === '01-Efectivo'
           ? 'CASH'
-          : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : 'SINPE',
+          : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : sale.paymentMethod === '04-Credito' ? 'CREDIT' : 'SINPE',
         provider: 'POS_ONLINE'
       }],
+      employeeCredit: sale.paymentMethod === '04-Credito' && sale.table.activeOrder?.executiveEmployeeId
+        ? {
+            employeeId: sale.table.activeOrder.executiveEmployeeId,
+            employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador'
+          }
+        : undefined,
       closeOrder: sale.closeOrder
     }, tenantId, `${operationPrefix}:payment`);
     await this.syncOperation('DEDUCT_INVENTORY', {

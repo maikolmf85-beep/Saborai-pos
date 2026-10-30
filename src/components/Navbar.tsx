@@ -17,6 +17,7 @@ import {
   TrendingUp,
   BrainCircuit,
   ShoppingBag,
+  BriefcaseBusiness,
   Calculator,
   Menu,
   X,
@@ -44,6 +45,7 @@ interface NavbarProps {
   onOpenQuickSwitch?: () => void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
   onQuickTakeaway?: () => void;
+  onOpenExecutiveOrder?: () => void;
   isShiftOpen?: boolean;
   activeRegisterName?: string;
 }
@@ -137,6 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenQuickSwitch,
   onOpenCashShift,
   onQuickTakeaway,
+  onOpenExecutiveOrder,
   isShiftOpen,
   activeRegisterName
 }) => {
@@ -204,6 +207,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="flex-1">
                     <div className="font-bold text-xs">Venta Rápida / Para Llevar</div>
                     <div className="text-[10px] text-stone-400">Comanda directa sin mesa</div>
+                  </div>
+                </button>
+              )}
+
+              {onOpenExecutiveOrder && (
+                <button
+                  type="button"
+                  onClick={() => { onOpenExecutiveOrder(); setMobileMenuOpen(false); }}
+                  className="w-full p-3 rounded-2xl bg-[#a9b994]/15 border border-[#a9b994]/40 text-[#d9e5cf] hover:bg-[#a9b994]/25 flex items-center gap-3 text-left transition-all"
+                >
+                  <BriefcaseBusiness className="w-5 h-5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-bold text-xs">Comanda Ejecutiva</div>
+                    <div className="text-[10px] text-stone-400">Crédito interno a trabajador</div>
                   </div>
                 </button>
               )}

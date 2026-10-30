@@ -102,6 +102,8 @@ export interface ActiveOrder {
   openedAt: string;
   subAccounts: SubAccount[];
   items: TableItem[];
+  executiveEmployeeId?: string;
+  executiveEmployeeName?: string;
 }
 
 export interface Table {

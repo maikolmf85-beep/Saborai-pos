@@ -42,7 +42,7 @@ interface BillingHaciendaProps {
   onRegisterPayment?: (payload: {
     table: Table;
     invoice: ElectronicInvoiceCR;
-    paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+    paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
     total: number;
     closeOrder: boolean;
     items: Array<{ name: string; quantity: number; menuItemId?: string }>;
@@ -108,7 +108,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [customerCedula, setCustomerCedula] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerActivityCode, setCustomerActivityCode] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil'>('02-Tarjeta');
+  const [paymentMethod, setPaymentMethod] = useState<'01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito'>('02-Tarjeta');
   const [cashReceived, setCashReceived] = useState<string>('');
   const [isSearchingHacienda, setIsSearchingHacienda] = useState(false);
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
@@ -134,12 +134,17 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const total = Math.round(subtotal + iva13 + servicio10);
   const currentRegister = cashShiftService.getCurrentRegister();
   const currentShift = cashShiftService.getActiveShift();
+  const isExecutiveOrder = Boolean(selectedTable?.activeOrder?.executiveEmployeeId);
   const terminalCode = currentRegister.terminalCode || '00001';
   const branchCode = currentRegister.branchCode || '001';
   const genericServerNames = new Set(['Mesero General', 'Salonero general', 'Salonero General', 'Mesero', 'Salonero']);
   const effectiveServerName = selectedTable?.activeOrder?.server && !genericServerNames.has(selectedTable.activeOrder.server)
     ? selectedTable.activeOrder.server
     : currentUser?.name || 'Salonero Encargado';
+
+  useEffect(() => {
+    if (isExecutiveOrder) setPaymentMethod('04-Credito');
+  }, [isExecutiveOrder, selectedTable?.id]);
 
   // Clave y consecutivo válidos (50 / 20 dígitos). La vista previa no consume consecutivo; se reserva al emitir.
   const docType: 'FE' | 'TE' = isFacturaElectronica ? 'FE' : 'TE';
@@ -353,9 +358,9 @@ Medio de Pago: ${paymentMethod}
     tipoDocumento: activeDocType,
     codigoActividadReceptor: activeDocType === 'FE' ? customerActivityCode : undefined,
     fechaEmision: claveInfo.fecha.toISOString(),
-    condicionVenta: '01-Efectivo',
+    condicionVenta: paymentMethod === '04-Credito' ? '04-Credito' : paymentMethod,
     medioPago: paymentMethod,
-    pagos: [{
+    pagos: paymentMethod === '04-Credito' ? [] : [{
       tipo: paymentMethod === '01-Efectivo' ? 'efectivo' : paymentMethod === '02-Tarjeta' ? 'tarjeta' : 'sinpe',
       monto: total
     }],
@@ -443,11 +448,11 @@ Medio de Pago: ${paymentMethod}
       cashAmt = total;
     } else if (paymentMethod === '02-Tarjeta') {
       cardAmt = total;
-    } else {
+    } else if (paymentMethod === '03-SINPE_Movil') {
       sinpeAmt = total;
     }
 
-    cashShiftService.recordSalePayment({
+    if (paymentMethod !== '04-Credito') cashShiftService.recordSalePayment({
       cashAmount: cashAmt,
       cardAmount: cardAmt,
       sinpeAmount: sinpeAmt,
@@ -907,7 +912,7 @@ Medio de Pago: ${paymentMethod}
                 <select
                   value={paymentMethod}
                   onChange={(e) => {
-                    const method = e.target.value as '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil';
+                    const method = e.target.value as '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
                     setPaymentMethod(method);
                     if (method === '01-Efectivo' && !cashReceived) {
                       setCashReceived(total.toString());
@@ -918,6 +923,7 @@ Medio de Pago: ${paymentMethod}
                   <option value="02-Tarjeta">02 - Tarjeta Débito/Crédito</option>
                   <option value="01-Efectivo">01 - Efectivo</option>
                   <option value="03-SINPE_Movil">03 - SINPE Móvil Bancario</option>
+                  {isExecutiveOrder && <option value="04-Credito">04 - Crédito a trabajador</option>}
                 </select>
               </div>
 
