@@ -18,7 +18,8 @@ import {
   Move,
   Lock,
   Unlock,
-  ChevronRight,
+  ChevronDown,
+  Menu,
   Maximize2,
   Minimize2,
   PanelRightClose,
@@ -98,7 +99,15 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [isReservationsOpen, setIsReservationsOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-  const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(true);
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+  );
+  const [isMobileControlsOpen, setIsMobileControlsOpen] = useState<boolean>(false);
+  const [showDetailsDrawer, setShowDetailsDrawer] = useState<boolean>(() =>
+    typeof window === 'undefined' || window.matchMedia('(min-width: 768px)').matches
+  );
+  const mobileControlsRef = useRef<HTMLElement | null>(null);
+  const mobileControlsButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedZoneHasActiveShift = zoneHasActiveShift(selectedZone);
 
   // Sync selectedZone when activeShiftZones change or tenantZones update
@@ -137,6 +146,45 @@ export const TableMap: React.FC<TableMapProps> = ({
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
+
+  useEffect(() => {
+    const desktopViewport = window.matchMedia('(min-width: 768px)');
+    const applyViewportDefaults = (isDesktop: boolean) => {
+      setIsMobileViewport(!isDesktop);
+      setShowDetailsDrawer(isDesktop);
+      if (isDesktop) setIsMobileControlsOpen(false);
+    };
+    const handleViewportChange = (event: MediaQueryListEvent) => {
+      applyViewportDefaults(event.matches);
+    };
+
+    applyViewportDefaults(desktopViewport.matches);
+    desktopViewport.addEventListener('change', handleViewportChange);
+    return () => desktopViewport.removeEventListener('change', handleViewportChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileControlsOpen) return;
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (!mobileControlsRef.current?.contains(event.target as Node)) {
+        setIsMobileControlsOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsMobileControlsOpen(false);
+        mobileControlsButtonRef.current?.focus();
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isMobileControlsOpen]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -519,8 +567,203 @@ export const TableMap: React.FC<TableMapProps> = ({
     <div className="tour-table-map w-full h-full flex flex-col p-2 sm:p-3 gap-2 overflow-hidden animate-in fade-in duration-150 bg-[#fafaf9]">
       
       {/* Encabezado superior y barra de controles agrupados */}
-      <header className="shrink-0 rounded-2xl border border-stone-200 bg-white p-2.5 shadow-xs sm:p-3">
-        <div className="flex flex-col gap-2.5">
+      <header ref={mobileControlsRef} className="relative z-30 shrink-0 rounded-2xl border border-stone-200 bg-white p-2.5 shadow-xs sm:p-3">
+        <div className="md:hidden">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-black tracking-tight text-stone-900">Plano del Salón</h1>
+                <span className="rounded-full border border-[#a9b994]/50 bg-[#a9b994]/15 px-2 py-0.5 text-[11px] font-black text-[#3b3733]">
+                  {filteredTables.length} {filteredTables.length === 1 ? 'mesa' : 'mesas'}
+                </span>
+              </div>
+              <p className="mt-0.5 truncate text-[11px] text-stone-500">
+                {tenantZones.length > 0 ? `Salón: ${selectedZone}` : 'Organiza las mesas de tu restaurante.'}
+              </p>
+            </div>
+            <button
+              ref={mobileControlsButtonRef}
+              type="button"
+              onClick={() => setIsMobileControlsOpen(open => !open)}
+              aria-expanded={isMobileControlsOpen}
+              aria-controls="table-map-mobile-controls"
+              aria-label={isMobileControlsOpen ? 'Ocultar controles del plano' : 'Mostrar controles del plano'}
+              className="flex min-h-11 shrink-0 items-center gap-2 rounded-xl bg-[#3b3733] px-3 py-2 text-xs font-bold text-white shadow-xs transition-colors hover:bg-stone-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157] focus-visible:ring-offset-2"
+            >
+              <Menu className="h-4 w-4 text-[#a9b994]" />
+              <span>Controles</span>
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isMobileControlsOpen ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+
+          <div
+            id="table-map-mobile-controls"
+            role="region"
+            aria-label="Controles del plano"
+            className={`${isMobileControlsOpen ? 'block' : 'hidden'} absolute left-0 right-0 top-full z-50 mt-2 max-h-[min(70vh,32rem)] overflow-y-auto rounded-2xl border border-stone-200 bg-white p-3 shadow-xl md:hidden`}
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-stone-100 pb-2">
+              <div>
+                <h2 className="text-sm font-black text-stone-900">Controles del plano</h2>
+                <p className="text-[11px] text-stone-500">Salones, filtros y acciones</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMobileControlsOpen(false)}
+                aria-label="Cerrar controles del plano"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-stone-600 hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => { setStatusFilter(statusFilter === 'AVAILABLE' ? 'ALL' : 'AVAILABLE'); setIsMobileControlsOpen(false); }}
+                aria-pressed={statusFilter === 'AVAILABLE'}
+                title="Filtrar solo mesas libres"
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-center transition-colors ${statusFilter === 'AVAILABLE' ? 'border-emerald-700 bg-emerald-600 text-white' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'AVAILABLE' ? 'bg-white' : 'bg-emerald-500'}`} />
+                <span>{availableCount} libres</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStatusFilter(statusFilter === 'OCCUPIED' ? 'ALL' : 'OCCUPIED'); setIsMobileControlsOpen(false); }}
+                aria-pressed={statusFilter === 'OCCUPIED'}
+                title="Filtrar solo mesas ocupadas"
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-center transition-colors ${statusFilter === 'OCCUPIED' ? 'border-[#3b3733] bg-[#3b3733] text-white' : 'border-[#a9b994] bg-[#e7eee2] text-[#3b3733]'}`}
+              >
+                <span className={`h-2 w-2 rounded-full ${statusFilter === 'OCCUPIED' ? 'bg-white' : 'bg-[#588157]'}`} />
+                <span>{occupiedCount} ocupadas</span>
+              </button>
+              {statusFilter !== 'ALL' && (
+                <button
+                  type="button"
+                  onClick={() => { setStatusFilter('ALL'); setIsMobileControlsOpen(false); }}
+                  className="col-span-2 flex min-h-11 items-center justify-center rounded-lg bg-stone-100 px-2 py-2 text-center text-[11px] font-bold text-stone-700"
+                >
+                  Ver todas las mesas
+                </button>
+              )}
+              <div className="col-span-2 flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-2 py-2 text-center text-stone-800" title="Ventas en curso">
+                <CreditCard className="h-3.5 w-3.5 text-[#588157]" />
+                <span>En curso: ₡{totalSalesInProgress.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="mt-3 border-t border-stone-100 pt-3">
+              <span className="mb-1.5 block text-[9px] font-black uppercase tracking-[0.14em] text-stone-400">Salones</span>
+              <div className="flex max-h-28 flex-wrap items-center gap-1.5 overflow-y-auto">
+                {effectiveZones.length === 0 ? (
+                  <span className="rounded-lg border border-dashed border-stone-200 px-2.5 py-2 text-[11px] text-stone-400">Sin salones configurados</span>
+                ) : effectiveZones.map(zone => (
+                  <button
+                    key={zone}
+                    type="button"
+                    onClick={() => { setSelectedZone(zone); setIsMobileControlsOpen(false); }}
+                    aria-pressed={selectedZone === zone}
+                    className={`min-h-11 shrink-0 rounded-lg px-2.5 py-2 text-[11px] font-bold ${selectedZone === zone ? 'bg-[#3b3733] text-white' : 'border border-stone-200 bg-white text-stone-600'}`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {zone}
+                      {hasActiveShift && restrictedShiftZones.length > 0 && !restrictedShiftZones.includes(zone) && (
+                        <Lock className="h-3 w-3 text-stone-400" aria-label="Sin turno activo" />
+                      )}
+                    </span>
+                  </button>
+                ))}
+                {isAdmin && effectiveZones.length === tenantZones.length && (
+                  <button
+                    type="button"
+                    onClick={() => { setIsZoneModalOpen(true); setIsMobileControlsOpen(false); }}
+                    title="Añadir o quitar salones"
+                    className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-2.5 py-2 text-[11px] font-bold text-[#3b3733]"
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-[#588157]" />
+                    <span>Editar salones</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-stone-100 pt-3">
+              {isAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { setIsEditMode(!isEditMode); setIsMobileControlsOpen(false); }}
+                    aria-pressed={isEditMode}
+                    className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold ${isEditMode ? 'border-[#a9b994] bg-[#a9b994] text-[#3b3733]' : 'border-stone-200 bg-white text-stone-700'}`}
+                  >
+                    {isEditMode ? <Unlock className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5 text-[#588157]" />}
+                    <span>{isEditMode ? 'Terminar edición' : 'Editar plano'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-nyza-target={isMobileViewport ? 'create-table' : undefined}
+                    onClick={() => {
+                      setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
+                      setShowAddModal(true);
+                      setIsMobileControlsOpen(false);
+                    }}
+                    className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-[#3b3733] px-2 py-2 text-center text-[11px] font-bold text-white"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-[#a9b994]" />
+                    <span>Agregar mesa</span>
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => { setShowDetailsDrawer(!showDetailsDrawer); setIsMobileControlsOpen(false); }}
+                aria-pressed={showDetailsDrawer}
+                title={showDetailsDrawer ? 'Ocultar panel lateral' : 'Mostrar panel de detalles de mesa'}
+                className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold ${showDetailsDrawer ? 'border-stone-200 bg-stone-50 text-stone-700' : 'border-[#a9b994] bg-[#a9b994]/20 text-stone-950'}`}
+              >
+                {showDetailsDrawer ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRight className="h-3.5 w-3.5" />}
+                <span>{showDetailsDrawer ? 'Ocultar panel' : 'Mostrar panel'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { toggleFullscreen(); setIsMobileControlsOpen(false); }}
+                aria-pressed={isFullscreen}
+                title={isFullscreen ? 'Salir del modo pantalla completa' : 'Activar pantalla completa'}
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-stone-800 bg-stone-900 px-2 py-2 text-center text-[11px] font-bold text-white"
+              >
+                {isFullscreen ? <Minimize2 className="h-3.5 w-3.5 text-[#a9b994]" /> : <Maximize2 className="h-3.5 w-3.5 text-[#a9b994]" />}
+                <span>{isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsReservationsOpen(true); setIsMobileControlsOpen(false); }}
+                title="Ver y gestionar reservas"
+                className="col-span-2 flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-200 bg-violet-50 px-2 py-2 text-center text-[11px] font-bold text-violet-900"
+              >
+                <CalendarDays className="h-3.5 w-3.5" />
+                <span>Reservas</span>
+              </button>
+            </div>
+
+            {!selectedZoneHasActiveShift && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-2.5 py-2 text-[11px] text-red-900">
+                <span><strong>{selectedZone}</strong> no tiene un turno activo.</span>
+                {onOpenCashShift && (
+                  <button
+                    type="button"
+                    onClick={() => { onOpenCashShift(selectedZone); setIsMobileControlsOpen(false); }}
+                    className="min-h-10 shrink-0 whitespace-nowrap rounded-lg bg-[#3b3733] px-2.5 py-1.5 text-[10px] font-bold text-white"
+                  >
+                    Abrir turno
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="hidden md:flex md:flex-col md:gap-2.5">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -646,7 +889,7 @@ export const TableMap: React.FC<TableMapProps> = ({
 
                   <button
                     type="button"
-                    data-nyza-target="create-table"
+                    data-nyza-target={!isMobileViewport ? 'create-table' : undefined}
                     onClick={() => {
                       setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
                       setShowAddModal(true);
