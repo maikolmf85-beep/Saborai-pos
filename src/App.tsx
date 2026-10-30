@@ -41,10 +41,12 @@ import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
+import { validateNyzaAction } from './services/nyzaActionValidation';
+import { runTenantBoundToolSequence } from './services/nyzaToolSequence';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { supabaseClient } from './lib/supabaseClient';
-import { Sparkles, WifiOff, Lock, Eye, BrainCircuit, ChefHat, MessageCircle } from 'lucide-react';
+import { WifiOff, Lock, Eye, ChefHat } from 'lucide-react';
 
 type PosTheme = 'light' | 'dark';
 const POS_THEME_STORAGE_KEY = 'saborai_pos_theme';
@@ -219,6 +221,7 @@ export function App() {
       return initialTenant;
     }
   });
+  const activeTenantIdRef = useRef(tenant.id);
 
   // Mantener tenant.haciendaConfig reactivo cuando se actualiza desde HaciendaSettings
   useEffect(() => {
@@ -241,6 +244,7 @@ export function App() {
   const broadcastKdsOrdersRef = useRef<((orders: KDSOrder[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
+    activeTenantIdRef.current = updated.id;
     setTenant(updated);
     setActiveTenantId(updated.id);
     if (!skipBroadcast && broadcastTenantRef.current) {
@@ -333,6 +337,7 @@ export function App() {
         const data = await res.json();
 
         if (res.ok && data.success) {
+          activeTenantIdRef.current = data.tenant.id;
           setActiveTenantId(data.tenant.id);
           migrateLegacyDataToTenant(data.tenant.id);
           cashShiftService.setTenantContext(data.tenant.id);
@@ -382,6 +387,7 @@ export function App() {
           // un usuario o rol alternativo desde localStorage.
           const effectiveUser = user;
           setCurrentUser(effectiveUser);
+          activeTenantIdRef.current = tenantObj.id;
           setTenant(tenantObj);
           setMenuItems(getTenantItem<MenuItem[]>('menu', tenantObj.id) || []);
           setTables(normalizeTablePositions(getTenantItem<Table[]>('tables', tenantObj.id) || []));
@@ -515,6 +521,8 @@ export function App() {
   // Cada sesión usa su propio espacio operativo. Al cambiar de tenant se
   // descarta el estado en memoria anterior y se carga únicamente el nuevo.
   useEffect(() => {
+    activeTenantIdRef.current = tenant.id;
+    localDB.setActiveTenantId(tenant.id);
     setActiveTenantId(tenant.id);
     migrateLegacyDataToTenant(tenant.id);
     cashShiftService.setTenantContext(tenant.id);
@@ -747,8 +755,6 @@ export function App() {
   const [cashShiftInitialTab, setCashShiftInitialTab] = useState<'status' | 'movements' | 'close' | 'history' | 'registers'>('status');
   const [activeZReport, setActiveZReport] = useState<ZReportData | null>(null);
   const [activeConsolidatedZReport, setActiveConsolidatedZReport] = useState<ConsolidatedZReportData | null>(null);
-  const [isRepairing, setIsRepairing] = useState(false);
-  const [repairStep, setRepairStep] = useState(0);
   const [isZReportModalOpen, setIsZReportModalOpen] = useState(false);
   const [isHaciendaHistoryOpen, setIsHaciendaHistoryOpen] = useState(false);
 
@@ -910,12 +916,12 @@ export function App() {
   useEffect(() => {
     if (!localDbReady) return;
     const syncWhenOnline = () => {
-      if (localDB.isOnline()) void localDB.syncAllPending();
+      if (localDB.isOnline()) void localDB.syncAllPending(tenant.id);
     };
     window.addEventListener('online', syncWhenOnline);
     syncWhenOnline();
     return () => window.removeEventListener('online', syncWhenOnline);
-  }, [localDbReady]);
+  }, [localDbReady, tenant.id]);
 
   // IndexedDB es el respaldo del POS cuando localStorage fue limpiado o no está disponible.
   // Solo hidrata campos ausentes para no reemplazar cambios locales más recientes.
@@ -959,8 +965,12 @@ export function App() {
         setKdsOrders(current => current.length > 0 ? current : snapshot.kdsOrders as KDSOrder[]);
       }
       if (snapshot.tenant && !hasTenantItem('tenant_profile', tenant.id)) {
-        setTenant(snapshot.tenant as TenantInfo);
-        setTenantItem('tenant_profile', snapshot.tenant, tenant.id);
+        const snapshotTenant = snapshot.tenant as TenantInfo;
+        if (String(snapshotTenant.id) === String(tenant.id)) {
+          activeTenantIdRef.current = tenant.id;
+          setTenant(snapshotTenant);
+          setTenantItem('tenant_profile', snapshotTenant, tenant.id);
+        }
       }
     });
 
@@ -1004,6 +1014,7 @@ export function App() {
       haciendaConfig: savedTenant?.haciendaConfig ?? loggedTenant.haciendaConfig
     };
 
+    activeTenantIdRef.current = restoredTenant.id;
     setActiveTenantId(restoredTenant.id);
     migrateLegacyDataToTenant(restoredTenant.id);
     cashShiftService.setTenantContext(restoredTenant.id);
@@ -1058,6 +1069,7 @@ export function App() {
 
   const handleStartDemo = (plan: SubscriptionPlan) => {
     const demoTenantId = `tenant_demo_${Date.now()}`;
+    activeTenantIdRef.current = demoTenantId;
     startCleanDemoSession(demoTenantId);
     cashShiftService.setTenantContext(demoTenantId);
     printerService.setTenantContext(demoTenantId);
@@ -1883,8 +1895,10 @@ export function App() {
 
       {/* Offline Synchronization Inspector & Simulator Modal */}
       <OfflineSyncModal
+        key={tenant.id}
         isOpen={isOfflineModalOpen}
         onClose={() => setIsOfflineModalOpen(false)}
+        tenantId={tenant.id}
         isOnline={isOnline}
         pendingCount={pendingSyncCount}
         onToggleSimulatedOffline={handleToggleSimulatedOffline}
@@ -1976,16 +1990,36 @@ export function App() {
 
       {/* Copilot Chat Drawer */}
       <AICopilotChat
+        key={tenant.id}
         isOpen={isCopilotOpen}
         onClose={() => setIsCopilotOpen(false)}
-        currentUser={currentUser}
+        tenantId={tenant.id}
         menuItems={menuItems}
         selectedTable={selectedTableForOrder}
         zones={tenant.zones || []}
         onOpenLearningHub={() => setIsNyzaHubOpen(true)}
         onQuickAction={(action) => {
           try {
-            const cmd = JSON.parse(action);
+            const parsedCommand = JSON.parse(action);
+            const validation = validateNyzaAction(parsedCommand, {
+              tenantId: tenant.id,
+              currentUser,
+              menuItems,
+              selectedTable: selectedTableForOrder,
+              tables,
+              zones: tenant.zones || []
+            });
+            if (!validation.ok) {
+              addNotification({
+                id: `nyza_blocked_${Date.now()}`,
+                type: 'NEW_ORDER',
+                title: 'Nyza no aplicó la acción',
+                message: validation.reason,
+                timestamp: new Date()
+              });
+              return;
+            }
+            const cmd = validation.command as Record<string, any>;
             const autonomousAction = nyzaUIAgent.normalizeAction(cmd);
             if (autonomousAction) {
               void nyzaUIAgent.execute(autonomousAction, {
@@ -1998,14 +2032,22 @@ export function App() {
                   handleOpenCashShift('status');
                   setIsCopilotOpen(false);
                 }
+              }).catch((error: unknown) => {
+                addNotification({
+                  id: `nyza_ui_error_${Date.now()}`,
+                  type: 'NEW_ORDER',
+                  title: 'Nyza no aplicó la acción',
+                  message: error instanceof Error ? error.message : 'No se pudo completar la acción de interfaz.',
+                  timestamp: new Date()
+                });
               });
               return;
             }
             if (cmd.type === 'OPEN_LEARNING_HUB' || cmd.type === 'NYZA_HUB') {
                setIsNyzaHubOpen(true);
-            } else if (cmd.type === 'ADD_ITEM' && selectedTableForOrder) {
-               // Find item
-               const item = menuItems.find(m => m.name.toLowerCase().includes((cmd.product || '').toLowerCase()));
+            } else if (cmd.type === 'ADD_ITEM' && selectedTableForOrder && cmd.tableId === selectedTableForOrder.id) {
+               // Product and modifier identities/prices were checked against the current menu.
+               const item = menuItems.find(m => m.name === cmd.product);
                if (item) {
                  const existingItems = selectedTableForOrder.activeOrder?.items ? [...selectedTableForOrder.activeOrder.items] : [];
                  const selectedModifiers = Array.isArray(cmd.modifiers) ? cmd.modifiers : [];
@@ -2020,7 +2062,7 @@ export function App() {
                       {
                         id: `itm_${Date.now()}`,
                         name: item.name,
-                        quantity: cmd.quantity || 1,
+                        quantity: cmd.quantity,
                         price: item.price + modifierExtra,
                         notes: 'Agregado por Nysa IA',
                         cabysCode: item.cabysCode,
@@ -2035,7 +2077,7 @@ export function App() {
                    id: `nysa_${Date.now()}`,
                    type: 'ORDER_READY',
                    title: 'Nysa IA',
-                   message: `Agregó ${cmd.quantity || 1}x ${item.name} a la mesa ${selectedTableForOrder.name}`,
+                   message: `Agregó ${cmd.quantity}x ${item.name} a la mesa ${selectedTableForOrder.name}`,
                    timestamp: new Date()
                  });
                } else {
@@ -2075,7 +2117,7 @@ export function App() {
                  id: `nyza_report_${Date.now()}`,
                  type: 'ORDER_READY',
                  title: 'Nyza IA',
-                 message: `Abrí los reportes de ${cmd.range || 'hoy'} para que revises las cifras reales.`,
+                 message: `Abrí la sección de reportes. Confirma allí el período ${cmd.range === 'week' ? 'semanal' : cmd.range === 'month' ? 'mensual' : 'de hoy'}; Nyza no consultó cifras.`,
                  timestamp: new Date()
                });
             } else if (cmd.type === 'ADD_TABLE_RANGE' || cmd.type === 'ADD_TABLES' || cmd.type === 'CREATE_TABLES') {
@@ -2087,10 +2129,6 @@ export function App() {
                  throw new Error('Rango de mesas inválido.');
                }
 
-               const currentZones = tenant.zones || [];
-               const nextZones = currentZones.some(z => z.toLowerCase() === zoneName.toLowerCase())
-                 ? currentZones
-                 : [...currentZones, zoneName];
                const nextTables = [...tables];
                let created = 0;
                for (let number = from; number <= to; number++) {
@@ -2110,9 +2148,6 @@ export function App() {
                    y: 18 + row * 18
                  });
                  created++;
-               }
-               if (nextZones.length !== currentZones.length) {
-                 handleUpdateTenant({ ...tenant, zones: nextZones });
                }
                if (created > 0) handleUpdateTables(nextTables);
                addNotification({
@@ -2134,7 +2169,7 @@ export function App() {
                    id: `tbl_${Date.now()}`,
                    number: tableNum,
                    name: tableName,
-                   seats: 4,
+                   seats: cmd.seats,
                    shape: 'square',
                    status: 'AVAILABLE',
                    zone: cmd.zone || 'Salón Principal',
@@ -2162,9 +2197,8 @@ export function App() {
                handleOpenCashShift('status');
                setIsCopilotOpen(false);
             } else if (cmd.type === 'TOGGLE_DISH_AVAILABILITY') {
-               const targetName = (cmd.product || '').toLowerCase();
                const updated = menuItems.map(m =>
-                 m.name.toLowerCase().includes(targetName)
+                 m.name === cmd.product
                    ? { ...m, available: Boolean(cmd.available) }
                    : m
                );
@@ -2177,9 +2211,18 @@ export function App() {
                  timestamp: new Date()
                });
             } else if (cmd.tool_calls && Array.isArray(cmd.tool_calls)) {
-               (async () => {
-                 for (const tool of cmd.tool_calls) {
-                   const res = await nyzaSelfHealing.executeTool(tool.name, tool.parameters);
+               const approvedTenantId = tenant.id;
+               void runTenantBoundToolSequence(
+                 approvedTenantId,
+                 cmd.tool_calls,
+                 () => activeTenantIdRef.current,
+                 (tool, tenantId, isTenantActive) => nyzaSelfHealing.executeTool(
+                   tool.name,
+                   tenantId,
+                   isTenantActive,
+                   tool.parameters
+                 ),
+                 (tool, res) => {
                    addNotification({
                      id: 'nyza_' + Date.now() + '_' + Math.random(),
                      type: res.status === 'OK' ? 'ORDER_READY' : 'NEW_ORDER',
@@ -2188,34 +2231,37 @@ export function App() {
                      timestamp: new Date()
                    });
                  }
-               })();
-            } else if (cmd.type === 'AUTO_REPAIR') {
-               if (tenant.plan === 'express') {
+               ).then(status => {
+                 if (status === 'CANCELLED') {
+                   addNotification({
+                     id: `nyza_cancelled_${Date.now()}`,
+                     type: 'NEW_ORDER',
+                     title: 'Nyza canceló los pasos restantes',
+                     message: 'Cambió el restaurante activo durante la ejecución. No se ejecutaron más herramientas; vuelve a solicitar la acción en el negocio actual.',
+                     timestamp: new Date()
+                   });
+                 }
+               }).catch((error: unknown) => {
+                 if (activeTenantIdRef.current !== approvedTenantId) return;
                  addNotification({
-                   id: `nysa_err_${Date.now()}`,
+                   id: `nyza_tool_error_${Date.now()}`,
                    type: 'NEW_ORDER',
-                   title: 'Saborai Copilot',
-                   message: 'El diagnóstico automático y soporte 24/7 requiere un Plan de mayor nivel.',
+                   title: 'Nyza no pudo completar la herramienta',
+                   message: error instanceof Error ? error.message : 'La herramienta no terminó correctamente.',
                    timestamp: new Date()
                  });
-                 setIsCopilotOpen(false);
-                 return;
-               }
-               setIsCopilotOpen(false);
-               setIsRepairing(true);
-               setRepairStep(0);
-               soundService.playKeyClickSound();
-               setTimeout(() => setRepairStep(1), 1500);
-               setTimeout(() => setRepairStep(2), 3500);
-               setTimeout(() => {
-                 setRepairStep(3);
-                 soundService.playSuccessChime();
-               }, 5500);
-               setTimeout(() => {
-                 setIsRepairing(false);
-               }, 8000);
+               });
             }
-          } catch(e) { console.error(e); }
+          } catch(e) {
+            const reason = e instanceof Error ? e.message : 'La solicitud no tenía un formato válido.';
+            addNotification({
+              id: `nyza_invalid_${Date.now()}`,
+              type: 'NEW_ORDER',
+              title: 'Nyza no aplicó la acción',
+              message: reason,
+              timestamp: new Date()
+            });
+          }
         }}
       />
 
@@ -2224,50 +2270,12 @@ export function App() {
         isOpen={isNyzaHubOpen}
         onClose={() => setIsNyzaHubOpen(false)}
         tenant={tenant}
-        currentUser={currentUser || undefined}
         onOpenCopilot={() => {
           setIsNyzaHubOpen(false);
           setIsCopilotOpen(true);
         }}
       />
       </Suspense>
-
-      {/* Auto-Repair Overlay */}
-      {isRepairing && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-900/90 backdrop-blur-md p-4 animate-in fade-in duration-300">
-          <div className="bg-white max-w-sm w-full rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-stone-100">
-              <div 
-                className="h-full bg-[#588157] transition-all duration-500 ease-out" 
-                style={{ width: `${(repairStep / 3) * 100}%` }}
-              />
-            </div>
-            
-            {repairStep < 3 ? (
-              <>
-                <div className="w-20 h-20 bg-stone-50 rounded-full flex items-center justify-center mx-auto mb-6 relative">
-                  <div className="absolute inset-0 rounded-full border-4 border-[#588157] border-t-transparent animate-spin"></div>
-                  <Sparkles className="w-8 h-8 text-[#588157] animate-pulse" />
-                </div>
-                <h3 className="text-xl font-black text-stone-900 mb-2">Diagnosticando Sistema...</h3>
-                <p className="text-sm text-stone-500 font-medium">
-                  {repairStep === 0 && 'Escaneando base de datos y memoria local...'}
-                  {repairStep === 1 && 'Resolviendo conflictos en caché...'}
-                  {repairStep === 2 && 'Restableciendo conexión con módulos...'}
-                </p>
-              </>
-            ) : (
-              <div className="animate-in zoom-in-95 duration-300">
-                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Sparkles className="w-10 h-10 text-emerald-600" />
-                </div>
-                <h3 className="text-xl font-black text-stone-900 mb-2">¡Sistema Reparado!</h3>
-                <p className="text-sm text-stone-500 font-medium">Todos los módulos están operando al 100%. Saborai IA corrigió los fallos.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Real-time Audible & Visual Notification Toasts */}
       <NotificationToastContainer

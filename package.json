@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
+    "test:nyza": "node --experimental-strip-types --test tests/nyza-action-validation.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

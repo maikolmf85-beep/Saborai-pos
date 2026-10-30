@@ -14,6 +14,7 @@ import { localDB, OfflineSyncQueueItem } from '../services/db';
 interface OfflineSyncModalProps {
   isOpen: boolean;
   onClose: () => void;
+  tenantId: string;
   isOnline: boolean;
   pendingCount: number;
   onToggleSimulatedOffline: () => void;
@@ -22,6 +23,7 @@ interface OfflineSyncModalProps {
 export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
   isOpen,
   onClose,
+  tenantId,
   isOnline,
   pendingCount,
   onToggleSimulatedOffline
@@ -32,9 +34,9 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      localDB.getPendingItems().then(setItems);
+      localDB.getPendingItems(tenantId).then(setItems);
     }
-  }, [isOpen, pendingCount]);
+  }, [isOpen, pendingCount, tenantId]);
 
   if (!isOpen) return null;
 
@@ -44,9 +46,9 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
       return;
     }
     setIsSyncing(true);
-    const result = await localDB.syncAllPending();
+    const result = await localDB.syncAllPending(tenantId);
     setIsSyncing(false);
-    setItems(await localDB.getPendingItems());
+    setItems(await localDB.getPendingItems(tenantId));
     setSyncSuccessMsg(
       result.failedCount > 0
         ? `${result.syncedCount} sincronizadas, ${result.failedCount} con error. Quedan ${result.remainingCount} pendientes.`
@@ -107,6 +109,9 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
             {isOnline
               ? 'Los datos operativos guardados localmente están disponibles. Las operaciones pendientes se conservarán hasta que exista un sincronizador de nube idempotente.'
               : 'El menú, las mesas y los datos operativos disponibles localmente siguen accesibles. Los cobros y la facturación electrónica requieren conexión.'}
+          </p>
+          <p className="text-[11px] leading-relaxed opacity-90">
+            Solo se muestran y sincronizan operaciones asociadas al negocio activo; los registros antiguos sin tenant se excluyen para evitar mezclar datos.
           </p>
         </div>
 

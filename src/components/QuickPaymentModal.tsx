@@ -391,7 +391,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
           tenant.id
         )
       : Promise.resolve()
-    ).then(() => localDB.syncAllPending());
+    ).then(() => localDB.syncAllPending(tenant.id));
     
     if (emitToHacienda && !isSimplified) {
       const xml = generateHaciendaXmlV44(invoiceObj, tenant);
