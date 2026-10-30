@@ -1,19 +1,38 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'crypto';
-import { handleOptions, setCorsHeaders } from './_utils/security.js';
+import { allowedOriginForRedirect, checkRateLimit, handleOptions, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
+import { createTilopayTokenizationLink, processTilopaySubscription } from './_utils/tilopayClient.js';
+import {
+  createTilopaySignupHandoff,
+  tilopayPaymentStore
+} from './_utils/tilopaySignupHandoff.js';
+import { PurchaseIntentError, tokenizeForPurchaseIntent } from './_utils/tilopayPurchaseFlow.js';
+
+function clientIp(req: VercelRequest): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return String(value || req.socket?.remoteAddress || 'unknown').split(',')[0].trim().slice(0, 80);
+}
+
+function payloadRecord(value: unknown): Record<string, any> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, any>
+    : {};
+}
 
 // Tipos requeridos
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
-  const { action, payload } = req.body || {};
-  const isWebhook = req.query.action === 'webhook' || action === 'webhook' || !!req.headers['x-tilopay-signature'] || !!(req.body && req.body.event);
+  const body = payloadRecord(req.body);
+  const action = body.action;
+  const payload = payloadRecord(body.payload);
+  const isWebhook = req.query.action === 'webhook' || action === 'webhook' ||
+    !!req.headers['x-tilopay-signature'] || !!body.event;
 
   // -------------------------------------------------------------
   // TILOPAY WEBHOOK HANDLER
@@ -37,11 +56,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isSignatureValid = receivedBuffer.length === expectedBuffer.length &&
       crypto.timingSafeEqual(receivedBuffer, expectedBuffer);
 
-    if (!isSignatureValid) {
-      return res.status(401).json({ error: 'Invalid HMAC Signature' });
-    }
+    if (!isSignatureValid) return res.status(401).json({ error: 'Invalid HMAC Signature' });
 
-    const { event, tenant_id, amount, currency, transaction_id, event_id } = req.body || {};
+    const { event, tenant_id, amount, currency, transaction_id, event_id } = body;
     const eventId = String(event_id || transaction_id || crypto
       .createHash('sha256')
       .update(rawBody)
@@ -59,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         transaction_id: transaction_id || null,
         amount: Number.isFinite(Number(amount)) ? Number(amount) : null,
         currency: currency || null,
-        payload: req.body || {},
+        payload: body,
         processing_status: 'RECEIVED'
       });
 
@@ -115,119 +132,111 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // Leer variables de entorno (Nunca expuestas al frontend)
-  const TILOPAY_API_KEY = process.env.TILOPAY_API_KEY;
-  const TILOPAY_API_USER = process.env.TILOPAY_API_USER;
-  const TILOPAY_API_PASSWORD = process.env.TILOPAY_API_PASSWORD;
-  
-  if (!TILOPAY_API_KEY || !TILOPAY_API_USER || !TILOPAY_API_PASSWORD) {
-    console.error('Missing Tilopay credentials in environment variables.');
-    return res.status(500).json({ error: 'El servidor no está configurado correctamente para procesar pagos.' });
+  const ip = clientIp(req);
+
+  if (action === 'create-signup-handoff') {
+    if (!checkRateLimit(`tilopay-handoff:${ip}`, 10, 60000).allowed) {
+      return res.status(429).json({ error: 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.' });
+    }
+
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : '';
+    const password = typeof payload.password === 'string' ? payload.password : '';
+    const restaurantName = typeof payload.restaurantName === 'string' ? payload.restaurantName.trim() : '';
+    const phone = typeof payload.phone === 'string' ? payload.phone.trim() : '';
+
+    if (
+      email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      password.length < 6 || password.length > 256 ||
+      !restaurantName || restaurantName.length > 120 ||
+      !phone || phone.length > 40
+    ) {
+      return res.status(400).json({ error: 'Los datos de registro no son válidos.' });
+    }
+
+    try {
+      const reference = await createTilopaySignupHandoff({
+        email,
+        password,
+        name: restaurantName,
+        phone,
+        restaurantName,
+        // Precio/moneda/plan no se aceptan del navegador; el alta actual es Pro CRC.
+        plan: 'pro'
+      });
+      return res.status(200).json({ reference });
+    } catch {
+      console.error('[Tilopay] No se pudo crear la intención de compra.');
+      return res.status(500).json({ error: 'No se pudo iniciar el registro seguro.' });
+    }
   }
 
-  try {
-    // 1. Obtener Token de Acceso (Bearer)
-    const loginRes = await fetch('https://app.tilopay.com/api/v1/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiuser: TILOPAY_API_USER,
-        password: TILOPAY_API_PASSWORD
-      })
-    });
-    
-    if (!loginRes.ok) {
-      throw new Error(`Error de autenticación con TiloPay (Código ${loginRes.status}). Revisa tus credenciales.`);
+  if (action === 'tokenize') {
+    if (!checkRateLimit(`tilopay-tokenize:${ip}`, 10, 60000).allowed) {
+      return res.status(429).json({ error: 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.' });
     }
-    
-    const loginData = (await loginRes.json()) as any;
-    const bearerToken = loginData.access_token || loginData.token;
+    const reference = payload.reference;
+    const origin = allowedOriginForRedirect(typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+    const redirect = new URL('/', origin);
+    redirect.searchParams.set('tilopay_success', 'true');
+    if (typeof reference === 'string') redirect.searchParams.set('ref', reference);
 
-    if (!bearerToken) {
-      throw new Error('TiloPay no devolvió un token de acceso válido.');
+    try {
+      const url = await tokenizeForPurchaseIntent(
+        reference,
+        redirect.toString(),
+        tilopayPaymentStore,
+        { tokenize: createTilopayTokenizationLink }
+      );
+      return res.status(200).json({ url });
+    } catch (error) {
+      if (error instanceof PurchaseIntentError) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+      console.error('[Tilopay] No se pudo tokenizar la intención.');
+      return res.status(500).json({ error: 'No se pudo generar el link de pago.' });
+    }
+  }
+
+  if (action === 'subscribe') {
+    if (!checkRateLimit(`tilopay-subscribe:${ip}`, 10, 60000).allowed) {
+      return res.status(429).json({ success: false, error: 'Demasiados intentos. Espera un minuto y vuelve a intentarlo.' });
     }
 
-    if (action === 'tokenize') {
-      const { email, firstName, lastName, redirect } = payload;
-      
-      const response = await fetch('https://app.tilopay.com/api/v1/processTokenize', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${bearerToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          key: TILOPAY_API_KEY,
-          email,
-          firstName,
-          lastName,
-          language: 'es',
-          redirect, // La URL a donde TiloPay enviará al usuario tras digitar la tarjeta
-          token_version: 'v2'
-        })
+    // La petición pública solo puede aportar la referencia opaca y el token;
+    // campos extra como plan, email, importe o moneda se ignoran deliberadamente.
+    try {
+      const subscription = await processTilopaySubscription({
+        reference: payload.reference,
+        token: payload.token
       });
-      
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-         const text = await response.text();
-         console.error('TiloPay Non-JSON Response:', text.substring(0, 200));
-         throw new Error(`La pasarela de pagos falló al responder (código ${response.status}). Intenta de nuevo.`);
-      }
-      
-      const data = (await response.json()) as any;
-      
-      if (!response.ok || !data.url) {
-        throw new Error(data.message || 'Error al generar el link de pago seguro.');
-      }
 
-      // TiloPay nos devuelve una URL segura a donde debemos mandar al cliente
-      return res.status(200).json({ url: data.url });
-
-    } else if (action === 'subscribe') {
-      const { planId, token, email } = payload;
-
-      if (!token) {
-        return res.status(400).json({ success: false, error: 'Token de pago inválido.' });
-      }
-
-      const response = await fetch('https://app.tilopay.com/api/v1/processPayment', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${bearerToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          key: TILOPAY_API_KEY,
-          planId, 
-          token, 
-          email 
-        })
-      });
-      
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-         const text = await response.text();
-         console.error('TiloPay Non-JSON Response:', text.substring(0, 200));
-         throw new Error(`La pasarela de pagos falló al procesar la suscripción (código ${response.status}).`);
-      }
-
-      const data = (await response.json()) as any;
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Error procesando la suscripción con Tilopay.');
+      if (!subscription.success) {
+        return res.status(202).json({
+          success: false,
+          pending: true,
+          planId: subscription.planId,
+          amount: subscription.amount,
+          currency: subscription.currency
+        });
       }
 
       return res.status(200).json({
         success: true,
-        transactionId: data.transactionId || data.id || `txn_${Date.now()}`,
-        message: `Suscripción al plan '${planId}' procesada correctamente para ${email} vía TiloPay.`
+        transactionId: subscription.transactionId,
+        idempotent: subscription.idempotent,
+        planId: subscription.planId,
+        amount: subscription.amount,
+        currency: subscription.currency,
+        message: `Suscripción al plan '${subscription.planId}' procesada correctamente vía Tilopay.`
       });
-
-    } else {
-      return res.status(400).json({ error: 'Acción no soportada.' });
+    } catch (error) {
+      if (error instanceof PurchaseIntentError) {
+        return res.status(error.statusCode).json({ success: false, error: error.message });
+      }
+      console.error('[Tilopay] No se pudo verificar el resultado del cobro.');
+      return res.status(500).json({ success: false, error: 'No se pudo verificar el resultado del pago.' });
     }
-  } catch (error: any) {
-    console.error('Tilopay API Error:', error);
-    return res.status(500).json({ error: error.message || 'Error procesando el pago con TiloPay.' });
   }
+
+  return res.status(400).json({ error: 'Acción no soportada.' });
 }

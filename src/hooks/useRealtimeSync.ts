@@ -139,7 +139,11 @@ export function useRealtimeSync(
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
           channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
           channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant } });
-          channel.send({ type: 'broadcast', event: 'sync-staff', payload: { staff: state.staff } });
+          const safeStaff = (state.staff || []).map((member: any) => {
+            const { pin: _pin, ...safeMember } = member;
+            return safeMember;
+          });
+          channel.send({ type: 'broadcast', event: 'sync-staff', payload: { staff: safeStaff } });
         }
       })
       .subscribe((status) => {
@@ -209,10 +213,14 @@ export function useRealtimeSync(
 
   const broadcastStaff = (staff: any[]) => {
     if (channelRef.current) {
+      const safeStaff = (staff || []).map(member => {
+        const { pin: _pin, ...safeMember } = member;
+        return safeMember;
+      });
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-staff',
-        payload: { staff },
+        payload: { staff: safeStaff },
       });
     }
   };

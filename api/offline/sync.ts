@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin } from '../_utils/supabase.js';
-import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
+import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
+import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
@@ -50,7 +52,7 @@ async function findBranch(tenantId: string, branchId?: string | null) {
   return data;
 }
 
-async function syncTable(tenantId: string, userId: string, operationId: string, payload: any) {
+async function syncTable(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   const scope = readOperationalScope(payload);
   const table = payload && typeof payload === 'object' ? payload : null;
   if (!table || !table.name) throw new Error('El payload de la mesa es inválido.');
@@ -181,6 +183,7 @@ async function syncTable(tenantId: string, userId: string, operationId: string, 
     tenant_id: tenantId,
     actor_user_id: userId,
     action: 'OFFLINE_SYNC',
+    actor_employee_id: employeeId || null,
     entity_type: 'TABLE',
     entity_id: tableResult.data.id,
     request_id: operationId,
@@ -223,7 +226,7 @@ async function syncEmployeeCredit(tenantId: string, userId: string, operationId:
   }
 }
 
-async function syncPayment(tenantId: string, userId: string, operationId: string, payload: any) {
+async function syncPayment(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   const scope = readOperationalScope(payload);
   const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
   const payments = Array.isArray(payload?.payments) ? payload.payments : [];
@@ -297,6 +300,7 @@ async function syncPayment(tenantId: string, userId: string, operationId: string
     tenant_id: tenantId,
     actor_user_id: userId,
     action: 'OFFLINE_SYNC',
+    actor_employee_id: employeeId || null,
     entity_type: 'PAYMENT',
     entity_id: orderResult.data.id,
     request_id: operationId,
@@ -319,7 +323,7 @@ async function findOrder(tenantId: string, orderNumber: unknown) {
   return { id: result.data.id, orderNumber: normalizedOrderNumber };
 }
 
-async function syncInventory(tenantId: string, userId: string, operationId: string, payload: any) {
+async function syncInventory(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   readOperationalScope(payload);
   const order = await findOrder(tenantId, payload?.orderNumber);
   const items = Array.isArray(payload?.items)
@@ -347,6 +351,7 @@ async function syncInventory(tenantId: string, userId: string, operationId: stri
     tenant_id: tenantId,
     actor_user_id: userId,
     action: 'OFFLINE_SYNC',
+    actor_employee_id: employeeId || null,
     entity_type: 'INVENTORY',
     entity_id: order.id,
     request_id: operationId,
@@ -355,7 +360,7 @@ async function syncInventory(tenantId: string, userId: string, operationId: stri
   return { orderId: order.id, ...rpc.data };
 }
 
-async function syncInvoice(tenantId: string, userId: string, operationId: string, payload: any) {
+async function syncInvoice(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   const scope = readOperationalScope(payload);
   const order = await findOrder(tenantId, payload?.orderNumber);
   const clave = typeof payload?.clave === 'string' ? payload.clave.trim() : '';
@@ -418,6 +423,7 @@ async function syncInvoice(tenantId: string, userId: string, operationId: string
     tenant_id: tenantId,
     actor_user_id: userId,
     action: 'OFFLINE_SYNC',
+    actor_employee_id: employeeId || null,
     entity_type: 'INVOICE',
     entity_id: invoice.data.id,
     request_id: operationId,
@@ -438,6 +444,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     operationId?: unknown;
     tenantId?: unknown;
     action?: unknown;
+    actorUserId?: unknown;
+    actorEmployeeId?: unknown;
     payload?: unknown;
   };
   const operationId = typeof body.operationId === 'string' ? body.operationId.trim() : '';
@@ -446,9 +454,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!operationId || operationId.length > 160) return res.status(400).json({ error: 'operationId es requerido.' });
   if (!tenantId || tenantId !== auth.tenantId) return res.status(403).json({ error: 'El tenant de la operación no coincide con la sesión.' });
+  if (!employeeSessionActorMatches(body.actorUserId, body.actorEmployeeId, auth)) {
+    return res.status(403).json({ error: 'La identidad que creó la operación no coincide con la sesión activa.' });
+  }
   if (!SUPPORTED_ACTIONS.has(action)) {
     return res.status(422).json({ error: `La operación ${action || 'desconocida'} aún no está habilitada para sincronización.` });
   }
+  if (!requireRole(auth, res, ROLE_PERMISSIONS.offlineSync[action as keyof typeof ROLE_PERMISSIONS.offlineSync])) return;
 
   const existingAudit = await supabaseAdmin
     .from('pos_audit_events')
@@ -461,12 +473,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const result = action === 'PAYMENT'
-      ? await syncPayment(tenantId, auth.userId, operationId, body.payload)
+      ? await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
       : action === 'DEDUCT_INVENTORY'
-        ? await syncInventory(tenantId, auth.userId, operationId, body.payload)
+        ? await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
         : action === 'EMIT_INVOICE'
-          ? await syncInvoice(tenantId, auth.userId, operationId, body.payload)
-          : await syncTable(tenantId, auth.userId, operationId, body.payload);
+          ? await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+          : await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);

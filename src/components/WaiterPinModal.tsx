@@ -13,13 +13,15 @@ import {
   UtensilsCrossed
 } from 'lucide-react';
 import { UserProfile, Table, UserRole } from '../types';
+import { isCloudTenantId } from '../services/employeeSessionService';
 
 interface WaiterPinModalProps {
   isOpen: boolean;
   onClose: () => void;
   table: Table | null;
   staffList: UserProfile[];
-  onConfirm: (staff: UserProfile) => void;
+  tenantId: string;
+  onConfirm: (staff: UserProfile, pin: string) => void | UserProfile | Promise<void | UserProfile>;
 }
 
 export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
@@ -27,6 +29,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   onClose,
   table,
   staffList,
+  tenantId,
   onConfirm
 }) => {
   // Filter eligible staff (Saloneros, Salonero con Caja, Admins, etc.)
@@ -36,6 +39,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   const [pin, setPin] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isErrorShake, setIsErrorShake] = useState<boolean>(false);
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,11 +70,12 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, pin, selectedStaff]);
+  }, [isOpen, pin, selectedStaff, isVerifying]);
 
   if (!isOpen || !table) return null;
 
   const handleDigitClick = (digit: string) => {
+    if (isVerifying) return;
     if (pin.length < 4) {
       const nextPin = pin + digit;
       setPin(nextPin);
@@ -84,35 +89,48 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   };
 
   const handleBackspace = () => {
+    if (isVerifying) return;
     setPin(prev => prev.slice(0, -1));
     setErrorMessage(null);
   };
 
   const handleClear = () => {
+    if (isVerifying) return;
     setPin('');
     setErrorMessage(null);
   };
 
-  const validatePin = (inputPin: string) => {
+  const validatePin = async (inputPin: string) => {
+    if (isVerifying) return;
     if (!selectedStaff) {
       setErrorMessage('Por favor selecciona un salonero');
       return;
     }
 
-    const correctPin = selectedStaff.pin || '1234';
-
-    if (inputPin === correctPin) {
-      onConfirm(selectedStaff);
-      onClose();
-    } else {
+    if (!isCloudTenantId(tenantId) && inputPin !== (selectedStaff.pin || '1234')) {
       setErrorMessage('PIN incorrecto. Intenta de nuevo.');
       setIsErrorShake(true);
       setTimeout(() => setIsErrorShake(false), 500);
       setPin('');
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      await onConfirm(selectedStaff, inputPin);
+      onClose();
+    } catch (error: any) {
+      setErrorMessage(error?.message || 'No se pudo validar el PIN. Intenta de nuevo.');
+      setIsErrorShake(true);
+      setTimeout(() => setIsErrorShake(false), 500);
+      setPin('');
+    } finally {
+      setIsVerifying(false);
     }
   };
 
   const handleSubmit = () => {
+    if (isVerifying) return;
     if (pin.length === 4) {
       validatePin(pin);
     } else {
@@ -221,7 +239,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
                 2. Ingresa el PIN de {selectedStaff?.name.split(' ')[0] || 'Salonero'}
               </span>
               <span className="text-[10px] text-stone-400 block mt-0.5">
-                PIN de 4 dígitos configurado (prueba con {selectedStaff?.pin || '1234'})
+                PIN de cuatro dígitos protegido en el servidor
               </span>
             </div>
 

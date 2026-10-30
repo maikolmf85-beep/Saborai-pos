@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin as supabase } from '../_utils/supabase.js';
-import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
 
 function cleanZones(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -20,10 +20,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const auth = await requireAuth(req, res);
   if (!auth) return;
+  if (req.method !== 'GET' && !requireRole(auth, res, ['ADMIN'])) return;
+  if (!auth.tenantId) return res.status(404).json({ error: 'Restaurante no encontrado.' });
 
   const { data: tenant, error: tenantError } = await supabase
     .from('tenants')
     .select('id, zones')
+    .eq('id', auth.tenantId)
     .eq('user_id', auth.userId)
     .single();
 

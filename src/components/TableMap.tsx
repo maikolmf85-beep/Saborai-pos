@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { hasActiveShiftForZone, shouldOpenOrderOnTableSelect } from './tableMapOrderFlow';
 import { Table, TableStatus, UserProfile } from '../types';
 import { WaiterPinModal } from './WaiterPinModal';
 import { TableReservationsModal } from './TableReservationsModal';
@@ -41,8 +42,9 @@ interface TableMapProps {
   activeShiftZone?: string;
   activeShiftZones?: string[];
   hasActiveShift?: boolean;
-  onOpenCashShift?: () => void;
+  onOpenCashShift?: (zone: string) => void;
   currentUser?: UserProfile | null;
+  onAuthenticateStaff: (staff: UserProfile, pin: string) => Promise<UserProfile>;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -59,7 +61,8 @@ export const TableMap: React.FC<TableMapProps> = ({
   activeShiftZones,
   hasActiveShift = false,
   onOpenCashShift,
-  currentUser
+  currentUser,
+  onAuthenticateStaff
 }) => {
   const tenantZones = tenant.zones || [];
   
@@ -82,9 +85,8 @@ export const TableMap: React.FC<TableMapProps> = ({
     ? activeShiftZones
     : (activeShiftZone ? [activeShiftZone] : []);
   const effectiveZones = tenantZones;
-  const zoneHasActiveShift = (zone: string) => hasActiveShift && (
-    restrictedShiftZones.length === 0 || restrictedShiftZones.includes(zone)
-  );
+  const shiftState = { hasActiveShift, activeShiftZones, activeShiftZone };
+  const zoneHasActiveShift = (zone: string) => hasActiveShiftForZone(zone, shiftState);
 
   const [selectedZone, setSelectedZone] = useState<string>(() => {
     if (effectiveZones.length > 0) return effectiveZones[0];
@@ -191,6 +193,9 @@ export const TableMap: React.FC<TableMapProps> = ({
     if (!isEditMode) {
       setSelectedTable(table);
       onSelectTable(table);
+      if (shouldOpenOrderOnTableSelect(table.zone, isEditMode, shiftState)) {
+        handleOpenTableOrder(table);
+      }
       return;
     }
 
@@ -375,7 +380,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         type: 'warning',
         onConfirm: () => {
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-          onOpenCashShift?.();
+          onOpenCashShift?.(table.zone || selectedZone);
         }
       });
       return;
@@ -703,7 +708,7 @@ export const TableMap: React.FC<TableMapProps> = ({
               {onOpenCashShift && (
                 <button
                   type="button"
-                  onClick={onOpenCashShift}
+                  onClick={() => onOpenCashShift(selectedZone)}
                   className="min-h-10 shrink-0 whitespace-nowrap rounded-lg bg-[#3b3733] px-2.5 py-1.5 text-[10px] font-bold text-white transition-colors hover:bg-stone-800 sm:min-h-9"
                 >
                   Abrir turno
@@ -1199,7 +1204,12 @@ export const TableMap: React.FC<TableMapProps> = ({
         }}
         table={tableForPinAuth}
         staffList={staffList}
-        onConfirm={handlePinValidated}
+        tenantId={tenant.id}
+        onConfirm={async (staff, pin) => {
+          const authenticatedStaff = await onAuthenticateStaff(staff, pin);
+          handlePinValidated(authenticatedStaff);
+          return authenticatedStaff;
+        }}
       />
 
       <TableReservationsModal

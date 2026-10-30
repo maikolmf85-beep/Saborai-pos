@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin as supabase } from '../_utils/supabase.js';
-import { handleOptions, requireAuth, setCorsHeaders } from '../_utils/security.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
@@ -13,6 +13,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const auth = await requireAuth(req, res);
     if (!auth) return;
+    if (!requireRole(auth, res, ['ADMIN'])) return;
     
     // Update tenant onboarding status
     const { error } = await supabase
