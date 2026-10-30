@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin } from './_utils/supabase.js';
-import { handleOptions, requireAuth, requireRole, setCorsHeaders } from './_utils/security.js';
-import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
-import { recordEmployeeCreditTransaction } from './_utils/employeeCredit.js';
+import { supabaseAdmin } from './supabase.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from './security.js';
+import { ROLE_PERMISSIONS } from './rolePermissions.js';
+import { recordEmployeeCreditTransaction } from './employeeCredit.js';
 
 const READ_ROLES = ['ADMIN', 'CAJERO', 'SALONERO_CAJA'] as const;
 
@@ -15,7 +15,7 @@ function transactionType(value: unknown): 'CHARGE' | 'PAYMENT' | 'ADJUSTMENT' | 
   return value === 'PAYMENT' || value === 'ADJUSTMENT' || value === 'VOID' ? value : 'CHARGE';
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function handleEmployeeCreditRequest(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
   if (!['GET', 'POST'].includes(req.method || '')) return res.status(405).json({ error: 'Método no permitido.' });

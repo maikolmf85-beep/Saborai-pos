@@ -26,6 +26,10 @@
       "destination": "/api/auth?action=system-status"
     },
     {
+      "source": "/api/employee-credit",
+      "destination": "/api/offline/sync?action=employee-credit"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

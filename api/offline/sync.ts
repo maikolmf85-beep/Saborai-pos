@@ -4,6 +4,7 @@ import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_uti
 import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
+import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
 
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
@@ -422,6 +423,7 @@ async function syncInvoice(tenantId: string, userId: string, employeeId: string 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.query.action === 'employee-credit') return handleEmployeeCreditRequest(req, res);
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido.' });
