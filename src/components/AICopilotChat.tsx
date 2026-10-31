@@ -10,14 +10,15 @@ import {
   BrainCircuit
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { MenuItem, Table, UserProfile } from '../types';
+import { MenuItem, Table } from '../types';
 import { nyzaLearningService } from '../services/nyzaLearningService';
+import { describeNyzaAction, getNyzaMenuSnapshot, getNyzaTableSnapshot } from '../services/nyzaActionValidation';
 
 interface AICopilotChatProps {
   isOpen: boolean;
   onClose: () => void;
   onQuickAction?: (actionType: string) => void;
-  currentUser?: UserProfile;
+  tenantId: string;
   menuItems?: MenuItem[];
   selectedTable?: Table | null;
   zones?: string[];
@@ -31,11 +32,21 @@ interface Message {
   isError?: boolean;
 }
 
+interface PendingAction {
+  id: string;
+  action: unknown;
+  preview: string;
+  expectedSelectedTableId?: string;
+  expectedSelectedTableSnapshot?: string;
+  expectedMenuSnapshot?: string;
+  expectedTenantId: string;
+}
+
 export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   isOpen,
   onClose,
   onQuickAction,
-  currentUser,
+  tenantId,
   menuItems = [],
   selectedTable = null,
   zones = [],
@@ -44,7 +55,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const handledActionIdsRef = useRef(new Set<string>());
+  const currentTenantIdRef = useRef(tenantId);
 
   // Funcionalidad de voz
   const startListening = () => {
@@ -76,7 +90,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     {
       id: 'msg_1',
       sender: 'ai',
-      text: '¡Pura vida! Soy **Nyza**, tu especialista de autodiagnóstico y soporte inteligente en **Saborai POS**. ¿Qué puedo revisar o resolver por vos hoy?'
+      text: '¡Pura vida! Soy **Nyza**, el asistente de SaborAI POS. Puedo orientarte, consultar existencias locales o proponer acciones para que las revises y confirmes.'
     }
   ]);
 
@@ -84,16 +98,17 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const localGeminiKey = typeof localStorage !== 'undefined'
-    ? (localStorage.getItem('saborai_gemini_api_key') || localStorage.getItem('saborai_ai_api_key') || '').trim()
-    : '';
-  const customApiKey = localGeminiKey;
+  useEffect(() => {
+    currentTenantIdRef.current = tenantId;
+    nyzaLearningService.setTenantId(tenantId);
+  }, [tenantId]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
     const userText = inputMessage.trim();
+    const requestTenantId = tenantId;
 
     const userMsg: Message = {
       id: `usr_${Date.now()}`,
@@ -101,25 +116,37 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       text: userText
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    const aiMsgId = `ai_${Date.now()}`;
+    setMessages(prev => [...prev, userMsg, { id: aiMsgId, sender: 'ai', text: '' }]);
     setInputMessage('');
     setIsTyping(true);
 
     try {
-      const learningContext = /aprend|mejor|iq|evoluciona|conocimiento/i.test(userText)
-        ? nyzaLearningService.getSystemPromptKnowledgeContext()
+      const normalizedText = userText.toLocaleLowerCase('es-CR');
+      const needsStockContext = /stock|inventar|insumo|existencia|agotad|bajo|cr[ií]tic/.test(normalizedText);
+      const needsMenuContext = needsStockContext || /men[uú]|precio|carta|categor[ií]a|bebida|postre|platillo|producto|comanda|pedido|hamburgues|rib eye|carne/.test(normalizedText);
+      const needsOrderContext = /mesa|comanda|pedido|agregar|pon|quitar|sin cebolla|pepinillo|t[eé]rmino/.test(normalizedText);
+      const needsZoneContext = /sal[oó]n|mesa|terraza|patio|barra|zona|[aá]rea/.test(normalizedText);
+      nyzaLearningService.setTenantId(tenantId);
+      const learningContext = /aprend|mejor|iq|evoluciona|conocimiento|regla|nota local/i.test(userText)
+        ? nyzaLearningService.getLocalLearningSummary()
         : undefined;
-      const compactMenu = menuItems.map(m => ({
+      const compactMenu = needsMenuContext ? menuItems.slice(0, 500).map(m => ({
         name: m.name,
         price: m.price,
         category: m.category,
         available: m.available,
-        modifiers: m.modifiers?.map(mod => ({ name: mod.name, choices: mod.choices.map(c => c.name) }))
-      }));
-
-      const aiMsgId = `ai_${Date.now()}`;
-      setMessages(prev => [...prev, { id: aiMsgId, sender: 'ai', text: '' }]);
-      setIsTyping(true);
+        modifiers: m.modifiers?.map(mod => ({
+          name: mod.name,
+          choices: mod.choices.map(choice => ({ name: choice.name, extraPrice: choice.extraPrice }))
+        })),
+        ingredients: needsStockContext ? m.ingredients?.map(ingredient => ({
+          name: ingredient.name,
+          currentStock: ingredient.currentStock,
+          requiredQty: ingredient.requiredQty,
+          unit: ingredient.unit
+        })) : undefined
+      })) : [];
 
       const token = localStorage.getItem('saborai_token');
       const apiRes = await fetch('/api/ai/chat', {
@@ -131,17 +158,19 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
         body: JSON.stringify({
           userText,
           messages: messages.slice(-6),
-          customApiKey: customApiKey || undefined,
           context: {
             menuItems: compactMenu,
-            selectedTable,
-            currentUser,
-            zones,
-            knowledgeContext: learningContext
+            menuItemCount: needsMenuContext ? menuItems.length : 0,
+            selectedTable: needsOrderContext && selectedTable
+              ? { id: selectedTable.id, name: selectedTable.name, status: selectedTable.status, seats: selectedTable.seats }
+              : null,
+            zones: needsZoneContext ? zones : [],
+            localLearningSummary: learningContext
           }
         })
       });
 
+      if (currentTenantIdRef.current !== requestTenantId) return;
       setIsTyping(false);
 
       if (!apiRes.ok) {
@@ -151,43 +180,79 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       }
 
       const data = await apiRes.json();
-      const displayContent = data.response || 'Sin respuesta';
-      const rawText = data.rawResponse || displayContent;
+      if (currentTenantIdRef.current !== requestTenantId) return;
+      const hasActions = Boolean(data.action && typeof data.action === 'object');
+      const displayContent = hasActions
+        ? 'Nyza propone una acción. Revisa el detalle y confirma si quieres aplicarla; todavía no se ha ejecutado.'
+        : data.response || 'Sin respuesta';
 
       setMessages(prev =>
         prev.map(m => m.id === aiMsgId ? { ...m, text: displayContent } : m)
       );
 
-      // Ejecutar comandos detectados en el bloque JSON o devueltos por el backend
-      if (onQuickAction) {
-        if (data.action) {
-          if (Array.isArray(data.action.actions)) {
-            data.action.actions.forEach((action: unknown) => onQuickAction(JSON.stringify(action)));
-          } else {
-            onQuickAction(JSON.stringify(data.action));
-          }
-        } else if (rawText) {
-          const match = rawText.match(/```json\n(\{.*?\})\n```/s);
-          if (match && match[1]) {
-            onQuickAction(match[1]);
-          }
-        }
+      if (hasActions) {
+        const proposed = Array.isArray(data.action.actions) ? data.action.actions : [data.action];
+        const cards = proposed.slice(0, 5).map((action: unknown, index: number) => {
+          const actionRecord = action && typeof action === 'object' ? action as Record<string, unknown> : {};
+          const actionType = String(actionRecord.type || actionRecord.action || '').toUpperCase();
+          const params = actionRecord.params && typeof actionRecord.params === 'object'
+            ? actionRecord.params as Record<string, unknown>
+            : actionRecord;
+          const productName = typeof params.product === 'string' ? params.product.trim().toLocaleLowerCase() : '';
+          const matchedItems = productName
+            ? menuItems.filter(item => item.name.trim().toLocaleLowerCase() === productName)
+            : [];
+          const matchedItem = matchedItems.length === 1 ? matchedItems[0] : null;
+          return {
+            id: `${aiMsgId}_action_${index}`,
+            action,
+            preview: describeNyzaAction(action, { menuItems, selectedTable }),
+            expectedSelectedTableId: actionType === 'ADD_ITEM' ? selectedTable?.id : undefined,
+            expectedSelectedTableSnapshot: actionType === 'ADD_ITEM' && selectedTable ? getNyzaTableSnapshot(selectedTable) : undefined,
+            expectedMenuSnapshot: ['ADD_ITEM', 'TOGGLE_DISH_AVAILABILITY'].includes(actionType) && matchedItem
+              ? getNyzaMenuSnapshot(matchedItem)
+              : undefined,
+            expectedTenantId: requestTenantId
+          };
+        });
+        setPendingActions(prev => [...prev, ...cards].slice(-5));
       }
 
     } catch (error: unknown) {
+      if (currentTenantIdRef.current !== requestTenantId) return;
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Nyza AI Error:', errMsg);
       setIsTyping(false);
       setMessages(prev => [
-        ...prev,
-        {
-          id: `ai_${Date.now()}`,
-          sender: 'ai',
-          isError: true,
-          text: `Lo siento, hubo un inconveniente al conectarme: ${errMsg}`
-        }
+        ...prev.map(message => message.id === aiMsgId
+          ? { ...message, isError: true, text: `Lo siento, hubo un inconveniente al conectarme: ${errMsg}` }
+          : message)
       ]);
     }
+  };
+
+  const confirmAction = (pending: PendingAction) => {
+    if (!onQuickAction || handledActionIdsRef.current.has(pending.id)) return;
+    handledActionIdsRef.current.add(pending.id);
+    if (handledActionIdsRef.current.size > 100) {
+      const oldest = handledActionIdsRef.current.values().next().value;
+      if (oldest) handledActionIdsRef.current.delete(oldest);
+    }
+    const action = pending.action && typeof pending.action === 'object'
+      ? {
+          ...(pending.action as Record<string, unknown>),
+          ...(pending.expectedSelectedTableId ? { __nyzaExpectedTableId: pending.expectedSelectedTableId } : {}),
+          ...(pending.expectedSelectedTableSnapshot ? { __nyzaExpectedTableSnapshot: pending.expectedSelectedTableSnapshot } : {}),
+          ...(pending.expectedMenuSnapshot ? { __nyzaExpectedMenuSnapshot: pending.expectedMenuSnapshot } : {}),
+          __nyzaExpectedTenantId: pending.expectedTenantId
+        }
+      : pending.action;
+    onQuickAction(JSON.stringify(action));
+    setPendingActions(prev => prev.filter(action => action.id !== pending.id));
+  };
+
+  const discardAction = (pendingId: string) => {
+    setPendingActions(prev => prev.filter(action => action.id !== pendingId));
   };
 
   const handlePromptClick = (promptText: string) => {
@@ -212,19 +277,19 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
                 <button
                   type="button"
                   onClick={onOpenLearningHub}
-                  title="Abrir Centro de Aprendizaje e Inteligencia Global de Nyza"
+                  title="Abrir notas locales y capacidades de Nyza"
                   className="flex items-center gap-1 text-[10px] bg-[#a9b994] text-[#3b3733] px-2 py-0.5 rounded-full font-black hover:bg-white hover:scale-105 transition-all cursor-pointer shadow-xs"
                 >
                   <BrainCircuit className="w-3 h-3 text-[#3b3733]" />
-                  <span>IQ {nyzaLearningService.getCurrentIQ()}</span>
+                  <span>Notas locales</span>
                 </button>
               ) : (
                 <span className="text-[10px] bg-[#a9b994] text-[#3b3733] px-1.5 py-0.2 rounded-full font-black">
-                  IQ {nyzaLearningService.getCurrentIQ()}
+                  Notas locales
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-gray-300">Autodiagnóstico & Aprendizaje Continuo SaborAI POS</p>
+            <p className="text-[10px] text-gray-300">Asistente POS · acciones con aprobación</p>
           </div>
         </div>
         <button
@@ -261,10 +326,26 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           </div>
         ))}
 
+        {pendingActions.map((pending) => (
+          <div key={pending.id} className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950" role="group" aria-label="Acción propuesta por Nyza pendiente de confirmación">
+            <p className="font-bold">Revisión antes de ejecutar</p>
+            <p className="mt-1">{pending.preview}</p>
+            <p className="mt-1 text-[11px]">Nada cambia en el POS hasta que confirmes.</p>
+            <div className="mt-2 flex gap-2">
+              <button type="button" onClick={() => confirmAction(pending)} disabled={!onQuickAction} className="rounded-lg bg-[#3b3733] px-3 py-1.5 font-bold text-white disabled:opacity-40">
+                Confirmar acción
+              </button>
+              <button type="button" onClick={() => discardAction(pending.id)} className="rounded-lg border border-amber-700/30 px-3 py-1.5 font-bold text-amber-950">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ))}
+
         {isTyping && (
           <div className="flex items-center gap-2 text-xs text-[#6b686d] italic p-2">
             <Sparkles className="w-3.5 h-3.5 animate-spin text-[#a9b994]" />
-            <span>Nyza está pensando y diagnosticando...</span>
+            <span>Nyza está preparando una respuesta...</span>
           </div>
         )}
         <div ref={messagesEndRef} />
@@ -273,11 +354,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       {/* Suggested Quick Prompts */}
       <div className="p-2 border-t border-[#6b686d]/15 bg-gray-50 flex items-center gap-1.5 overflow-x-auto text-[10px] scrollbar-none">
         <button
-          onClick={() => handlePromptClick('¿Qué has aprendido hoy del sistema y qué mejoras aplicaste?')}
+          onClick={() => handlePromptClick('¿Qué reglas locales guarda Nyza y qué hace realmente?')}
           className="px-2.5 py-1 rounded-full bg-white border border-[#a9b994] text-[#3b3733] hover:bg-[#a9b994]/20 whitespace-nowrap font-bold cursor-pointer flex items-center gap-1"
         >
           <BrainCircuit className="w-3 h-3 text-[#a9b994]" />
-          <span>🧠 ¿Qué aprendiste hoy?</span>
+          <span>🧠 Reglas locales</span>
         </button>
         <button
           onClick={() => handlePromptClick('¿Qué platillos tienen stock crítico o insumos bajos?')}
@@ -286,10 +367,10 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           <span>📉 Alertas de Stock</span>
         </button>
         <button
-          onClick={() => handlePromptClick('Ejecuta un ciclo de aprendizaje diario y dime tu IQ')}
+          onClick={() => handlePromptClick('¿Qué reglas locales guarda Nyza y qué hace realmente?')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          ⚡ Ciclo de aprendizaje
+          ⚡ Ver capacidades reales
         </button>
         <button
           onClick={() => handlePromptClick('La comanda de la cocina no imprime')}
@@ -298,16 +379,16 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
           🖨️ Falla impresora cocina
         </button>
         <button
-          onClick={() => handlePromptClick('El sistema se siente pegado o lento')}
+          onClick={() => handlePromptClick('¿Nyza puede liberar memoria RAM o reparar el sistema automáticamente?')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          ⚡ Liberar memoria
+          ⚡ Límites de reparación
         </button>
         <button
-          onClick={() => handlePromptClick('Marca error al enviar factura a Hacienda')}
+          onClick={() => handlePromptClick('¿Qué puedo revisar si marca error al enviar factura a Hacienda?')}
           className="px-2.5 py-1 rounded-full bg-white border border-gray-200 text-[#3b3733] hover:border-[#a9b994] whitespace-nowrap font-medium cursor-pointer"
         >
-          🇨🇷 Estado Hacienda DGT
+          🇨🇷 Guía de facturación DGT
         </button>
       </div>
 

@@ -1,19 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
-import { allowedOriginForRedirect, checkRateLimit, getJwtSecret, handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
+import { allowedOriginForRedirect, checkRateLimit, getJwtSecret, handleOptions, requireAuth, requireRole, setCorsHeaders } from './_utils/security.js';
+import { buildEmployeeTokenClaims, isEmployeeRole, normalizeEmployeeRoster } from './_utils/employeeSession.js';
+import { processTilopaySubscription } from './_utils/tilopayClient.js';
+import { consumeTilopaySignupHandoff, getTilopaySignupHandoff } from './_utils/tilopaySignupHandoff.js';
+import { consumePasswordResetToken, createPasswordResetToken } from './_utils/passwordReset.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
 function escapeHtml(value: unknown): string {
   return String(value || '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 async function ensureSupabaseAuthIdentity(email: string, password: string): Promise<string | null> {
@@ -28,15 +33,15 @@ async function ensureSupabaseAuthIdentity(email: string, password: string): Prom
     const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
     return existing?.id || null;
-  } catch (error) {
+  } catch {
     try {
       const listed = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const existing = listed.data.users.find(user => user.email?.toLowerCase() === email.toLowerCase());
       if (existing?.id) return existing.id;
-    } catch (lookupError) {
-      console.warn('[Auth Bridge] No se pudo consultar la identidad Supabase:', lookupError);
+    } catch {
+      console.warn('[Auth Bridge] No se pudo consultar la identidad Supabase.');
     }
-    console.warn('[Auth Bridge] No se pudo vincular la identidad Supabase:', error);
+    console.warn('[Auth Bridge] No se pudo vincular la identidad Supabase.');
     return null;
   }
 }
@@ -46,8 +51,8 @@ async function getSupabaseSession(email: string, password: string) {
   try {
     const result = await supabaseAuth.auth.signInWithPassword({ email: email.toLowerCase(), password });
     return result.data.session || null;
-  } catch (error) {
-    console.warn('[Auth Bridge] No se pudo obtener sesión Supabase:', error);
+  } catch {
+    console.warn('[Auth Bridge] No se pudo obtener sesión Supabase.');
     return null;
   }
 }
@@ -60,7 +65,7 @@ async function linkLegacyUserToAuth(userId: string, email: string, password: str
     .update({ auth_user_id: authUserId })
     .eq('id', userId)
     .is('auth_user_id', null);
-  if (error) console.warn('[Auth Bridge] La columna auth_user_id aún no está disponible:', error.message);
+  if (error) console.warn('[Auth Bridge] La columna auth_user_id aún no está disponible.');
 }
 
 async function operationalChecks(tenantId: string | undefined) {
@@ -121,6 +126,200 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: healthy,
         status: healthy ? 'healthy' : 'degraded',
         checks
+      });
+    }
+
+    if (rawAction === 'employee-roster') {
+      if (!['GET', 'POST'].includes(req.method || '')) return res.status(405).json({ error: 'Method Not Allowed' });
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un tenant asociado.' });
+
+      if (req.method === 'GET') {
+        const [employeesResult, ownerResult] = await Promise.all([
+          supabase
+            .from('pos_employees')
+            .select('external_id, name, email, phone, role, is_active')
+            .eq('tenant_id', auth.tenantId)
+            .order('name', { ascending: true }),
+          supabase
+            .from('users')
+            .select('id, name, email, phone, restaurant_name, role, active')
+            .eq('id', auth.userId)
+            .maybeSingle()
+        ]);
+        if (employeesResult.error || ownerResult.error || !ownerResult.data) {
+          console.error('[Auth] No se pudo leer el padrón de empleados.');
+          return res.status(503).json({ error: 'No se pudo cargar el padrón de empleados.' });
+        }
+        const owner = ownerResult.data;
+        const ownerProfile = {
+          id: owner.id,
+          name: owner.name,
+          email: owner.email,
+          phone: owner.phone,
+          restaurantName: owner.restaurant_name,
+          role: owner.role,
+          active: owner.active
+        };
+        const employees = (employeesResult.data || []).map((employee: any) => ({
+          id: employee.external_id,
+          name: employee.name,
+          email: employee.email || '',
+          phone: employee.phone || '',
+          restaurantName: owner.restaurant_name,
+          role: employee.role,
+          active: employee.is_active
+        }));
+        return res.status(200).json({ success: true, tenantId: auth.tenantId, accountUserId: auth.userId, owner: ownerProfile, employees });
+      }
+
+      if (!requireRole(auth, res, ['ADMIN'])) return;
+
+      const rateLimit = checkRateLimit(`employee-roster:${auth.userId}`, 20, 60000);
+      if (!rateLimit.allowed) return res.status(429).json({ error: 'Demasiadas sincronizaciones del padrón. Intenta de nuevo en un minuto.' });
+
+      let roster;
+      try {
+        roster = normalizeEmployeeRoster((req.body as any)?.employees);
+      } catch (error: any) {
+        return res.status(400).json({ error: error?.message || 'El padrón de empleados no es válido.' });
+      }
+
+      // El registro de la cuenta propietaria no es una credencial de empleado.
+      const employees = roster.filter(employee => employee.externalId !== auth.userId);
+      const existingResult = employees.length > 0
+        ? await supabase
+          .from('pos_employees')
+          .select('external_id, pin_hash')
+          .eq('tenant_id', auth.tenantId)
+          .in('external_id', employees.map(employee => employee.externalId))
+        : { data: [], error: null };
+      if (existingResult.error) {
+        console.error('[Auth] No se pudo preparar el padrón de empleados.');
+        return res.status(503).json({ error: 'No se pudo sincronizar el padrón de empleados.' });
+      }
+      const currentHashes = new Map((existingResult.data || []).map((row: any) => [row.external_id, row.pin_hash]));
+      if (employees.some(employee => !employee.pin && !currentHashes.has(employee.externalId))) {
+        return res.status(400).json({ error: 'Cada nuevo colaborador debe tener un PIN de cuatro dígitos.' });
+      }
+
+      const rows: Array<Record<string, unknown>> = [];
+      for (let offset = 0; offset < employees.length; offset += 4) {
+        const batch = await Promise.all(employees.slice(offset, offset + 4).map(async employee => {
+          const currentHash = currentHashes.get(employee.externalId) as string | undefined;
+          let pinHash = currentHash;
+          if (employee.pin && (!currentHash || !(await bcrypt.compare(employee.pin, currentHash)))) {
+            pinHash = await bcrypt.hash(employee.pin, 12);
+          }
+          return {
+            tenant_id: auth.tenantId,
+            external_id: employee.externalId,
+            name: employee.name,
+            email: employee.email,
+            phone: employee.phone,
+            role: employee.role,
+            is_active: employee.active,
+            pin_hash: pinHash,
+            updated_at: new Date().toISOString()
+          };
+        }));
+        rows.push(...batch);
+      }
+
+      if (rows.length > 0) {
+        const { error } = await supabase
+          .from('pos_employees')
+          .upsert(rows, { onConflict: 'tenant_id,external_id' });
+        if (error) {
+          console.error('[Auth] No se pudo guardar el padrón de empleados.');
+          return res.status(503).json({ error: 'No se pudo sincronizar el padrón de empleados.' });
+        }
+      }
+      return res.status(200).json({ success: true, synced: rows.length });
+    }
+
+    if (rawAction === 'employee-session') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+      const body = (req.body || {}) as { employeeId?: unknown; tenantId?: unknown; pin?: unknown };
+      const employeeId = typeof body.employeeId === 'string' ? body.employeeId.trim() : '';
+      if (!employeeId || employeeId.length > 120) return res.status(400).json({ error: 'Colaborador o PIN incorrecto.' });
+
+      const pin = typeof body.pin === 'string' ? body.pin.trim() : '';
+      const pinLogin = pin.length > 0;
+      let tenantId = '';
+      if (pinLogin) {
+        const requestedTenantId = typeof body.tenantId === 'string' ? body.tenantId.trim() : '';
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedTenantId) || !/^\d{4}$/.test(pin)) {
+          return res.status(401).json({ error: 'Colaborador o PIN incorrecto.' });
+        }
+        tenantId = requestedTenantId;
+        const clientIp = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+        const rateLimit = checkRateLimit(`employee-pin:${clientIp}:${tenantId}:${employeeId}`, 5, 60000);
+        if (!rateLimit.allowed) return res.status(429).json({ error: 'Demasiados intentos. Espera un minuto antes de volver a intentarlo.' });
+      } else {
+        const auth = await requireAuth(req, res);
+        if (!auth) return;
+        if (!requireRole(auth, res, ['ADMIN'])) return;
+        if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un tenant asociado.' });
+        if (typeof body.tenantId === 'string' && body.tenantId !== auth.tenantId) {
+          return res.status(403).json({ error: 'El tenant del colaborador no coincide con la sesión.' });
+        }
+        tenantId = auth.tenantId;
+      }
+
+      const { data: employee, error: employeeError } = await supabase
+        .from('pos_employees')
+        .select('id, tenant_id, external_id, name, email, phone, role, pin_hash, is_active')
+        .eq('tenant_id', tenantId)
+        .eq('external_id', employeeId)
+        .maybeSingle();
+      if (employeeError) {
+        console.error('[Auth] No se pudo verificar el colaborador.');
+        return res.status(503).json({ error: 'No se pudo validar el acceso del colaborador.' });
+      }
+      if (!employee || employee.is_active === false || !isEmployeeRole(employee.role)) {
+        return res.status(pinLogin ? 401 : 404).json({ error: 'Colaborador o PIN incorrecto.' });
+      }
+      if (pinLogin && !(await bcrypt.compare(pin, employee.pin_hash))) {
+        return res.status(401).json({ error: 'Colaborador o PIN incorrecto.' });
+      }
+
+      const { data: tenant, error: tenantError } = await supabase
+        .from('tenants')
+        .select('*')
+        .eq('id', employee.tenant_id)
+        .maybeSingle();
+      if (tenantError || !tenant) return res.status(401).json({ error: 'Colaborador o PIN incorrecto.' });
+      const { data: owner, error: ownerError } = await supabase
+        .from('users')
+        .select('id, email, active')
+        .eq('id', tenant.user_id)
+        .maybeSingle();
+      if (ownerError || !owner || owner.active === false) return res.status(401).json({ error: 'Colaborador o PIN incorrecto.' });
+
+      const token = jwt.sign({
+        ...buildEmployeeTokenClaims(employee, tenant, owner),
+        sessionId: randomUUID()
+      }, jwtSecret, { expiresIn: '12h', jwtid: randomUUID() });
+      const user = {
+        id: employee.external_id,
+        name: employee.name,
+        email: employee.email || '',
+        phone: employee.phone || '',
+        restaurant_name: tenant.name,
+        role: employee.role,
+        active: employee.is_active
+      };
+      const mappedTenant = { ...tenant, onboardingCompleted: tenant.onboarding_completed };
+      return res.status(200).json({
+        success: true,
+        token,
+        user,
+        tenant: mappedTenant,
+        accountUserId: owner.id,
+        employeeId: employee.id,
+        employeeSession: true
       });
     }
 
@@ -214,12 +413,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // -------------------------------------------------------------
     // ACTION: REGISTER (POST /api/auth/register)
     // -------------------------------------------------------------
-    if (rawAction === 'register') {
+    if (rawAction === 'register' || rawAction === 'complete-tilopay-signup') {
       if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
       }
 
-      const { email, password, name, phone, restaurantName, plan } = req.body || {};
+      const isHandoffRegistration = rawAction === 'complete-tilopay-signup';
+      let registrationPayload = req.body || {};
+      let handoffReference: unknown;
+      let paymentToken = '';
+
+      if (isHandoffRegistration) {
+        handoffReference = registrationPayload.reference;
+        paymentToken = typeof registrationPayload.token === 'string'
+          ? registrationPayload.token
+          : '';
+        const handoff = await getTilopaySignupHandoff(handoffReference);
+        if (!handoff) {
+          return res.status(400).json({ error: 'El enlace de registro no es válido o ya expiró.' });
+        }
+        registrationPayload = handoff;
+      }
+
+      const { email, password, name, phone, restaurantName, plan } = registrationPayload;
       if (!email || !password || !name || !restaurantName) {
         return res.status(400).json({ error: 'Faltan campos obligatorios' });
       }
@@ -253,7 +469,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (userError || !newUser) {
-        console.error('Error creating user:', userError);
+        console.error('Error creating user.');
         return res.status(500).json({ error: 'Error al crear usuario' });
       }
 
@@ -275,7 +491,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (tenantError || !newTenant) {
-        console.error('Error creating tenant:', tenantError);
+        console.error('Error creating tenant.');
         return res.status(500).json({ error: 'Error al crear tenant' });
       }
 
@@ -296,8 +512,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (subError || !newSubscription) {
-        console.error('Error creating subscription:', subError);
+        console.error('Error creating subscription.');
         return res.status(500).json({ error: 'Error al crear suscripción' });
+      }
+
+      // Nunca cobrar hasta que el usuario, tenant y suscripción existan.
+      // Así un correo duplicado o un fallo de persistencia no crea un cargo huérfano.
+      if (isHandoffRegistration) {
+        if (paymentToken) {
+          try {
+            await processTilopaySubscription({
+              reference: handoffReference,
+              token: paymentToken
+            });
+          } catch {
+            // Se conserva el comportamiento anterior de alta TRIAL incluso si el pago falla.
+            console.warn('[Tilopay] No se pudo procesar la suscripción durante el retorno.');
+          }
+        }
+
+        const consumedHandoff = await consumeTilopaySignupHandoff(handoffReference);
+        if (!consumedHandoff) {
+          return res.status(400).json({ error: 'El enlace de registro no es válido o ya expiró.' });
+        }
       }
 
       // 6. Generate JWT
@@ -322,50 +559,65 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(405).json({ error: 'Method Not Allowed' });
       }
 
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (!auth.tenantId) return res.status(401).json({ error: 'Restaurante no encontrado.' });
 
-      const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, jwtSecret) as { userId: string; email: string };
-
-      // Fetch user
-      const { data: user, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', decoded.userId)
-        .single();
-
-      if (userError || !user) {
-        return res.status(401).json({ error: 'Usuario no encontrado' });
-      }
-
-      // Fetch related tenant and subscription
-      const { data: tenant } = await supabase
+      const { data: tenant, error: tenantError } = await supabase
         .from('tenants')
         .select('*')
-        .eq('user_id', user.id)
-        .single();
+        .eq('id', auth.tenantId)
+        .eq('user_id', auth.userId)
+        .maybeSingle();
+      if (tenantError || !tenant) return res.status(401).json({ error: 'Restaurante no encontrado.' });
+
+      let user: Record<string, any> | null = null;
+      if (auth.employeeId) {
+        const { data: employee, error: employeeError } = await supabase
+          .from('pos_employees')
+          .select('external_id, name, email, phone, role, is_active')
+          .eq('id', auth.employeeId)
+          .eq('tenant_id', tenant.id)
+          .maybeSingle();
+        if (employeeError || !employee || employee.is_active === false) {
+          return res.status(401).json({ error: 'La sesión del colaborador ya no es válida.' });
+        }
+        user = {
+          id: employee.external_id,
+          name: employee.name,
+          email: employee.email || '',
+          phone: employee.phone || '',
+          restaurant_name: tenant.name,
+          role: employee.role,
+          active: employee.is_active
+        };
+      } else {
+        const { data: accountUser, error: userError } = await supabase
+          .from('users')
+          .select('id, name, email, phone, restaurant_name, role, active')
+          .eq('id', auth.userId)
+          .maybeSingle();
+        if (userError || !accountUser || accountUser.active === false) {
+          return res.status(401).json({ error: 'Usuario no encontrado.' });
+        }
+        user = accountUser;
+      }
 
       const { data: subscription } = await supabase
         .from('subscriptions')
         .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      const mappedTenant = tenant ? {
-        ...tenant,
-        onboardingCompleted: tenant.onboarding_completed
-      } : null;
-
-      delete user.password_hash;
+        .eq('user_id', auth.userId)
+        .maybeSingle();
+      const mappedTenant = { ...tenant, onboardingCompleted: tenant.onboarding_completed };
 
       return res.status(200).json({
         success: true,
         user,
         tenant: mappedTenant,
-        subscription
+        subscription,
+        accountUserId: auth.userId,
+        employeeId: auth.employeeId || null,
+        employeeSession: Boolean(auth.employeeId)
       });
     }
 
@@ -379,22 +631,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { email, token, newPassword } = (req.body as any) || {};
 
-      // Case 1: Update password with JWT token
+      // Case 1: Update password with a purpose-specific, single-use token
       if (token && newPassword) {
-        if (newPassword.length < 6) {
+        if (typeof newPassword !== 'string' || newPassword.length < 6) {
           return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
         }
 
-        let decoded: any;
+        let userId: string | null;
         try {
-          decoded = jwt.verify(token, jwtSecret);
+          userId = await consumePasswordResetToken(token, supabase);
         } catch {
-          return res.status(401).json({ error: 'El enlace es inválido o ha expirado.' });
+          console.error('[Auth] No se pudo validar el enlace de recuperación.');
+          return res.status(500).json({ error: 'No se pudo validar el enlace de recuperación.' });
         }
-
-        const userId = decoded?.userId;
         if (!userId) {
-          return res.status(401).json({ error: 'Token inválido.' });
+          return res.status(401).json({ error: 'El enlace es inválido, ya fue usado o ha expirado.' });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -420,7 +671,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(500).json({ error: 'Error al actualizar la contraseña.' });
         }
 
-        const authUserId = decoded.authUserId || resetUser.auth_user_id;
+        const authUserId = resetUser.auth_user_id;
         if (authUserId) {
           const { error: authPasswordError } = await supabase.auth.admin.updateUserById(authUserId, {
             password: newPassword
@@ -445,7 +696,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         const { data: user, error: userError } = await supabase
           .from('users')
-          .select('id, name, email, auth_user_id')
+          .select('id, name, email')
           .eq('email', normalizedEmail)
           .single();
 
@@ -456,21 +707,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
 
-        const resetToken = jwt.sign(
-          { userId: user.id, email: user.email, authUserId: user.auth_user_id || undefined },
-          jwtSecret,
-          { expiresIn: '1h' }
-        );
-
-        const origin = allowedOriginForRedirect(req.headers.origin);
-        const resetLink = `${origin}/?resetToken=${resetToken}`;
-
         if (!resendApiKey) {
           console.error('[Password Reset] RESEND_API_KEY no configurada; no se envió correo.');
           return res.status(503).json({
             error: 'El servicio de correo no está configurado. El administrador debe configurar RESEND_API_KEY y RESEND_FROM_EMAIL.'
           });
         }
+
+        const { token: resetToken, tokenHash } = createPasswordResetToken();
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+        const { error: tokenInsertError } = await supabase
+          .from('password_reset_tokens')
+          .insert({ token_hash: tokenHash, user_id: user.id, expires_at: expiresAt });
+        if (tokenInsertError) {
+          console.error('[Password Reset] No se pudo guardar el token de recuperación:', tokenInsertError.message);
+          return res.status(500).json({ error: 'No se pudo crear el enlace de recuperación.' });
+        }
+
+        const origin = allowedOriginForRedirect(req.headers.origin);
+        const resetLink = `${origin}/?resetToken=${resetToken}`;
 
         const resend = new Resend(resendApiKey);
         const fromEmail = process.env.RESEND_FROM_EMAIL || 'soporte@saborai.site';
@@ -574,6 +829,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(400).json({ error: `Acción de autenticación no válida: '${rawAction}'` });
   } catch (err: any) {
+    if (rawAction === 'complete-tilopay-signup') {
+      console.error('[Auth] No se pudo completar el registro desde Tilopay.');
+      return res.status(500).json({ error: 'No se pudo completar el registro.' });
+    }
     console.error(`Auth router error for action '${rawAction}':`, err);
     return res.status(500).json({ error: err.message || 'Error interno del servidor' });
   }

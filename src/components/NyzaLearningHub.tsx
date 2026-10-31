@@ -16,25 +16,20 @@ import {
   PlusCircle, 
   Sliders, 
   Calendar, 
-  ChevronRight,
-  TrendingUp,
   ShieldCheck,
-  Zap
 } from 'lucide-react';
 import { 
   nyzaLearningService, 
   NyzaHeuristic, 
   DailyLearningCycle, 
-  HeuristicCategory, 
-  AutoTuningSettings 
+  HeuristicCategory
 } from '../services/nyzaLearningService';
-import { TenantInfo, UserProfile } from '../types';
+import { TenantInfo } from '../types';
 
 interface NyzaLearningHubProps {
   isOpen: boolean;
   onClose: () => void;
   tenant: TenantInfo;
-  currentUser?: UserProfile;
   onOpenCopilot?: () => void;
 }
 
@@ -42,14 +37,12 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
   isOpen,
   onClose,
   tenant,
-  currentUser,
   onOpenCopilot
 }) => {
   const [activeTab, setActiveTab] = useState<'heuristics' | 'history' | 'global' | 'teach' | 'settings'>('heuristics');
   const [heuristics, setHeuristics] = useState<NyzaHeuristic[]>([]);
   const [dailyCycles, setDailyCycles] = useState<DailyLearningCycle[]>([]);
-  const [autoTuning, setAutoTuning] = useState<AutoTuningSettings>(nyzaLearningService.getAutoTuningSettings());
-  const [currentIQ, setCurrentIQ] = useState<number>(nyzaLearningService.getCurrentIQ());
+  const [observationCount, setObservationCount] = useState<number>(nyzaLearningService.getObservationCount());
   const [selectedCategory, setSelectedCategory] = useState<HeuristicCategory | 'ALL'>('ALL');
   const [isScanning, setIsScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState('');
@@ -58,51 +51,38 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
   const [teachCategory, setTeachCategory] = useState<HeuristicCategory>('KITCHEN_SPEED');
   const [teachTitle, setTeachTitle] = useState('');
   const [teachRule, setTeachRule] = useState('');
-  const [teachImpact, setTeachImpact] = useState<'CRITICAL' | 'HIGH' | 'MEDIUM'>('HIGH');
   const [teachSuccess, setTeachSuccess] = useState(false);
 
   // Recargar datos desde el servicio
   const refreshData = () => {
     setHeuristics(nyzaLearningService.getHeuristics());
     setDailyCycles(nyzaLearningService.getDailyCycles());
-    setAutoTuning(nyzaLearningService.getAutoTuningSettings());
-    setCurrentIQ(nyzaLearningService.getCurrentIQ());
+    setObservationCount(nyzaLearningService.getObservationCount());
   };
 
   useEffect(() => {
     if (isOpen) {
+      nyzaLearningService.setTenantId(tenant.id);
       refreshData();
       const unsubscribe = nyzaLearningService.subscribe(() => {
         refreshData();
       });
       return () => unsubscribe();
     }
-  }, [isOpen]);
+  }, [isOpen, tenant.id]);
 
   if (!isOpen) return null;
 
-  const globalBenchmark = nyzaLearningService.getGlobalFleetBenchmark();
-  const learningStreak = nyzaLearningService.getLearningStreakDays();
-
-  // Ejecutar ciclo manual de aprendizaje
+  // Generar un resumen manual de observaciones locales; no se entrena un modelo.
   const handleForceDailyCycle = () => {
     setIsScanning(true);
-    setScanMessage('Analizando telemetría de red LAN, colas fiscales y tiempos KDS...');
-
+    setScanMessage('Contando observaciones locales disponibles en memoria...');
     setTimeout(() => {
-      setScanMessage('Consolidando patrones y cruzando con la red global de Costa Rica...');
-    }, 1200);
-
-    setTimeout(() => {
-      setScanMessage('Sintetizando nuevas heurísticas y desplegando auto-optimizaciones...');
-    }, 2400);
-
-    setTimeout(() => {
-      const cycle = nyzaLearningService.runDailyLearningCycle(true);
+      nyzaLearningService.runDailyLearningCycle(true);
       setIsScanning(false);
       setScanMessage('');
       refreshData();
-    }, 3600);
+    }, 250);
   };
 
   // Enseñar nueva regla a Nyza
@@ -110,7 +90,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
     e.preventDefault();
     if (!teachTitle.trim() || !teachRule.trim()) return;
 
-    nyzaLearningService.teachNyza(teachCategory, teachTitle.trim(), teachRule.trim(), teachImpact);
+    nyzaLearningService.teachNyza(teachCategory, teachTitle.trim(), teachRule.trim());
     setTeachTitle('');
     setTeachRule('');
     setTeachSuccess(true);
@@ -125,7 +105,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
   const getCategoryBadge = (category: HeuristicCategory) => {
     switch (category) {
       case 'HARDWARE_RESILIENCE':
-        return { label: 'Resiliencia Hardware', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: <Printer className="w-3.5 h-3.5" /> };
+        return { label: 'Impresoras y red local', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20', icon: <Printer className="w-3.5 h-3.5" /> };
       case 'DGT_TAX_INTELLIGENCE':
         return { label: 'Tributación DGT', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', icon: <FileText className="w-3.5 h-3.5" /> };
       case 'KITCHEN_SPEED':
@@ -154,41 +134,33 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             <div>
               <div className="flex items-center gap-2.5">
                 <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
-                  <span>Nyza Core Intelligence</span>
+                  <span>Nyza • notas y observaciones locales</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#a9b994] text-stone-950 font-black uppercase tracking-wider">
-                    IA Evolutiva
+                    Sin entrenamiento automático
                   </span>
                 </h2>
               </div>
               <p className="text-xs text-stone-400 mt-0.5">
-                Aprendizaje autónomo diario & red colectiva global • {tenant.name}
+                Reglas guardadas en este navegador • {tenant.name}
               </p>
             </div>
           </div>
 
-          {/* Métricas destacadas y botón forzar ciclo */}
+          {/* Conteos locales y resumen manual */}
           <div className="flex items-center flex-wrap gap-2.5">
             <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800">
-              <Zap className="w-4 h-4 text-amber-400" />
+              <Cpu className="w-4 h-4 text-[#a9b994]" />
               <div className="text-left">
-                <span className="text-[10px] text-stone-400 block uppercase font-bold leading-tight">IQ Operativo</span>
-                <span className="text-xs font-black text-white">{currentIQ} pts</span>
+                <span className="text-[10px] text-stone-400 block uppercase font-bold leading-tight">Reglas locales</span>
+                <span className="text-xs font-black text-white">{heuristics.length}</span>
               </div>
             </div>
 
             <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800">
-              <TrendingUp className="w-4 h-4 text-[#a9b994]" />
+              <Activity className="w-4 h-4 text-[#a9b994]" />
               <div className="text-left">
-                <span className="text-[10px] text-stone-400 block uppercase font-bold leading-tight">Racha de Aprendizaje</span>
-                <span className="text-xs font-black text-white">{learningStreak} días</span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800">
-              <Globe2 className="w-4 h-4 text-cyan-400" />
-              <div className="text-left">
-                <span className="text-[10px] text-stone-400 block uppercase font-bold leading-tight">Flota Nacional</span>
-                <span className="text-xs font-black text-white">{globalBenchmark.activeFleetNodes} restaurantes</span>
+                <span className="text-[10px] text-stone-400 block uppercase font-bold leading-tight">Observaciones en memoria</span>
+                <span className="text-xs font-black text-white">{observationCount}</span>
               </div>
             </div>
 
@@ -198,7 +170,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#a9b994] text-stone-950 hover:bg-[#b8c9a3] active:scale-95 transition-all font-bold text-xs shadow-[0_0_20px_rgba(169,185,148,0.3)] disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-              <span>{isScanning ? 'Sintetizando...' : 'Ejecutar Ciclo Diario'}</span>
+              <span>{isScanning ? 'Contando...' : 'Crear resumen local'}</span>
             </button>
 
             <button
@@ -220,7 +192,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
               <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
               <span>{scanMessage}</span>
             </div>
-            <span className="text-[10px] text-stone-400 font-mono">Procesando telemetría viva...</span>
+            <span className="text-[10px] text-stone-400 font-mono">No modifica el modelo ni envía datos.</span>
           </div>
         )}
 
@@ -237,7 +209,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             }`}
           >
             <Cpu className="w-4 h-4" />
-            <span>Heurísticas Vivas ({heuristics.length})</span>
+            <span>Reglas locales ({heuristics.length})</span>
           </button>
 
           <button
@@ -249,7 +221,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             }`}
           >
             <Calendar className="w-4 h-4" />
-            <span>Bitácora Diaria ({dailyCycles.length} Ciclos)</span>
+            <span>Resúmenes locales ({dailyCycles.length})</span>
           </button>
 
           <button
@@ -261,7 +233,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             }`}
           >
             <Globe2 className="w-4 h-4" />
-            <span>Red Global SaborAI</span>
+            <span>Conexión global</span>
           </button>
 
           <button
@@ -273,7 +245,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             }`}
           >
             <PlusCircle className="w-4 h-4" />
-            <span>Enseñar a Nyza (Human-in-the-Loop)</span>
+            <span>Guardar nota</span>
           </button>
 
           <button
@@ -285,7 +257,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             }`}
           >
             <Sliders className="w-4 h-4" />
-            <span>Auto-Optimización</span>
+            <span>Capacidades</span>
           </button>
         </nav>
 
@@ -294,7 +266,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
         {/* ========================================================= */}
         <div className="flex-1 overflow-y-auto p-6 bg-stone-950/70">
           
-          {/* 1. HEURÍSTICAS VIVAS */}
+          {/* 1. REGLAS LOCALES */}
           {activeTab === 'heuristics' && (
             <div className="space-y-6">
               
@@ -347,9 +319,6 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                           </span>
 
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-mono text-stone-400">
-                              Confianza: <strong className="text-white">{h.confidence}%</strong>
-                            </span>
                             <button
                               onClick={() => nyzaLearningService.toggleHeuristicStatus(h.id)}
                               className={`text-[10px] px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
@@ -372,16 +341,16 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                         </p>
                       </div>
 
-                      {/* Pie con origen y validación de flota */}
+                      {/* Origen local de la nota */}
                       <div className="pt-3 border-t border-stone-800/80 flex items-center justify-between text-[10px] text-stone-400">
                         <div className="flex items-center gap-1.5">
-                          <Globe2 className="w-3.5 h-3.5 text-[#a9b994]" />
-                          <span>Validada en <strong>{h.globalValidationCount}</strong> restaurantes SaborAI</span>
+                          <ShieldCheck className="w-3.5 h-3.5 text-[#a9b994]" />
+                          <span>Nota local guardada {new Date(h.createdAt).toLocaleDateString('es-CR')}</span>
                         </div>
 
                         <div className="flex items-center gap-1 text-stone-400">
                           <Activity className="w-3 h-3 text-cyan-400" />
-                          <span>Aplicada {h.appliedCount} veces</span>
+                          <span>No se aplica automáticamente</span>
                         </div>
                       </div>
                     </div>
@@ -399,19 +368,19 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                 <div className="flex items-center gap-3">
                   <ShieldCheck className="w-5 h-5 text-[#a9b994]" />
                   <div>
-                    <h4 className="text-xs font-bold text-white">Ciclo de Síntesis Diario Automático</h4>
+                    <h4 className="text-xs font-bold text-white">Resúmenes locales manuales</h4>
                     <p className="text-[11px] text-stone-400">
-                      Nyza procesa cada noche las métricas de operación y sintetiza mejoras preventivas.
+                      Solo cuentan eventos disponibles en memoria; no hay ciclos nocturnos ni entrenamiento automático.
                     </p>
                   </div>
                 </div>
-                <span className="text-xs font-black text-[#a9b994] uppercase tracking-wider">
-                  99.98% Resiliencia
-                </span>
               </div>
 
               <div className="relative pl-6 border-l-2 border-stone-800 space-y-6">
-                {dailyCycles.map((cycle, index) => (
+                {dailyCycles.length === 0 && (
+                  <p className="py-4 text-xs text-stone-400">Aún no hay resúmenes locales. Los registros antiguos de muestra ya no se presentan como mediciones.</p>
+                )}
+                {dailyCycles.map(cycle => (
                   <div key={cycle.id} className="relative">
                     {/* Punto en la línea de tiempo */}
                     <div className="absolute -left-[31px] top-1.5 w-4 h-4 rounded-full bg-[#a9b994] border-4 border-stone-950 shadow-sm" />
@@ -427,39 +396,13 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-                            IQ {cycle.systemIQ}
-                          </span>
-                          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                            Sincronizado con Red Global
-                          </span>
-                        </div>
+                        <span className="text-[10px] text-stone-400">Solo en este navegador</span>
                       </div>
 
                       <p className="text-xs text-stone-200 leading-relaxed mb-4">
                         {cycle.summary}
                       </p>
 
-                      {/* Métricas del ciclo */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-stone-800/80">
-                        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-800/60 text-center">
-                          <span className="text-[10px] text-stone-400 block">Fallos Evitados</span>
-                          <strong className="text-xs text-white">{cycle.metrics.printerFailuresPrevented} de red</strong>
-                        </div>
-                        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-800/60 text-center">
-                          <span className="text-[10px] text-stone-400 block">Demoras DGT Evitadas</span>
-                          <strong className="text-xs text-white">{cycle.metrics.dgtDelaysAvoidedSec}s amortiguados</strong>
-                        </div>
-                        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-800/60 text-center">
-                          <span className="text-[10px] text-stone-400 block">Tiempo en Cocina</span>
-                          <strong className="text-xs text-white">+{cycle.metrics.kitchenTimeSavedMin}m optimizados</strong>
-                        </div>
-                        <div className="p-2.5 rounded-xl bg-stone-950/60 border border-stone-800/60 text-center">
-                          <span className="text-[10px] text-stone-400 block">RAM Purgada</span>
-                          <strong className="text-xs text-white">+{cycle.metrics.memoryFreedMB} MB liberados</strong>
-                        </div>
-                      </div>
                     </div>
                   </div>
                 ))}
@@ -467,54 +410,17 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
             </div>
           )}
 
-          {/* 3. RED DE INTELIGENCIA COLECTIVA GLOBAL */}
+          {/* 3. ESTADO DE CONEXIÓN GLOBAL */}
           {activeTab === 'global' && (
-            <div className="space-y-6 max-w-4xl mx-auto">
-              <div className="p-6 rounded-3xl bg-gradient-to-br from-stone-900 to-stone-950 border border-stone-800 relative overflow-hidden">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <div>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#a9b994] px-2.5 py-1 rounded-full bg-[#a9b994]/15 border border-[#a9b994]/30 inline-block mb-2">
-                      Federated Knowledge Mesh • Costa Rica
-                    </span>
-                    <h3 className="text-lg font-black text-white">
-                      Inteligencia Colectiva de la Flota SaborAI
-                    </h3>
-                    <p className="text-xs text-stone-400 mt-1 max-w-lg leading-relaxed">
-                      Nyza comparte y recibe heurísticas anónimas con 148 restaurantes en Costa Rica.
-                      Cuando otra sucursal supera un problema de red, impresora o Hacienda DGT, tu sistema se protege automáticamente.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-4 shrink-0">
-                    <div className="text-center p-4 rounded-2xl bg-stone-950 border border-stone-800">
-                      <Globe2 className="w-6 h-6 text-cyan-400 mx-auto mb-1 animate-pulse" />
-                      <span className="text-sm font-black text-white">{globalBenchmark.activeFleetNodes}</span>
-                      <span className="text-[10px] text-stone-400 block">Nodos Activos</span>
-                    </div>
-
-                    <div className="text-center p-4 rounded-2xl bg-stone-950 border border-stone-800">
-                      <ShieldCheck className="w-6 h-6 text-emerald-400 mx-auto mb-1" />
-                      <span className="text-sm font-black text-white">{globalBenchmark.nationalDgtStatus}</span>
-                      <span className="text-[10px] text-stone-400 block">Hacienda DGT</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Macro Tendencias Nacionales */}
-                <div className="mt-6 pt-6 border-t border-stone-800/80 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="p-3.5 rounded-xl bg-stone-950/70 border border-stone-800">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold block mb-1">Picos de Consumo Nacional</span>
-                    <p className="text-xs text-white font-medium">{globalBenchmark.peakHoursNational}</p>
-                    <span className="text-[10px] text-stone-400 mt-1 block">Nyza pre-calienta memoria y colas de impresión antes de estas horas.</span>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-stone-950/70 border border-stone-800">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold block mb-1">Método de Pago Dominante</span>
-                    <p className="text-xs text-white font-medium">SINPE Móvil & Tarjeta (89% de transacciones)</p>
-                    <span className="text-[10px] text-stone-400 mt-1 block">Flujo de cobro acelerado con validación inmediata en 1 toque.</span>
-                  </div>
-                </div>
+            <div className="mx-auto max-w-3xl rounded-3xl border border-stone-800 bg-stone-900/70 p-6">
+              <div className="mb-3 flex items-center gap-2 text-[#a9b994]">
+                <Globe2 className="h-5 w-5" />
+                <span className="text-xs font-bold uppercase tracking-wider">Red global no configurada</span>
               </div>
+              <h3 className="text-lg font-black text-white">Nyza no está conectada a una flota compartida</h3>
+              <p className="mt-2 text-xs leading-relaxed text-stone-400">
+                Esta versión no envía ni recibe heurísticas de otros restaurantes. No hay datos verificados de nodos, tendencias nacionales, pagos dominantes ni estado de Hacienda en esta pantalla.
+              </p>
             </div>
           )}
 
@@ -524,17 +430,17 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
               <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
                   <Sparkles className="w-4 h-4 text-[#a9b994]" />
-                  <span>Entrenador de Memoria e Instrucciones Especiales</span>
+                  <span>Guardar una nota local</span>
                 </h3>
                 <p className="text-xs text-stone-400">
-                  Enseña a Nyza particularidades de tu restaurante o equipo. Nyza las recordará de por vida y las incorporará en su razonamiento diario.
+                  Guarda una guía en este navegador para consultarla después. No entrena el modelo ni se sincroniza con otros dispositivos.
                 </p>
               </div>
 
               {teachSuccess && (
                 <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-medium flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>¡Heurística aprendida! Nyza la ha guardado en su índice neural permanente (+2 IQ).</span>
+                  <span>Nota guardada localmente. Esto no cambia el modelo ni aumenta un puntaje de IA.</span>
                 </div>
               )}
 
@@ -549,7 +455,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-stone-900 border border-stone-800 text-xs text-white focus:border-[#a9b994] focus:outline-none"
                   >
                     <option value="KITCHEN_SPEED">Velocidad Cocina & KDS</option>
-                    <option value="HARDWARE_RESILIENCE">Resiliencia Hardware & Impresoras</option>
+                    <option value="HARDWARE_RESILIENCE">Impresoras y red local</option>
                     <option value="DGT_TAX_INTELLIGENCE">Tributación DGT & Facturas</option>
                     <option value="FINANCIAL_VELOCITY">Flujo Financiero & Caja</option>
                     <option value="SYSTEM_HYGIENE">Higiene & Rendimiento del Sistema</option>
@@ -584,110 +490,29 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
                   />
                 </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-stone-400">Nivel de Impacto:</span>
-                    {(['MEDIUM', 'HIGH', 'CRITICAL'] as const).map(lvl => (
-                      <button
-                        type="button"
-                        key={lvl}
-                        onClick={() => setTeachImpact(lvl)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${
-                          teachImpact === lvl
-                            ? 'bg-amber-400 text-stone-950 font-black'
-                            : 'bg-stone-900 text-stone-400 hover:text-white border border-stone-800'
-                        }`}
-                      >
-                        {lvl}
-                      </button>
-                    ))}
-                  </div>
-
+                <div className="flex justify-end pt-2">
                   <button
                     type="submit"
                     className="px-5 py-2.5 rounded-xl bg-[#a9b994] text-stone-950 font-bold text-xs hover:bg-[#b8c9a3] active:scale-95 transition-all shadow-md cursor-pointer flex items-center gap-2"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>Enseñar a Nyza</span>
+                    <span>Guardar nota local</span>
                   </button>
                 </div>
               </form>
             </div>
           )}
 
-          {/* 5. AUTO-OPTIMIZACIÓN */}
+          {/* 5. CAPACIDADES NO IMPLEMENTADAS */}
           {activeTab === 'settings' && (
-            <div className="max-w-2xl mx-auto space-y-4">
-              <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 mb-4">
-                <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                  <Sliders className="w-4 h-4 text-[#a9b994]" />
-                  <span>Ajustes del Motor de Auto-Optimización Autónoma</span>
-                </h3>
-                <p className="text-xs text-stone-400">
-                  Controla qué acciones puede aplicar Nyza de forma autónoma sin interrumpir el servicio de venta.
-                </p>
-              </div>
-
-              {[
-                {
-                  id: 'autoReroutePrinters',
-                  title: 'Auto-Conmutación de Impresoras Caídas',
-                  desc: 'Si una impresora térmica de cocina se satura o se queda sin papel, redirigir automáticamente los tickets a la impresora de respaldo.',
-                  val: autoTuning.autoReroutePrinters
-                },
-                {
-                  id: 'autoDgtContingencyBuffer',
-                  title: 'Pre-Buffer Predictivo de Contingencia DGT',
-                  desc: 'Si Hacienda DGT sobrepasa 3000ms de latencia, guardar facturas en cola local y procesarlas en micro-lotes sin trabar la terminal.',
-                  val: autoTuning.autoDgtContingencyBuffer
-                },
-                {
-                  id: 'autoScheduledVacuum',
-                  title: 'Micro-Vacuum Silencioso y Purga de RAM',
-                  desc: 'Compactar almacenamiento IndexedDB y liberar memoria en horas valle (3:30 PM) de forma transparente.',
-                  val: autoTuning.autoScheduledVacuum
-                },
-                {
-                  id: 'autoKdsSpeedAlerts',
-                  title: 'Detección Predictiva de Cuellos de Botella KDS',
-                  desc: 'Alertar a saloneros y administradores cuando un platillo supera el umbral de preparación en fines de semana.',
-                  val: autoTuning.autoKdsSpeedAlerts
-                },
-                {
-                  id: 'autoFederatedLearningSync',
-                  title: 'Sincronización con Red Global SaborAI',
-                  desc: 'Descargar heurísticas validadas a nivel nacional y compartir métricas anónimas para fortalecer la red.',
-                  val: autoTuning.autoFederatedLearningSync
-                }
-              ].map(opt => (
-                <div
-                  key={opt.id}
-                  className="p-4 rounded-2xl bg-stone-900/60 border border-stone-800 flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <h4 className="text-xs font-bold text-white mb-0.5">{opt.title}</h4>
-                    <p className="text-[11px] text-stone-400 leading-relaxed">{opt.desc}</p>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      nyzaLearningService.updateAutoTuningSettings({
-                        [opt.id]: !opt.val
-                      });
-                      setAutoTuning(nyzaLearningService.getAutoTuningSettings());
-                    }}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                      opt.val ? 'bg-[#a9b994]' : 'bg-stone-800'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-stone-950 shadow ring-0 transition duration-200 ease-in-out ${
-                        opt.val ? 'translate-x-5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
-              ))}
+            <div className="mx-auto max-w-2xl rounded-2xl border border-stone-800 bg-stone-900/70 p-5">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-white">
+                <Sliders className="h-4 w-4 text-[#a9b994]" />
+                Capacidades automáticas no conectadas
+              </h3>
+              <p className="text-xs leading-relaxed text-stone-400">
+                Los controles anteriores solo guardaban preferencias y no activaban procesos. Para evitar una falsa sensación de protección, se quitaron. Esta versión no redirige impresoras de forma autónoma, no procesa contingencias fiscales, no compacta bases de datos, no libera la RAM del sistema y no sincroniza una red global.
+              </p>
             </div>
           )}
 
@@ -699,7 +524,7 @@ export const NyzaLearningHub: React.FC<NyzaLearningHubProps> = ({
         <footer className="px-6 py-4 border-t border-stone-800/80 bg-stone-950 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2 text-xs text-stone-400">
             <ShieldCheck className="w-4 h-4 text-[#a9b994]" />
-            <span>Nyza IA • Aprendizaje seguro y confidencial. Datos del restaurante 100% aislados.</span>
+            <span>Las notas se guardan localmente. Evita incluir credenciales o datos personales; las conversaciones pueden enviarse al proveedor de IA configurado.</span>
           </div>
 
           <div className="flex items-center gap-3">

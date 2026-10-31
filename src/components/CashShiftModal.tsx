@@ -46,6 +46,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
+import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOpeningZones';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -57,6 +58,8 @@ interface CashShiftModalProps {
   onOpenZReport: (report: ZReportData) => void;
   onOpenConsolidatedZReport?: (report: ConsolidatedZReportData) => void;
   initialTab?: 'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers';
+  initialZone?: string;
+  returnToFloorAfterOpen?: boolean;
 }
 
 export const CashShiftModal: React.FC<CashShiftModalProps> = ({
@@ -68,7 +71,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   staffList,
   onOpenZReport,
   onOpenConsolidatedZReport,
-  initialTab
+  initialTab,
+  initialZone,
+  returnToFloorAfterOpen = false
 }) => {
   const [activeTab, setActiveTab] = useState<'status' | 'movements' | 'close' | 'history' | 'audit' | 'registers'>('status');
   const [activeShift, setActiveShift] = useState<CashShift | null>(null);
@@ -200,9 +205,10 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setOpeningPin('');
       setOpeningError(null);
       const matchedReg = regList.find(r => r.id === curRegId);
-      const initialZones = matchedReg?.linkedZones && matchedReg.linkedZones.length > 0
+      const registerZones = matchedReg?.linkedZones?.length
         ? matchedReg.linkedZones
         : (matchedReg?.linkedZone ? [matchedReg.linkedZone] : []);
+      const initialZones = getInitialShiftZones(tenant.zones, registerZones, initialZone);
       setOpeningZones(initialZones);
       refreshData(curRegId);
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
@@ -212,7 +218,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         setOpeningCashier(staffList.find(staff => staff.active !== false) || null);
       }
     }
-  }, [isOpen, currentUser, initialTab, staffList]);
+  }, [isOpen, currentUser, initialTab, staffList, tenant.zones, initialZone]);
 
   const refreshData = (regId?: string) => {
     const targetRegId = regId || selectedRegisterId || cashShiftService.getCurrentRegisterId();
@@ -226,7 +232,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const regZones = targetReg.linkedZones && targetReg.linkedZones.length > 0
         ? targetReg.linkedZones
         : (targetReg.linkedZone ? [targetReg.linkedZone] : []);
-      setOpeningZones(regZones);
+      setOpeningZones(getInitialShiftZones(tenant.zones, regZones, initialZone));
     }
     if (shift) {
       setCountedCardsInput(shift.systemSummary.cardSales);
@@ -254,7 +260,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const regZones = reg.linkedZones && reg.linkedZones.length > 0
         ? reg.linkedZones
         : (reg.linkedZone ? [reg.linkedZone] : []);
-      setOpeningZones(regZones);
+      setOpeningZones(getInitialShiftZones(tenant.zones, regZones, initialZone));
     }
     refreshData(regId);
   };
@@ -270,8 +276,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const selectedOpeningCashier = availableCashiers.find(staff => staff.id === openingCashier?.id)
     || availableCashiers[0]
     || null;
-  const openingZoneOptions = Array.from(new Set([...(tenant.zones || []), ...openingZones]))
-    .filter(zone => zone.trim().length > 0);
+  const openingZoneOptions = normalizeSalonOptions(tenant.zones);
+  const targetOpeningZone = initialZone
+    ? openingZoneOptions.find(zone => zone.toLocaleLowerCase() === initialZone.trim().toLocaleLowerCase())
+    : undefined;
+  const targetOpeningZoneIsSelected = Boolean(targetOpeningZone && (
+    openingZones.length === 0 || openingZones.includes(targetOpeningZone)
+  ));
 
   // Handlers
   const handleOpenShiftSubmit = () => {
@@ -317,6 +328,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     try {
+      const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
       const newShift = cashShiftService.openShift(
         tenant,
         cashierToUse,
@@ -324,7 +336,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         openingNotes,
         regIdToUse,
         undefined,
-        openingZones
+        validOpeningZones
       );
       soundService.playSuccessChime();
       setOpeningPin('');
@@ -332,6 +344,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setActiveTab('status');
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
       refreshData(regIdToUse);
+      if (returnToFloorAfterOpen) onClose();
     } catch (err: any) {
       setOpeningError(err.message || 'Error al abrir caja.');
     }
@@ -509,9 +522,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       message: `¿Estás seguro de eliminar la terminal "${name}"? Esta acción no se puede deshacer y no debe realizarse si la caja tiene turnos en curso.`,
       confirmLabel: 'Eliminar terminal',
       type: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         try {
-          cashShiftService.deleteCashRegister(regId);
+          await cashShiftService.deleteCashRegister(regId);
           soundService.playSuccessChime();
           refreshData();
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
@@ -738,6 +751,15 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   Ingresa el fondo inicial en efectivo (base para dar vuelto) para iniciar la operación en esta caja.
                 </p>
               </div>
+
+              {targetOpeningZone && (
+                <div role="status" className={`mb-4 rounded-xl border px-3 py-2.5 text-xs ${targetOpeningZoneIsSelected ? 'border-sky-200 bg-sky-50 text-sky-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
+                  Este flujo fue solicitado para <strong>{targetOpeningZone}</strong>.{' '}
+                  {targetOpeningZoneIsSelected
+                    ? 'El turno incluirá este salón al confirmar la apertura.'
+                    : 'Vuelve a seleccionar este salón si quieres que quede cubierto por el turno.'}
+                </div>
+              )}
 
               <form onSubmit={(event) => event.preventDefault()} className="space-y-4">
                 

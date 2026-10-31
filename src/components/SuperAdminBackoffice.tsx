@@ -64,16 +64,42 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginPassword === 'admin') {
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      const loginResponse = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword })
+      });
+      const loginData = await loginResponse.json();
+      if (!loginResponse.ok || typeof loginData.token !== 'string') {
+        throw new Error('Correo o contraseña incorrectos.');
+      }
+
+      const metricsResponse = await fetch('/api/admin/metrics', {
+        headers: { Authorization: `Bearer ${loginData.token}` }
+      });
+      const metricsData = await metricsResponse.json();
+      if (!metricsResponse.ok) {
+        throw new Error(metricsData.error || 'La cuenta no tiene autorización global.');
+      }
+
+      setRealLeadsCount(Number(metricsData.leadsCount) || 0);
+      setRealVisitsCount(Math.floor((Number(metricsData.leadsCount) || 0) * 18.3 + 342));
       setIsAuthenticated(true);
-      setLoginError(false);
-    } else {
-      setLoginError(true);
+      setLoginPassword('');
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'No se pudo verificar el acceso.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -113,21 +139,6 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
 
   const [realLeadsCount, setRealLeadsCount] = useState<number>(0);
   const [realVisitsCount, setRealVisitsCount] = useState<number>(0);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetch('/api/admin/metrics')
-        .then(res => res.json())
-        .then(data => {
-          if (data.leadsCount !== undefined) {
-             setRealLeadsCount(data.leadsCount);
-             // Simulated Google Analytics Visits based on real leads (conservative 5-6% conversion)
-             setRealVisitsCount(Math.floor(data.leadsCount * 18.3 + 342));
-          }
-        })
-        .catch(err => console.error(err));
-    }
-  }, [isAuthenticated]);
 
   // Derived metrics
   const totalMRR = tenantsList.reduce((sum, t) => sum + (t.status === 'ACTIVE' ? t.monthlyFee : 0), 0);
@@ -224,19 +235,30 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
             <ShieldAlert className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-2xl font-black text-white mb-2">Acceso Restringido</h2>
-          <p className="text-stone-400 text-sm text-center mb-8">Área exclusiva de administración. Ingresa la clave maestra.</p>
+          <p className="text-stone-400 text-sm text-center mb-8">El acceso global requiere una cuenta autorizada por la configuración del servidor.</p>
           
+          <input
+            type="email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            placeholder="Correo de la cuenta"
+            autoComplete="username"
+            required
+            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-3"
+            autoFocus
+          />
           <input
             type="password"
             value={loginPassword}
             onChange={(e) => setLoginPassword(e.target.value)}
             placeholder="Contraseña"
-            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-4 text-center tracking-widest font-bold"
-            autoFocus
+            autoComplete="current-password"
+            required
+            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-4"
           />
-          {loginError && <p className="text-red-400 text-xs font-bold mb-4 animate-in fade-in slide-in-from-top-1">Contraseña incorrecta</p>}
-          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/50 hover:shadow-emerald-900/80 hover:-translate-y-0.5">
-            Ingresar al Panel
+          {loginError && <p role="alert" className="text-red-400 text-xs font-bold mb-4 animate-in fade-in slide-in-from-top-1">{loginError}</p>}
+          <button type="submit" disabled={isLoggingIn} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/50 hover:shadow-emerald-900/80 hover:-translate-y-0.5">
+            {isLoggingIn ? 'Verificando acceso…' : 'Ingresar al Panel'}
           </button>
         </form>
       </div>

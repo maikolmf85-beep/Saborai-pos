@@ -20,6 +20,8 @@ export interface OfflineSyncQueueItem {
   payload: any;
   timestamp: string;
   tenantId?: string;
+  actorUserId?: string;
+  actorEmployeeId?: string | null;
   synced: boolean;
   status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
   attemptCount?: number;
@@ -28,9 +30,17 @@ export interface OfflineSyncQueueItem {
   description: string;
 }
 
+export function filterPendingItemsForTenant(items: OfflineSyncQueueItem[], tenantId: string): OfflineSyncQueueItem[] {
+  if (!tenantId) return [];
+  return items
+    .filter(item => item.tenantId === tenantId && item.status !== 'SYNCED' && !item.synced)
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
 export class SaboraiLocalDB {
   private db: IDBDatabase | null = null;
   private isSimulatedOffline: boolean = false;
+  private activeTenantId: string | null = null;
   private networkListenersReady: boolean = false;
   private syncInFlight: boolean = false;
   private listeners: ((isOnline: boolean, pendingCount: number) => void)[] = [];
@@ -81,10 +91,13 @@ export class SaboraiLocalDB {
     window.addEventListener('offline', () => this.handleNetworkChange());
   }
 
+  setActiveTenantId(tenantId: string): void {
+    this.activeTenantId = tenantId;
+    void this.notifyActiveTenantCount();
+  }
+
   private async handleNetworkChange() {
-    const online = this.isOnline();
-    const count = await this.getPendingCount();
-    this.notify(online, count);
+    await this.notifyActiveTenantCount();
   }
 
   isOnline(): boolean {
@@ -95,14 +108,16 @@ export class SaboraiLocalDB {
   async toggleSimulatedOffline(): Promise<boolean> {
     this.isSimulatedOffline = !this.isSimulatedOffline;
     const online = this.isOnline();
-    const count = await this.getPendingCount();
-    this.notify(online, count);
+    await this.notifyActiveTenantCount();
     return online;
   }
 
   subscribe(listener: (isOnline: boolean, pendingCount: number) => void): () => void {
     this.listeners.push(listener);
-    this.getPendingCount().then(count => listener(this.isOnline(), count));
+    const tenantId = this.activeTenantId ?? '';
+    this.getPendingCount(tenantId).then(count => {
+      if (this.activeTenantId === tenantId) listener(this.isOnline(), count);
+    });
     return () => {
       this.listeners = this.listeners.filter(l => l !== listener);
     };
@@ -110,6 +125,12 @@ export class SaboraiLocalDB {
 
   private notify(isOnline: boolean, pendingCount: number) {
     this.listeners.forEach(fn => fn(isOnline, pendingCount));
+  }
+
+  private async notifyActiveTenantCount(): Promise<void> {
+    const tenantId = this.activeTenantId ?? '';
+    const count = await this.getPendingCount(tenantId);
+    if (this.activeTenantId === tenantId) this.notify(this.isOnline(), count);
   }
 
   async saveItem(storeName: string, item: any): Promise<void> {
@@ -167,12 +188,16 @@ export class SaboraiLocalDB {
 
   async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
     const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+    const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
+    const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const item: OfflineSyncQueueItem = {
       id: operationId,
       action,
       payload,
       timestamp: new Date().toISOString(),
       tenantId: tenantId || (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') || undefined : undefined),
+      actorUserId,
+      actorEmployeeId,
       synced: false,
       status: 'PENDING',
       attemptCount: 0,
@@ -180,8 +205,7 @@ export class SaboraiLocalDB {
     };
 
     await this.saveItem('sync_queue', item);
-    const count = await this.getPendingCount();
-    this.notify(this.isOnline(), count);
+    await this.notifyActiveTenantCount();
   }
 
   async saveTenantSnapshot(snapshot: TenantOfflineSnapshot): Promise<void> {
@@ -231,16 +255,16 @@ export class SaboraiLocalDB {
     });
   }
 
-  async getPendingCount(): Promise<number> {
+  async getPendingCount(tenantId = this.activeTenantId ?? ''): Promise<number> {
+    if (!tenantId) return 0;
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
-    return all.filter(item => item.status !== 'SYNCED' && !item.synced).length;
+    return filterPendingItemsForTenant(all, tenantId).length;
   }
 
-  async getPendingItems(): Promise<OfflineSyncQueueItem[]> {
+  async getPendingItems(tenantId = this.activeTenantId ?? ''): Promise<OfflineSyncQueueItem[]> {
+    if (!tenantId) return [];
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
-    return all
-      .filter(item => item.status !== 'SYNCED' && !item.synced)
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return filterPendingItemsForTenant(all, tenantId);
   }
 
   private async updateQueueItem(item: OfflineSyncQueueItem): Promise<void> {
@@ -260,22 +284,26 @@ export class SaboraiLocalDB {
     });
   }
 
-  async syncAllPending(): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
+  async syncAllPending(tenantId = this.activeTenantId ?? ''): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
+    if (!tenantId) return { syncedCount: 0, failedCount: 0, remainingCount: 0 };
     if (this.syncInFlight) {
-      return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount() };
+      return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount(tenantId) };
     }
     this.syncInFlight = true;
-    const pending = await this.getPendingItems();
+    const pending = await this.getPendingItems(tenantId);
     if (!this.isOnline() || pending.length === 0) {
       this.syncInFlight = false;
       return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
     }
 
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
-    if (!token) {
-      for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada para sincronizar.');
-      const remainingCount = await this.getPendingCount();
-      this.notify(this.isOnline(), remainingCount);
+    const accountUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') : null;
+    const employeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
+    const activeTenantId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') : null;
+    if (!token || !accountUserId) {
+      for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada que permita verificar la identidad original.');
+      const remainingCount = await this.getPendingCount(tenantId);
+      await this.notifyActiveTenantCount();
       this.syncInFlight = false;
       return { syncedCount: 0, failedCount: pending.length, remainingCount };
     }
@@ -283,6 +311,19 @@ export class SaboraiLocalDB {
     let syncedCount = 0;
     let failedCount = 0;
     for (const originalItem of pending) {
+      if (!originalItem.actorUserId || !originalItem.tenantId) {
+        await this.updateQueueItem({
+          ...originalItem,
+          status: 'FAILED',
+          synced: false,
+          lastError: 'No se puede verificar el tenant o la identidad original de esta operación. Se conserva localmente y no se enviará automáticamente.'
+        });
+        failedCount += 1;
+        continue;
+      }
+      if (originalItem.actorUserId !== accountUserId
+        || (originalItem.actorEmployeeId || null) !== (employeeId || null)
+        || originalItem.tenantId !== activeTenantId) continue;
       if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
 
       const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
@@ -295,6 +336,8 @@ export class SaboraiLocalDB {
             operationId: processingItem.id,
             tenantId: processingItem.tenantId,
             action: processingItem.action,
+            actorUserId: processingItem.actorUserId,
+            actorEmployeeId: processingItem.actorEmployeeId || null,
             payload: processingItem.payload,
             occurredAt: processingItem.timestamp
           })
@@ -316,8 +359,8 @@ export class SaboraiLocalDB {
       }
     }
 
-    const remainingCount = await this.getPendingCount();
-    this.notify(this.isOnline(), remainingCount);
+    const remainingCount = await this.getPendingCount(tenantId);
+    await this.notifyActiveTenantCount();
     this.syncInFlight = false;
     return { syncedCount, failedCount, remainingCount };
   }

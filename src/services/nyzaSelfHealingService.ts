@@ -37,48 +37,23 @@ export class NyzaSelfHealingService {
   // HERRAMIENTAS DE RED E IMPRESIÓN
   // ----------------------------------------------------
 
-  /**
-   * tool_ping_device(ip: string): Verifica alcanzabilidad en LAN
-   */
+  /** El navegador no tiene permiso fiable para confirmar reachability de impresoras LAN. */
   public async tool_ping_device(ip: string): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
-    try {
-      // Intentar fetch ultrarrápido con timeout de 2000ms
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-      const isLocalRelay = ip.includes('127.0.0.1') || ip.includes('localhost');
-      const targetUrl = isLocalRelay ? `http://${ip}:8080/health` : `http://${ip}:9100`;
-
-      let reachable = false;
-      try {
-        await fetch(targetUrl, { mode: 'no-cors', signal: controller.signal });
-        reachable = true;
-      } catch (e: any) {
-        // En navegadores web 'no-cors' puede dar type opaque o error por socket directo,
-        // verificamos si la impresora está en la configuración de impresoras
-        const printers = printerService.getPrinters();
-        const found = printers.find(p => p.ipAddress === ip && p.enabled);
-        reachable = !!found;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      return {
-        tool: 'tool_ping_device',
-        status: reachable ? 'OK' : 'ERROR',
-        message: reachable ? `Dispositivo en ${ip} responde correctamente.` : `Dispositivo en ${ip} inaccesible en la red LAN.`,
-        timestamp,
-        data: { ip, reachable }
-      };
-    } catch (err: any) {
-      return {
-        tool: 'tool_ping_device',
-        status: 'ERROR',
-        message: `Fallo al verificar IP ${ip}: ${err.message}`,
-        timestamp
-      };
+    const privateAddress = /^(10\.(?:\d{1,3}\.){2}\d{1,3}|192\.168\.(?:\d{1,3}\.)\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.(?:\d{1,3}\.)\d{1,3}|127\.0\.0\.1|localhost)$/.test(ip);
+    if (!privateAddress) {
+      return { tool: 'tool_ping_device', status: 'ERROR', message: 'Solo se aceptan direcciones locales privadas; no se hizo ninguna solicitud de red.', timestamp };
     }
+    const configured = printerService.getPrinters().some(printer => printer.ipAddress === ip && printer.enabled);
+    return {
+      tool: 'tool_ping_device',
+      status: 'ERROR',
+      message: configured
+        ? `Hay una impresora habilitada configurada en ${ip}, pero el navegador no puede confirmar si responde.`
+        : `No encontré una impresora habilitada configurada en ${ip}; no hice ninguna solicitud de red.`,
+      timestamp,
+      data: { ip, configurationFound: configured, connectivityVerified: false }
+    };
   }
 
   /**
@@ -98,7 +73,7 @@ export class NyzaSelfHealingService {
       return {
         tool: 'tool_restart_spooler',
         status: 'OK',
-        message: 'Spooler de impresión local purgado y rearmado con éxito.',
+        message: 'Se recargó la configuración de impresoras y se retiraron marcos de impresión del navegador. No se reinició un servicio de impresión del sistema.',
         timestamp
       };
     } catch (err: any) {
@@ -114,30 +89,22 @@ export class NyzaSelfHealingService {
   /**
    * tool_reroute_printer(failed_ip: string, backup_ip: string): Redirige comandas de un área caída
    */
-  public async tool_reroute_printer(failed_ip: string, backup_ip: string): Promise<NyzaToolResult> {
+  public async tool_reroute_printer(failed_ip: string, backup_ip: string, isTenantActive: () => boolean): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
     try {
-      const printers = printerService.getPrinters();
-      const failed = printers.find(p => p.ipAddress === failed_ip || p.name.toLowerCase().includes(failed_ip.toLowerCase()));
-      const backup = printers.find(p => p.ipAddress === backup_ip || p.name.toLowerCase().includes(backup_ip.toLowerCase()));
-
-      if (!failed && !backup) {
-        // Redirigir la primera cocina/bar a caja
-        const cocina = printers.find(p => p.role === 'cocina');
-        const caja = printers.find(p => p.role === 'caja');
-        if (cocina && caja) {
-          cocina.ipAddress = caja.ipAddress;
-          printerService.savePrinter(cocina);
-          return {
-            tool: 'tool_reroute_printer',
-            status: 'OK',
-            message: `Comandas de Cocina redirigidas preventivamente a la impresora de Caja (${caja.name}).`,
-            timestamp
-          };
-        }
+      if (!isTenantActive()) {
+        return { tool: 'tool_reroute_printer', status: 'ERROR', message: 'No se cambió ninguna impresora: el restaurante de la aprobación ya no está activo.', timestamp, data: { changed: false } };
       }
+      const printers = printerService.getPrinters();
+      const failedMatches = printers.filter(p => p.ipAddress === failed_ip || p.name.toLowerCase() === failed_ip.toLowerCase());
+      const backupMatches = printers.filter(p => p.ipAddress === backup_ip || p.name.toLowerCase() === backup_ip.toLowerCase());
+      const failed = failedMatches.length === 1 ? failedMatches[0] : undefined;
+      const backup = backupMatches.length === 1 ? backupMatches[0] : undefined;
 
-      if (failed && backup) {
+      if (failed && backup && failed.id !== backup.id && backup.enabled) {
+        if (!isTenantActive()) {
+          return { tool: 'tool_reroute_printer', status: 'ERROR', message: 'No se cambió ninguna impresora: el restaurante de la aprobación ya no está activo.', timestamp, data: { changed: false } };
+        }
         failed.ipAddress = backup.ipAddress;
         failed.port = backup.port;
         failed.connectionType = backup.connectionType;
@@ -152,8 +119,8 @@ export class NyzaSelfHealingService {
 
       return {
         tool: 'tool_reroute_printer',
-        status: 'OK',
-        message: `Enrutamiento de contingencia aplicado a las impresoras disponibles.`,
+        status: 'ERROR',
+        message: 'No se cambió el enrutamiento: especifica una impresora origen y otra impresora de respaldo habilitada.',
         timestamp
       };
     } catch (err: any) {
@@ -173,19 +140,17 @@ export class NyzaSelfHealingService {
   /**
    * tool_db_integrity_check(): Diagnóstico de almacenamiento local IndexedDB / SQLite
    */
-  public async tool_db_integrity_check(): Promise<NyzaToolResult> {
+  public async tool_db_integrity_check(tenantId: string): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
     try {
       await localDB.init();
-      const queue = await localDB.getPendingItems();
-      const ok = indexedDB !== undefined;
-
+      const queue = await localDB.getPendingItems(tenantId);
       return {
         tool: 'tool_db_integrity_check',
         status: 'OK',
-        message: `Diagnóstico de base de datos íntegro. ${queue.length} transacciones en cola sincronizadas.`,
+        message: `La cola local del restaurante activo se pudo leer y contiene ${queue.length} elemento(s) pendiente(s). Esto no comprueba la integridad total de la base ni la sincronización remota.`,
         timestamp,
-        data: { healthy: true, pendingCount: queue.length }
+        data: { localQueueReadable: true, pendingCount: queue.length, tenantScoped: true, fullIntegrityVerified: false }
       };
     } catch (err: any) {
       return {
@@ -197,71 +162,28 @@ export class NyzaSelfHealingService {
     }
   }
 
-  /**
-   * tool_db_vacuum_and_repair(): Compacta, repara registros y recupera la base de datos
-   */
+  /** IndexedDB no ofrece VACUUM aquí; se informa la limitación sin borrar datos. */
   public async tool_db_vacuum_and_repair(): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
-    try {
-      // Purgar claves corruptas o temporales de localStorage y reasegurar IndexedDB
-      const keys = ['saborai_temp_logs', 'saborai_offline_cache'];
-      keys.forEach(k => localStorage.removeItem(k));
-      await localDB.init();
-
-      return {
-        tool: 'tool_db_vacuum_and_repair',
-        status: 'OK',
-        message: 'Base de datos local reindexada y compactada con éxito (VACUUM completado).',
-        timestamp
-      };
-    } catch (err: any) {
-      return {
-        tool: 'tool_db_vacuum_and_repair',
-        status: 'ERROR',
-        message: `Fallo en vacuum y reparación de BD: ${err.message}`,
-        timestamp
-      };
-    }
+    return {
+      tool: 'tool_db_vacuum_and_repair',
+      status: 'ERROR',
+      message: 'No se ejecutó ninguna reparación ni se borraron datos: esta interfaz no implementa una operación segura de VACUUM para IndexedDB.',
+      timestamp,
+      data: { changed: false }
+    };
   }
 
-  /**
-   * tool_free_system_memory(): Libera memoria RAM, recolecta basura y vacía cachés
-   */
+  /** Los navegadores no permiten forzar de forma segura la liberación de RAM del sistema. */
   public async tool_free_system_memory(): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
-    try {
-      // 1. Limpieza de cachés de audio y objetos temporales
-      if ('caches' in window) {
-        try {
-          const cacheNames = await caches.keys();
-          const staleCaches = cacheNames.filter(name => name.includes('temp') || name.includes('stale'));
-          await Promise.all(staleCaches.map(name => caches.delete(name)));
-        } catch {
-          // ignore
-        }
-      }
-
-      // 2. Invocar Garbage Collection si está expuesto en entornos embebidos
-      // @ts-ignore
-      if (window.gc) {
-        // @ts-ignore
-        window.gc();
-      }
-
-      return {
-        tool: 'tool_free_system_memory',
-        status: 'OK',
-        message: 'Caché de terminal purgada y memoria RAM optimizada.',
-        timestamp
-      };
-    } catch (err: any) {
-      return {
-        tool: 'tool_free_system_memory',
-        status: 'ERROR',
-        message: `Fallo al liberar memoria: ${err.message}`,
-        timestamp
-      };
-    }
+    return {
+      tool: 'tool_free_system_memory',
+      status: 'ERROR',
+      message: 'No se borró ninguna caché: un navegador web no puede forzar de forma segura la liberación de RAM del sistema.',
+      timestamp,
+      data: { changed: false }
+    };
   }
 
   // ----------------------------------------------------
@@ -306,7 +228,7 @@ export class NyzaSelfHealingService {
         timestamp,
         data: { available: true, latency }
       };
-    } catch (err: any) {
+    } catch {
       return {
         tool: 'tool_check_dgt_status',
         status: 'ERROR',
@@ -320,20 +242,23 @@ export class NyzaSelfHealingService {
   /**
    * tool_enable_contingency_mode(reason_code: "02"): Activa Facturación en Contingencia
    */
-  public async tool_enable_contingency_mode(reason_code: string = '02'): Promise<NyzaToolResult> {
+  public async tool_enable_contingency_mode(isTenantActive: () => boolean, reason_code: string = '02'): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
     try {
-      const config = haciendaService.getConfig() || {
-        environment: 'sandbox' as const,
-        atvUsername: '',
-        atvPassword: '',
-        pinP12: '',
-        p12Base64: '',
-        codigoActividad: '561001',
-        sucursal: '001',
-        terminal: '00001'
-      };
+      if (!isTenantActive()) {
+        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'No se cambió la configuración: el restaurante de la aprobación ya no está activo.', timestamp, data: { changed: false } };
+      }
+      if (reason_code !== '02') {
+        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'Solo está permitida la clave de contingencia 02.', timestamp, data: { changed: false } };
+      }
+      const config = haciendaService.getConfig();
+      if (!config) {
+        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'No hay una configuración de Hacienda existente; no se creó una nueva configuración vacía.', timestamp, data: { changed: false } };
+      }
 
+      if (!isTenantActive()) {
+        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'No se cambió la configuración: el restaurante de la aprobación ya no está activo.', timestamp, data: { changed: false } };
+      }
       // Establecer modo contingencia en la configuración
       (config as any).modoContingencia = true;
       (config as any).codigoContingencia = reason_code; // 02 = Servicios DGT no disponibles
@@ -342,7 +267,7 @@ export class NyzaSelfHealingService {
       return {
         tool: 'tool_enable_contingency_mode',
         status: 'OK',
-        message: 'Modo de Contingencia (Clave Situación 02) activado. Puedes seguir cobrando y emitiendo tiquetes sin interrupciones.',
+        message: 'La configuración local de contingencia (clave 02) fue guardada. No se verificó una emisión ni conexión con Hacienda.',
         timestamp,
         data: { contingency: true, reason_code }
       };
@@ -361,31 +286,13 @@ export class NyzaSelfHealingService {
    */
   public async tool_flush_contingency_queue(): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
-    try {
-      const invoices = haciendaService.getInvoices();
-      const pendingContingency = invoices.filter(
-        inv => (inv.estadoHacienda as string) === 'PENDIENTE_ENVIO' || inv.estadoHacienda === 'PROCESANDO' || (inv as any).situacion === '02'
-      );
-
-      for (const inv of pendingContingency) {
-        haciendaService.emitInvoice(inv);
-      }
-
-      return {
-        tool: 'tool_flush_contingency_queue',
-        status: 'OK',
-        message: `Cola de contingencia procesada. Enviando ${pendingContingency.length} comprobantes acumulados a Hacienda.`,
-        timestamp,
-        data: { flushedCount: pendingContingency.length }
-      };
-    } catch (err: any) {
-      return {
-        tool: 'tool_flush_contingency_queue',
-        status: 'ERROR',
-        message: `Error al vaciar cola de contingencia: ${err.message}`,
-        timestamp
-      };
-    }
+    return {
+      tool: 'tool_flush_contingency_queue',
+      status: 'ERROR',
+      message: 'Nyza no envía facturas fiscales en bloque. Revisa la cola y confirma cada envío desde el módulo de facturación.',
+      timestamp,
+      data: { changed: false }
+    };
   }
 
   // ----------------------------------------------------
@@ -397,43 +304,30 @@ export class NyzaSelfHealingService {
    */
   public async tool_create_human_ticket(severity: 'HIGH' | 'CRITICAL', error_log: any): Promise<NyzaToolResult> {
     const timestamp = new Date().toISOString();
-    const ticketId = `TK-NYZA-${Date.now().toString().slice(-6)}`;
-    try {
-      console.warn(`[NYZA TICKET ESCALATION] ${ticketId} [${severity}]:`, error_log);
-
-      // Guardar ticket en registro local de soporte
-      const stored = localStorage.getItem('saborai_support_tickets');
-      const tickets = stored ? JSON.parse(stored) : [];
-      tickets.push({
-        id: ticketId,
-        severity,
-        error_log,
-        timestamp,
-        status: 'OPEN'
-      });
-      localStorage.setItem('saborai_support_tickets', JSON.stringify(tickets));
-
-      return {
-        tool: 'tool_create_human_ticket',
-        status: 'OK',
-        message: `Ticket escalado a Soporte Técnico Nivel 3 (#${ticketId}).`,
-        timestamp,
-        data: { ticketId, severity }
-      };
-    } catch (err: any) {
-      return {
-        tool: 'tool_create_human_ticket',
-        status: 'ERROR',
-        message: `Fallo al registrar ticket: ${err.message}`,
-        timestamp
-      };
-    }
+    void severity;
+    void error_log;
+    return {
+      tool: 'tool_create_human_ticket',
+      status: 'ERROR',
+      message: 'No se creó ni envió un ticket: esta versión no tiene una integración real de soporte.',
+      timestamp,
+      data: { changed: false }
+    };
   }
 
   // ----------------------------------------------------
   // DESPACHADOR CENTRAL DE HERRAMIENTAS (ROUTER)
   // ----------------------------------------------------
-  public async executeTool(name: string, params: Record<string, any> = {}): Promise<NyzaToolResult> {
+  public async executeTool(name: string, tenantId: string, isTenantActive: () => boolean, params: Record<string, any> = {}): Promise<NyzaToolResult> {
+    const tenantChangedResult: NyzaToolResult = {
+      tool: name,
+      status: 'ERROR',
+      message: 'Se canceló la herramienta porque el restaurante de la aprobación ya no está activo.',
+      timestamp: new Date().toISOString(),
+      data: { changed: false }
+    };
+    if (!tenantId || !isTenantActive()) return tenantChangedResult;
+    nyzaLearningService.setTenantId(tenantId);
     const startMs = Date.now();
     let result: NyzaToolResult;
 
@@ -445,10 +339,10 @@ export class NyzaSelfHealingService {
         result = await this.tool_restart_spooler();
         break;
       case 'tool_reroute_printer':
-        result = await this.tool_reroute_printer(params.failed_ip || 'cocina', params.backup_ip || 'caja');
+        result = await this.tool_reroute_printer(params.failed_ip || 'cocina', params.backup_ip || 'caja', isTenantActive);
         break;
       case 'tool_db_integrity_check':
-        result = await this.tool_db_integrity_check();
+        result = await this.tool_db_integrity_check(tenantId);
         break;
       case 'tool_db_vacuum_and_repair':
         result = await this.tool_db_vacuum_and_repair();
@@ -460,7 +354,7 @@ export class NyzaSelfHealingService {
         result = await this.tool_check_dgt_status();
         break;
       case 'tool_enable_contingency_mode':
-        result = await this.tool_enable_contingency_mode(params.reason_code || '02');
+        result = await this.tool_enable_contingency_mode(isTenantActive, params.reason_code || '02');
         break;
       case 'tool_flush_contingency_queue':
         result = await this.tool_flush_contingency_queue();
@@ -475,21 +369,19 @@ export class NyzaSelfHealingService {
         result = {
           tool: 'tool_run_daily_learning',
           status: 'OK',
-          message: `Ciclo de aprendizaje completado. IQ actual: ${cycle.systemIQ} (+1). ${cycle.summary}`,
+          message: `Resumen local generado; no se entrenó el modelo. ${cycle.summary}`,
           timestamp: new Date().toISOString(),
           data: cycle
         };
         break;
       }
       case 'tool_get_system_iq': {
-        const iq = nyzaLearningService.getCurrentIQ();
-        const streak = nyzaLearningService.getLearningStreakDays();
         result = {
           tool: 'tool_get_system_iq',
-          status: 'OK',
-          message: `Nyza Inteligencia Operativa: IQ ${iq} • Racha de aprendizaje: ${streak} días continuos. Resiliencia del sistema: 99.98%.`,
+          status: 'ERROR',
+          message: 'No hay un puntaje IQ, racha ni tasa de resiliencia operativa verificable en esta versión.',
           timestamp: new Date().toISOString(),
-          data: { iq, streak, resilience: 99.98 }
+          data: { verified: false }
         };
         break;
       }
@@ -504,7 +396,7 @@ export class NyzaSelfHealingService {
         result = {
           tool: 'tool_teach_heuristic',
           status: 'OK',
-          message: `Heurística aprendida e indexada con éxito: "${newH.title}". Nyza la aplicará en sus próximas optimizaciones.`,
+          message: `Nota guardada en este navegador: "${newH.title}". No se modificó el modelo ni se ejecutó una optimización.`,
           timestamp: new Date().toISOString(),
           data: newH
         };
@@ -520,13 +412,15 @@ export class NyzaSelfHealingService {
         };
     }
 
+    if (!isTenantActive()) return tenantChangedResult;
+
     // Registrar telemetría en el motor de aprendizaje continuo
     const elapsed = Date.now() - startMs;
     nyzaLearningService.logObservation(
       'SELF_HEALING_RUN',
       elapsed,
       result.status === 'OK' ? 'OK' : 'ERROR',
-      { tool: name, message: result.message }
+      { tool: name, status: result.status }
     );
 
     return result;

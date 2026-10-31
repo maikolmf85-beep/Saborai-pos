@@ -3,6 +3,7 @@ import forge from 'node-forge';
 import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
+import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 
 const require = createRequire(import.meta.url);
 
@@ -106,14 +107,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const auth = await requireAuth(req, res);
+  const action = typeof req.body?.action === 'string' ? req.body.action : 'emit';
+  const allowedRoles = action === 'test-connection'
+    ? ROLE_PERMISSIONS.haciendaSettings
+    : ROLE_PERMISSIONS.haciendaOperations;
+  const auth = await requireAuth(req, res, [...allowedRoles]);
   if (!auth) return;
   const tenantId = auth.tenantId;
   if (!tenantId) return res.status(403).json({ error: 'La sesión no tiene un restaurante asociado.' });
 
   try {
     const { 
-      action = 'emit',
       xmlString, 
       xmlBase64, 
       clave, 

@@ -1,14 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
+import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Método no permitido.' });
 
-  const auth = await requireAuth(req, res);
+  const auth = await requireAuth(req, res, [...ROLE_PERMISSIONS.haciendaHistory]);
   if (!auth) return;
+  if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un restaurante asociado.' });
 
   const limitValue = Number(req.query.limit || 100);
   const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 250) : 100;

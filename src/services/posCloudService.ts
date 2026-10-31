@@ -11,6 +11,12 @@ export interface SaleCloudPayload {
   items: Array<{ name: string; quantity: number; menuItemId?: string }>;
 }
 
+export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  const orderNumber = sale.table.activeOrder?.orderNumber;
+  if (!orderNumber) throw new Error('La venta no tiene número de orden.');
+  return `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}:payment`;
+}
+
 function createOperationId(action: PosCloudAction): string {
   const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
   return `pos_${action.toLowerCase()}_${Date.now()}_${randomId}`;
@@ -18,6 +24,13 @@ function createOperationId(action: PosCloudAction): string {
 
 function getToken(): string | null {
   return typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
+}
+
+function getSessionActor(): { actorUserId: string; actorEmployeeId: string | null } | null {
+  if (typeof localStorage === 'undefined') return null;
+  const actorUserId = localStorage.getItem('saborai_account_user_id');
+  if (!actorUserId) return null;
+  return { actorUserId, actorEmployeeId: localStorage.getItem('saborai_employee_id') };
 }
 
 class PosCloudService {
@@ -30,6 +43,8 @@ class PosCloudService {
     if (!tenantId) throw new Error('Tenant requerido para sincronizar la operación.');
     const token = getToken();
     if (!token) throw new Error('No hay una sesión autenticada para sincronizar la operación.');
+    const actor = getSessionActor();
+    if (!actor) throw new Error('No se pudo verificar la identidad que inició la operación.');
 
     const response = await fetch('/api/offline/sync', {
       method: 'POST',
@@ -37,7 +52,7 @@ class PosCloudService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ operationId, tenantId, action, payload })
+      body: JSON.stringify({ operationId, tenantId, action, ...actor, payload })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `No se pudo sincronizar ${action}.`);
@@ -49,6 +64,7 @@ class PosCloudService {
     if (!orderNumber) throw new Error('La venta no tiene número de orden.');
 
     const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
+    const paymentOperationId = salePaymentOperationId(tenantId, sale);
     await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
     await this.syncOperation('PAYMENT', {
       orderNumber,
@@ -62,11 +78,12 @@ class PosCloudService {
       employeeCredit: sale.paymentMethod === '04-Credito' && sale.table.activeOrder?.executiveEmployeeId
         ? {
             employeeId: sale.table.activeOrder.executiveEmployeeId,
-            employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador'
+            employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador',
+            idempotencyKey: `credit:${paymentOperationId}`
           }
         : undefined,
       closeOrder: sale.closeOrder
-    }, tenantId, `${operationPrefix}:payment`);
+    }, tenantId, paymentOperationId);
     await this.syncOperation('DEDUCT_INVENTORY', {
       orderNumber,
       items: sale.items

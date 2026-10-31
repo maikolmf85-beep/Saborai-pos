@@ -7,6 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
+    "test": "node --experimental-strip-types --import ./tests/register-tilopay-typescript-loader.mjs --test tests/*.test.mjs",
+    "test:nyza": "node --experimental-strip-types --test tests/nyza-action-validation.test.mjs",
+    "test:table-map-order-flow": "node --experimental-strip-types --test tests/table-map-order-flow.test.mjs",
+    "test:shift-opening-zones": "node --experimental-strip-types --test tests/shift-opening-zones.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,6 +1,7 @@
 import type { CashRegister, CashShift } from '../types/cashShift';
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
+import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
@@ -136,6 +137,44 @@ class CashControlCloudService {
     }
   }
 
+  async deactivateCashRegister(tenantId: string, localRegisterId: string): Promise<void> {
+    if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
+    const client = supabaseClient;
+    await archiveCashRegisterInCloud(tenantId, localRegisterId, {
+      findByLegacyId: async (targetTenantId, legacyId) => {
+        const { data, error } = await client
+          .from('pos_cash_registers')
+          .select('id')
+          .eq('tenant_id', targetTenantId)
+          .eq('legacy_id', legacyId)
+          .maybeSingle();
+        if (error) throw new Error(`No se pudo localizar la caja en Supabase: ${error.message}`);
+        return data ? { id: data.id } : null;
+      },
+      findById: async (targetTenantId, id) => {
+        const { data, error } = await client
+          .from('pos_cash_registers')
+          .select('id')
+          .eq('tenant_id', targetTenantId)
+          .eq('id', id)
+          .maybeSingle();
+        if (error) throw new Error(`No se pudo localizar la caja en Supabase: ${error.message}`);
+        return data ? { id: data.id } : null;
+      },
+      deactivate: async (targetTenantId, cloudId) => {
+        const { data, error } = await client
+          .from('pos_cash_registers')
+          .update({ is_active: false })
+          .eq('tenant_id', targetTenantId)
+          .eq('id', cloudId)
+          .select('id')
+          .maybeSingle();
+        if (error) throw new Error(`No se pudo archivar la caja en Supabase: ${error.message}`);
+        if (!data) throw new Error('No se pudo confirmar el archivo de la caja en Supabase.');
+      }
+    });
+  }
+
   async getCloudSnapshot(tenantId: string): Promise<CashControlCloudSnapshot> {
     if (!tenantId) throw new Error('Tenant ID es requerido para cargar cajas y turnos.');
     if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
@@ -175,7 +214,7 @@ class CashControlCloudService {
 
   toLocalState(snapshot: CashControlCloudSnapshot): LocalCashControlState {
     const branchCodes = new Map(snapshot.branches.map(branch => [branch.id, branch.code]));
-    const registers = snapshot.registers.map(register => ({
+    const registers = getVisibleCashRegisters(snapshot.registers).map(register => ({
       id: register.legacy_id || register.id,
       name: register.name,
       terminalCode: register.terminal_code,
@@ -239,8 +278,11 @@ class CashControlCloudService {
       else shiftsHistory.push(localShift);
     });
 
-    const currentTerminalId = snapshot.currentDeviceTerminal
-      ? (registerByCloudId.get(snapshot.currentDeviceTerminal.cash_register_id)?.legacy_id || snapshot.currentDeviceTerminal.cash_register_id)
+    const currentTerminalRegister = snapshot.currentDeviceTerminal
+      ? registerByCloudId.get(snapshot.currentDeviceTerminal.cash_register_id)
+      : undefined;
+    const currentTerminalId = currentTerminalRegister?.is_active
+      ? currentTerminalRegister.legacy_id || currentTerminalRegister.id
       : undefined;
     return { registers, activeShiftsMap, shiftsHistory, currentTerminalId };
   }
