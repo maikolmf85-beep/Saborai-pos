@@ -3,7 +3,6 @@ import {
   Bell, 
   ChefHat, 
   Wine, 
-  CheckCircle2, 
   X, 
   Volume2, 
   VolumeX,
@@ -12,7 +11,7 @@ import {
 
 export interface PosNotification {
   id: string;
-  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'HACIENDA_UPDATE' | 'INVENTORY_LOW';
+  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'HACIENDA_UPDATE' | 'INVENTORY_LOW' | 'SYNC_ERROR';
   title: string;
   message: string;
   station?: 'Cocina' | 'Bar' | 'General';
@@ -40,6 +39,7 @@ export const NotificationToastContainer: React.FC<NotificationToastProps> = ({
     <aside aria-label="Notificaciones del sistema" className="fixed top-20 right-4 sm:right-6 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
       {notifications.map((notif) => {
         const isReady = notif.type === 'ORDER_READY';
+        const isSyncError = notif.type === 'SYNC_ERROR';
 
         return (
           <div
@@ -48,17 +48,23 @@ export const NotificationToastContainer: React.FC<NotificationToastProps> = ({
             className={`pointer-events-auto p-4 rounded-2xl shadow-xl border backdrop-blur-md transition-all duration-200 animate-in slide-in-from-top-4 flex items-start justify-between gap-3 ${
               isReady
                 ? 'bg-amber-50/95 border-amber-300 text-amber-950'
-                : 'bg-stone-900/95 border-stone-800 text-white'
+                : isSyncError
+                  ? 'bg-rose-950/95 border-rose-800 text-white'
+                  : 'bg-stone-900/95 border-stone-800 text-white'
             }`}
           >
             {/* Icon */}
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
               isReady
                 ? 'bg-amber-500 text-white shadow-xs'
-                : 'bg-white/15 text-[#a9b994]'
+                : isSyncError
+                  ? 'bg-rose-900 text-rose-100'
+                  : 'bg-white/15 text-[#a9b994]'
             }`}>
               {isReady ? (
                 <Bell className="w-5 h-5 animate-bounce" />
+              ) : isSyncError ? (
+                <X className="w-5 h-5" />
               ) : notif.station === 'Bar' ? (
                 <Wine className="w-5 h-5 text-[#a9b994]" />
               ) : (
@@ -77,7 +83,7 @@ export const NotificationToastContainer: React.FC<NotificationToastProps> = ({
                 </span>
               </div>
 
-              <p className={`text-[11px] mt-0.5 leading-normal ${isReady ? 'text-amber-900' : 'text-stone-300'}`}>
+              <p className={`text-[11px] mt-0.5 leading-normal ${isReady ? 'text-amber-900' : isSyncError ? 'text-rose-100' : 'text-stone-300'}`}>
                 {notif.message}
               </p>
 

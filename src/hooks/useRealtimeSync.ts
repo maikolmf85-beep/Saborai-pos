@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { supabaseClient } from '../lib/supabaseClient';
 import { Table, KDSOrder, MenuItem } from '../types';
+import { resolveRealtimeTables } from '../services/tableSync';
+import { resolveRealtimeTenantZones } from '../services/tenantZones';
 
 export function useRealtimeSync(
   tenantId: string | undefined,
@@ -32,20 +34,10 @@ export function useRealtimeSync(
     channel
       .on('broadcast', { event: 'sync-tables' }, ({ payload }) => {
         const currentState = callbacksRef.current.getCurrentState();
+        if (String(currentState.tenant?.id) !== String(tenantId)) return;
         const localTables = currentState.tables || [];
-        
-        if (!payload.tables || payload.tables.length === 0) return;
-        
-        const merged = [...localTables];
-        payload.tables.forEach((incoming: any) => {
-          const idx = merged.findIndex((t: any) => t.id === incoming.id);
-          if (idx >= 0) {
-            merged[idx] = { ...merged[idx], ...incoming };
-          } else {
-            merged.push(incoming);
-          }
-        });
-        callbacksRef.current.onUpdateTables(merged, true);
+        const resolved = resolveRealtimeTables(localTables, payload?.tables, payload?.snapshot === true);
+        if (resolved) callbacksRef.current.onUpdateTables(resolved as Table[], true);
       })
       .on('broadcast', { event: 'sync-kds' }, ({ payload }) => {
         const currentState = callbacksRef.current.getCurrentState();
@@ -95,27 +87,27 @@ export function useRealtimeSync(
         callbacksRef.current.onUpdateShifts(payload.shiftsMap, true);
       })
       .on('broadcast', { event: 'sync-tenant' }, ({ payload }) => {
-        // Only accept tenant sync if we are in demo/empty, or if the incoming tenant has the same ID (to update settings)
         const currentState = callbacksRef.current.getCurrentState();
-        if (currentState.tenant?.id?.startsWith('tenant_demo_') || currentState.tenant?.id === payload.tenant.id) {
-          // Merge zones to prevent stale devices from wiping newly created zones
-          const localZones = currentState.tenant?.zones || [];
-          const incomingZones = payload.tenant?.zones || [];
-          const mergedZones = Array.from(new Set([...localZones, ...incomingZones]));
+        if (String(currentState.tenant?.id) !== String(tenantId) || String(payload?.tenant?.id) !== String(tenantId)) return;
+        const zones = resolveRealtimeTenantZones(
+          payload.tenant.zones,
+          currentState.tenant?.zones,
+          payload.snapshot === true,
+          Boolean(currentState.hasLocalData)
+        );
           
-          // Merge menuCategories
-          const localCats = currentState.tenant?.menuCategories || [];
-          const incomingCats = payload.tenant?.menuCategories || [];
-          const mergedCats = Array.from(new Set([...localCats, ...incomingCats]));
+        // Merge menuCategories
+        const localCats = currentState.tenant?.menuCategories || [];
+        const incomingCats = payload.tenant?.menuCategories || [];
+        const mergedCats = Array.from(new Set([...localCats, ...incomingCats]));
           
-          const mergedTenant = {
-            ...payload.tenant,
-            zones: mergedZones,
-            menuCategories: mergedCats
-          };
+        const mergedTenant = {
+          ...payload.tenant,
+          zones,
+          menuCategories: mergedCats
+        };
           
-          callbacksRef.current.onUpdateTenant(mergedTenant, true);
-        }
+        callbacksRef.current.onUpdateTenant(mergedTenant, true);
       })
       .on('broadcast', { event: 'sync-staff' }, ({ payload }) => {
         const currentState = callbacksRef.current.getCurrentState();
@@ -135,10 +127,10 @@ export function useRealtimeSync(
           }
 
           channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
-          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables } });
+          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables, snapshot: true } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
           channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
-          channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant } });
+          channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant, snapshot: true } });
           const safeStaff = (state.staff || []).map((member: any) => {
             const { pin: _pin, ...safeMember } = member;
             return safeMember;
@@ -166,7 +158,7 @@ export function useRealtimeSync(
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-tables',
-        payload: { tables: newTables },
+        payload: { tables: newTables, snapshot: true },
       });
     }
   };

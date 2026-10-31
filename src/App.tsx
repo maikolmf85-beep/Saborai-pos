@@ -45,7 +45,10 @@ import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { validateNyzaAction } from './services/nyzaActionValidation';
 import { runTenantBoundToolSequence } from './services/nyzaToolSequence';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
-import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
+import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
+import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
+import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
+import { readTableSnapshot } from './services/tableSync';
 import { supabaseClient } from './lib/supabaseClient';
 import { WifiOff, Lock, Eye, ChefHat } from 'lucide-react';
 
@@ -81,14 +84,6 @@ function tablesWithoutLocalLayout(tables: Table[]): Table[] {
     delete cached.y;
     delete cached.rotation;
     return cached as Table;
-  });
-}
-
-function mergeCachedPositions(current: Table[], cachedTables: Table[]): Table[] {
-  const cachedById = new Map(cachedTables.map(table => [table.id, table]));
-  return current.map(table => {
-    const cached = cachedById.get(table.id);
-    return cached ? { ...table, x: cached.x, y: cached.y, rotation: cached.rotation } : table;
   });
 }
 
@@ -156,12 +151,6 @@ function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null
   }
 }
 
-function mergeTenantZones(...lists: Array<string[] | null | undefined>): string[] {
-  return Array.from(new Set(lists.flatMap(list => Array.isArray(list) ? list : [])
-    .map(zone => zone.trim())
-    .filter(Boolean)));
-}
-
 function redactEmployeePins(staff: UserProfile[]): UserProfile[] {
   return staff.map(member => withoutEmployeePin(member) as UserProfile);
 }
@@ -174,19 +163,14 @@ function getAccountUserId(fallback?: string | null): string | null {
   }
 }
 
-function syncTenantZonesWithServer(zones: string[]): void {
+function syncTenantZonesWithServer(zones: string[]): Promise<string[]> {
   try {
     const token = localStorage.getItem('saborai_token');
-    if (!token) return;
-    void fetch('/api/tenant/profile', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({ zones })
-    }).catch(error => console.warn('[SaborAI] No se pudieron sincronizar los salones:', error));
-  } catch {}
+    if (!token) return Promise.reject(new Error('No hay una sesión autenticada para guardar los salones.'));
+    return persistTenantZones(zones, token);
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 export function App() {
@@ -235,6 +219,13 @@ export function App() {
     }
   });
   const activeTenantIdRef = useRef(tenant.id);
+  const [notifications, setNotifications] = useState<PosNotification[]>([]);
+  const addNotification = (notif: PosNotification) => {
+    setNotifications(prev => [notif, ...prev.slice(0, 4)]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== notif.id));
+    }, 7000);
+  };
 
   // Mantener tenant.haciendaConfig reactivo cuando se actualiza desde HaciendaSettings
   useEffect(() => {
@@ -257,6 +248,8 @@ export function App() {
   const broadcastKdsOrdersRef = useRef<((orders: KDSOrder[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
+    const shouldPersistZones = !skipBroadcast
+      && JSON.stringify(normalizeTenantZones(updated.zones)) !== JSON.stringify(normalizeTenantZones(tenant.zones));
     activeTenantIdRef.current = updated.id;
     setTenant(updated);
     setActiveTenantId(updated.id);
@@ -270,9 +263,20 @@ export function App() {
       // no depender únicamente del estado global de la sesión.
       setTenantItem('tenant_profile', updated, updated.id);
       setTenantItem('zones', updated.zones || [], updated.id);
-      // Los eventos Realtime solo hidratan la caché local. Nunca deben escribir
-      // de vuelta al servidor porque otro dispositivo podría tener un estado viejo.
-      if (!skipBroadcast) syncTenantZonesWithServer(updated.zones || []);
+      // Solo una edición local de la lista envía un PATCH; una hidratación remota
+      // nunca reescribe una copia posiblemente obsoleta en el servidor.
+      if (shouldPersistZones) {
+        void syncTenantZonesWithServer(updated.zones || []).catch(error => {
+          console.warn('[SaborAI] No se pudieron guardar los salones:', error);
+          addNotification({
+            id: `zones_sync_error_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'No se confirmaron los salones',
+            message: 'El servidor no confirmó el cambio. Revisa tu conexión antes de volver a intentarlo.',
+            timestamp: new Date()
+          });
+        });
+      }
       if (updated.haciendaConfig) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
@@ -387,10 +391,9 @@ export function App() {
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
             haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
-            zones: mergeTenantZones(
+            zones: resolveTenantZones(
               data.tenant.zones,
-              getTenantItem<string[]>('zones', data.tenant.id),
-              savedTenant?.zones
+              getTenantItem<string[]>('zones', data.tenant.id) ?? savedTenant?.zones
             ),
             menuCategories: savedTenant?.menuCategories || []
           };
@@ -420,7 +423,6 @@ export function App() {
             localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
             setTenantItem('tenant_profile', tenantObj, tenantObj.id);
             setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
-            syncTenantZonesWithServer(tenantObj.zones || []);
           } catch {}
         } else {
           // Token invalid or expired
@@ -499,6 +501,7 @@ export function App() {
     remoteUpdatedAt: string | null;
     remoteLayout: TableLayoutItem[] | null;
   }>({ tenantId: '', ready: false, signature: '', remoteUpdatedAt: null, remoteLayout: null });
+  const offlineSnapshotBaseRef = useRef<{ tenantId: string; layout: TableLayoutItem[] } | null>(null);
   const layoutWriteTimerRef = useRef<number | null>(null);
   const pendingLayoutSignatureRef = useRef<string | null>(null);
   const layoutRetryAttemptsRef = useRef(0);
@@ -507,15 +510,17 @@ export function App() {
     let nextTables = updatedTables;
     if (skipBroadcast) {
       const currentById = new Map(tablesRef.current.map(table => [table.id, table]));
-      const incomingById = new Map(updatedTables.map(table => [table.id, table]));
       const syncState = tableLayoutSyncRef.current;
       if (syncState.tenantId === tenant.id && syncState.remoteLayout) {
-        // Realtime table/order broadcasts may contain stale coordinates; retain
-        // only operational fields from them and apply the central layout set.
-        nextTables = syncState.remoteLayout.map(layoutItem => ({
-          ...(incomingById.get(layoutItem.id) || currentById.get(layoutItem.id) || { status: 'AVAILABLE' as const }),
-          ...layoutItem
-        }));
+        // The incoming snapshot owns membership and operational fields; Supabase
+        // contributes geometry only for IDs that still exist in that snapshot.
+        const remoteById = new Map(syncState.remoteLayout.map(item => [item.id, item]));
+        nextTables = updatedTables.map(incoming => {
+          const current = currentById.get(incoming.id);
+          const base = { ...(current || { status: 'AVAILABLE' as const }), ...incoming };
+          const layoutItem = remoteById.get(incoming.id);
+          return layoutItem ? { ...base, ...layoutItem } : base;
+        });
       } else {
         // Before the first cloud read, preserve the current device's geometry.
         nextTables = updatedTables.map(incoming => {
@@ -619,6 +624,7 @@ export function App() {
       remoteLayout: null as TableLayoutItem[] | null
     };
     tableLayoutSyncRef.current = syncState;
+    offlineSnapshotBaseRef.current = null;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
     layoutWriteTimerRef.current = null;
     pendingLayoutSignatureRef.current = null;
@@ -637,19 +643,32 @@ export function App() {
       const incomingTime = record.updatedAt ? Date.parse(record.updatedAt) : 0;
       const acceptedTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
       if (syncState.remoteUpdatedAt && incomingTime < acceptedTime) return;
+      const currentLayout = projectTableLayout(tablesRef.current);
+      const currentSignature = tableLayoutSignature(currentLayout);
+      const offlineBase = offlineSnapshotBaseRef.current?.tenantId === tenantId
+        ? offlineSnapshotBaseRef.current.layout
+        : null;
+      const knownBase = syncState.remoteLayout ?? offlineBase;
+      const hasLocalChanges = knownBase !== null
+        && currentSignature !== tableLayoutSignature(knownBase);
+      const resolvedLayout = hasLocalChanges
+        ? mergeConcurrentTableLayouts(knownBase || [], currentLayout, record.layout)
+        : record.layout;
+      if (offlineBase) offlineSnapshotBaseRef.current = null;
       syncState.remoteUpdatedAt = record.updatedAt || syncState.remoteUpdatedAt;
       syncState.remoteLayout = record.layout;
       clearLegacyTablePositions(tenantId);
-      const currentSignature = tableLayoutSignature(projectTableLayout(tablesRef.current));
-      const next = mergeCloudLayoutIntoTables(tablesRef.current, record.layout);
+      const next = mergeCloudLayoutIntoTables(tablesRef.current, resolvedLayout);
       const signature = tableLayoutSignature(projectTableLayout(next));
-      syncState.signature = signature;
+      // La firma remota sirve como base para que el efecto de escritura vuelva
+      // a persistir únicamente las ediciones locales no conflictivas.
+      syncState.signature = tableLayoutSignature(record.layout);
       syncState.ready = true;
       if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
       layoutWriteTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
       layoutRetryAttemptsRef.current = 0;
-      if (signature !== currentSignature) {
+      if (hasLocalChanges || signature !== currentSignature) {
         tablesRef.current = next;
         setTables(next);
       }
@@ -733,15 +752,36 @@ export function App() {
         const latestState = tableLayoutSyncRef.current;
         const latestLayout = projectTableLayout(tablesRef.current);
         if (latestState !== syncState || !latestState.ready || tableLayoutSignature(latestLayout) !== signature || pendingLayoutSignatureRef.current !== signature) return;
-        const saved = await upsertTableLayout(tenant.id, layout);
-        if (latestState !== tableLayoutSyncRef.current || pendingLayoutSignatureRef.current !== signature) return;
+        const saved = await upsertTableLayout(tenant.id, layout, latestState.remoteLayout || []);
+        if (latestState !== tableLayoutSyncRef.current) return;
         if (saved) {
-          latestState.signature = signature;
-          latestState.remoteLayout = layout;
-          pendingLayoutSignatureRef.current = null;
+          const savedSignature = tableLayoutSignature(saved.layout);
+          const pendingSignature = pendingLayoutSignatureRef.current;
+          latestState.signature = savedSignature;
+          latestState.remoteLayout = saved.layout;
+          latestState.remoteUpdatedAt = saved.updatedAt || latestState.remoteUpdatedAt;
           layoutRetryAttemptsRef.current = 0;
+          if (pendingSignature === signature) {
+            pendingLayoutSignatureRef.current = null;
+            const current = tablesRef.current;
+            const reconciled = mergeCloudLayoutIntoTables(current, saved.layout);
+            if (tableLayoutSignature(projectTableLayout(reconciled)) !== tableLayoutSignature(projectTableLayout(current))) {
+              tablesRef.current = reconciled;
+              setTables(reconciled);
+              try {
+                const useCentralLayout = Boolean(supabaseClient && isCloudTenantUuid(tenant.id));
+                setTenantItem('tables', useCentralLayout ? tablesWithoutLocalLayout(reconciled) : reconciled, tenant.id);
+              } catch {}
+            }
+          } else if (!pendingSignature && tableLayoutSignature(projectTableLayout(tablesRef.current)) !== savedSignature) {
+            // Un evento Realtime pudo haber cancelado el debounce mientras este
+            // request estaba en vuelo; vuelve a evaluar el estado actual.
+            tablesRef.current = [...tablesRef.current];
+            setTables(tablesRef.current);
+          }
           return;
         }
+        if (pendingLayoutSignatureRef.current !== signature) return;
         // Retry with bounded backoff while this tenant remains open; IndexedDB
         // also retains the latest offline snapshot for recovery after a reload.
         layoutRetryAttemptsRef.current += 1;
@@ -945,21 +985,14 @@ export function App() {
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
   const [localDbReady, setLocalDbReady] = useState(false);
+  const [hydratedSnapshotTenantId, setHydratedSnapshotTenantId] = useState<string | null>(null);
 
   // Sound & Notifications state
-  const [notifications, setNotifications] = useState<PosNotification[]>([]);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundService.isMuted());
 
   const handleToggleMute = () => {
     const nextMuted = soundService.toggleMute();
     setIsMuted(nextMuted);
-  };
-
-  const addNotification = (notif: PosNotification) => {
-    setNotifications(prev => [notif, ...prev.slice(0, 4)]);
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== notif.id));
-    }, 7000);
   };
 
   const dismissNotification = (id: string) => {
@@ -1013,33 +1046,35 @@ export function App() {
   }, [localDbReady, tenant.id]);
 
   // IndexedDB es el respaldo del POS cuando localStorage fue limpiado o no está disponible.
-  // Solo hidrata campos ausentes para no reemplazar cambios locales más recientes.
+  // La membresía de mesas del snapshot es completa, incluso cuando el arreglo está vacío.
   useEffect(() => {
     if (!localDbReady || !tenant.id) return;
     let cancelled = false;
 
     void localDB.getTenantSnapshot(tenant.id).then(snapshot => {
-      if (cancelled || !snapshot) return;
+      if (cancelled) return;
+      if (!snapshot) {
+        setHydratedSnapshotTenantId(tenant.id);
+        return;
+      }
 
       if (!hasTenantItem('menu', tenant.id) && snapshot.menuItems.length > 0) {
         setMenuItems(snapshot.menuItems as MenuItem[]);
         setTenantItem('menu', snapshot.menuItems, tenant.id);
       }
-      if (snapshot.tables.length > 0) {
-        const snapshotTables = normalizeTablePositions(snapshot.tables as Table[]);
-        const hasLocalTables = hasTenantItem('tables', tenant.id);
+      const snapshotTableList = readTableSnapshot(snapshot.tables);
+      if (snapshotTableList) {
+        const snapshotTables = normalizeTablePositions(snapshotTableList as Table[]);
         const syncState = tableLayoutSyncRef.current;
-        let restoredTables: Table[];
-        if (!hasLocalTables) {
-          restoredTables = syncState.tenantId === tenant.id && syncState.remoteLayout
-            ? mergeCloudLayoutIntoTables(snapshotTables, syncState.remoteLayout)
-            : snapshotTables;
-        } else if (syncState.tenantId === tenant.id && syncState.remoteLayout) {
-          // Keep offline operational data, but use Supabase's geometry as authority.
-          restoredTables = mergeCloudLayoutIntoTables(tablesRef.current, syncState.remoteLayout);
-        } else {
-          // IndexedDB is an offline position cache; preserve the current order state.
-          restoredTables = mergeCachedPositions(tablesRef.current, snapshotTables);
+        const snapshotBase = validateTableLayout(snapshot.tableLayoutBase);
+        let restoredTables = snapshotTables;
+        if (syncState.tenantId === tenant.id && syncState.remoteLayout !== null) {
+          const resolvedLayout = snapshotBase
+            ? mergeConcurrentTableLayouts(snapshotBase, projectTableLayout(snapshotTables), syncState.remoteLayout)
+            : syncState.remoteLayout;
+          restoredTables = mergeCloudLayoutIntoTables(snapshotTables, resolvedLayout);
+        } else if (snapshotBase) {
+          offlineSnapshotBaseRef.current = { tenantId: tenant.id, layout: snapshotBase };
         }
         tablesRef.current = restoredTables;
         setTables(restoredTables);
@@ -1061,6 +1096,7 @@ export function App() {
           setTenantItem('tenant_profile', snapshotTenant, tenant.id);
         }
       }
+      setHydratedSnapshotTenantId(tenant.id);
     });
 
     return () => {
@@ -1071,8 +1107,16 @@ export function App() {
   // Mantiene un snapshot local coherente para poder arrancar y consultar el POS offline.
   // Las credenciales sensibles se eliminan dentro de localDB antes de persistir.
   useEffect(() => {
-    if (!localDbReady || !tenant.id) return;
-    const timer = window.setTimeout(() => {
+    if (!localDbReady || !tenant.id || hydratedSnapshotTenantId !== tenant.id) return;
+    let timer: number | null = null;
+    let cancelled = false;
+    const saveSnapshot = () => {
+      if (cancelled) return;
+      const syncState = tableLayoutSyncRef.current;
+      if (isCloudTenantUuid(tenant.id) && (syncState.tenantId !== tenant.id || !syncState.ready)) {
+        timer = window.setTimeout(saveSnapshot, 350);
+        return;
+      }
       void localDB.saveTenantSnapshot({
         tenantId: tenant.id,
         version: 1,
@@ -1080,13 +1124,20 @@ export function App() {
         tenant,
         menuItems,
         tables,
+        ...(syncState.tenantId === tenant.id && syncState.remoteLayout !== null
+          ? { tableLayoutBase: syncState.remoteLayout }
+          : {}),
         staff: isCloudTenantUuid(tenant.id) ? redactEmployeePins(staffList) : staffList,
         kdsOrders
       });
-    }, 350);
+    };
+    timer = window.setTimeout(saveSnapshot, 350);
 
-    return () => window.clearTimeout(timer);
-  }, [localDbReady, tenant, menuItems, tables, staffList, kdsOrders]);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [localDbReady, hydratedSnapshotTenantId, tenant, menuItems, tables, staffList, kdsOrders]);
 
   const handleLoginSuccess = (user: UserProfile, loggedTenant: TenantInfo) => {
     // El endpoint de login devuelve la identidad del tenant, pero los ajustes
@@ -1096,7 +1147,7 @@ export function App() {
     const savedTenant = getTenantProfileWithLegacyFallback(loggedTenant.id);
     const restoredTenant: TenantInfo = {
       ...loggedTenant,
-      zones: mergeTenantZones(loggedTenant.zones, savedTenant?.zones),
+      zones: resolveTenantZones(loggedTenant.zones, savedTenant?.zones),
       menuCategories: savedTenant?.menuCategories ?? loggedTenant.menuCategories ?? [],
       taxRegime: savedTenant?.taxRegime ?? loggedTenant.taxRegime,
       includeService10ByDefault: savedTenant?.includeService10ByDefault ?? loggedTenant.includeService10ByDefault,
@@ -1120,7 +1171,6 @@ export function App() {
       localStorage.removeItem('saborai_employee_id');
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
       setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
-      syncTenantZonesWithServer(restoredTenant.zones || []);
     } catch {}
     // La suscripción se resuelve por tenant, nunca desde el estado de la cuenta anterior.
     const tenantSubscription = getTenantItem<SaboraiSubscription>('subscription', restoredTenant.id);

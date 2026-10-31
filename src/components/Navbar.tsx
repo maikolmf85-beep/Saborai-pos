@@ -78,12 +78,12 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
   className = '',
   collapsed = false
 }) => {
-  let styleClasses = 'text-[#fcfeff]/65 hover:text-[#fcfeff] hover:bg-white/[0.06]';
+  let styleClasses = 'text-[#fcfeff]/70 hover:text-white hover:bg-white/[0.045]';
 
   if (isActive) {
-    styleClasses = 'bg-white/[0.10] text-[#fcfeff] font-bold border border-white/[0.08] shadow-sm';
+    styleClasses = 'bg-white/[0.075] text-white font-semibold';
   } else if (variant === 'warning') {
-    styleClasses = 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 hover:text-amber-300';
+    styleClasses = 'text-[#fcfeff]/70 hover:text-white hover:bg-white/[0.045]';
   } else if (variant === 'danger') {
     styleClasses = 'text-rose-400 hover:text-white hover:bg-rose-600/90 hover:border-rose-500';
   } else if (variant === 'success') {
@@ -99,22 +99,18 @@ const NavVerticalItem: React.FC<NavItemProps> = ({
         type="button"
         onClick={onClick}
         aria-current={isActive ? 'page' : undefined}
-        className={`w-12 h-12 sm:min-h-11 sm:w-full sm:min-w-0 rounded-full sm:rounded-2xl flex items-center justify-center ${collapsed ? 'sm:px-0 sm:justify-center' : 'sm:px-2.5 sm:justify-start'} transition-[background-color,color,border-color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994] focus-visible:ring-offset-2 focus-visible:ring-offset-black motion-reduce:transition-none cursor-pointer ${styleClasses} ${className}`}
+        className={`group/nav-item relative w-12 h-12 sm:min-h-11 sm:w-full sm:min-w-0 rounded-lg flex items-center justify-center ${collapsed ? 'sm:px-0 sm:justify-center' : 'sm:px-2.5 sm:justify-start'} transition-[background-color,color,transform] duration-200 ease-out sm:hover:translate-x-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black motion-reduce:transition-none cursor-pointer ${styleClasses} ${className}`}
         title={label}
       >
+        {isActive && <span aria-hidden="true" className="absolute left-0 top-2.5 bottom-2.5 w-0.5 bg-[#a9b994]" />}
         <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
           {icon}
           {badge}
         </div>
         
-        <div className={`hidden sm:flex min-w-0 flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] delay-75 motion-reduce:transition-none ${collapsed ? 'ml-0 opacity-0 w-0' : 'ml-3 opacity-100 w-44'}`}>
+        <div className={`hidden sm:flex min-w-0 flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity,transform] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${collapsed ? 'ml-0 opacity-0 w-0 translate-x-1' : 'ml-3 opacity-100 w-44 translate-x-0'}`}>
           <div className="flex items-center gap-1.5">
             <span className="text-sm font-bold">{label}</span>
-            {isActive && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white text-[#a9b994] font-black uppercase shadow-sm">
-                Activo
-              </span>
-            )}
           </div>
           {sublabel && (
             <span className="text-[10px] text-stone-400 mt-0.5 block truncate w-full text-left">
@@ -210,7 +206,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     onQuickTakeaway();
                     setMobileMenuOpen(false);
                   }}
-                  className="w-full p-3 rounded-2xl bg-stone-950/60 border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 flex items-center gap-3 text-left transition-all"
+                  className="w-full p-3 rounded-2xl bg-stone-950/60 border border-stone-800 text-stone-300 hover:bg-stone-800/80 hover:text-white flex items-center gap-3 text-left transition-[color,background-color,transform] duration-200 ease-out"
                 >
                   <ShoppingBag className="w-5 h-5 shrink-0" />
                   <div className="flex-1">
@@ -253,16 +249,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMobileNavClick('menu')}
-                  className={`w-full p-3 rounded-2xl flex items-center gap-3 text-left transition-all ${
+                  aria-current={activeTab === 'menu' ? 'page' : undefined}
+                  className={`relative w-full p-3 rounded-xl flex items-center gap-3 text-left transition-[color,background-color,transform] duration-200 ease-out ${
                     activeTab === 'menu'
-                      ? 'bg-[#a9b994] text-stone-950 font-black'
+                      ? 'bg-stone-800/90 text-white font-semibold'
                       : 'bg-stone-950/50 text-stone-300 hover:bg-stone-800/80 border border-stone-800'
                   }`}
                 >
+                  {activeTab === 'menu' && <span aria-hidden="true" className="absolute left-0 top-3 bottom-3 w-0.5 bg-[#a9b994]" />}
                   <UtensilsCrossed className="w-5 h-5 shrink-0" />
                   <div className="flex-1">
                     <div className="font-bold text-xs">Platillos & Catálogo de Menú</div>
-                    <div className={`text-[10px] ${activeTab === 'menu' ? 'text-stone-900' : 'text-stone-400'}`}>
+                    <div className={`text-[10px] ${activeTab === 'menu' ? 'text-stone-300' : 'text-stone-400'}`}>
                       Precios, recetas y disponibilidad
                     </div>
                   </div>
@@ -274,16 +272,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   type="button"
                   onClick={() => handleMobileNavClick('reports')}
-                  className={`w-full p-3 rounded-2xl flex items-center gap-3 text-left transition-all ${
+                  aria-current={activeTab === 'reports' ? 'page' : undefined}
+                  className={`relative w-full p-3 rounded-xl flex items-center gap-3 text-left transition-[color,background-color,transform] duration-200 ease-out ${
                     activeTab === 'reports'
-                      ? 'bg-[#a9b994] text-stone-950 font-black'
+                      ? 'bg-stone-800/90 text-white font-semibold'
                       : 'bg-stone-950/50 text-stone-300 hover:bg-stone-800/80 border border-stone-800'
                   }`}
                 >
+                  {activeTab === 'reports' && <span aria-hidden="true" className="absolute left-0 top-3 bottom-3 w-0.5 bg-[#a9b994]" />}
                   <TrendingUp className="w-5 h-5 shrink-0" />
                   <div className="flex-1">
                     <div className="font-bold text-xs">Métricas & Reportes</div>
-                    <div className={`text-[10px] ${activeTab === 'reports' ? 'text-stone-900' : 'text-stone-400'}`}>
+                    <div className={`text-[10px] ${activeTab === 'reports' ? 'text-stone-300' : 'text-stone-400'}`}>
                       Ventas, cierres de caja y rendimiento
                     </div>
                   </div>
@@ -321,7 +321,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <span
                     aria-label={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
                     title={isShiftOpen ? 'Turno activo' : 'Turno cerrado'}
-                    className={`absolute top-2.5 right-2.5 w-2.5 h-2.5 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse shadow-[0_0_7px_rgba(52,211,153,0.8)]' : 'bg-amber-400'}`}
+                    className={`absolute top-2.5 right-2.5 w-2 h-2 rounded-full ${isShiftOpen ? 'bg-emerald-400 animate-pulse' : 'bg-stone-500'}`}
                   />
                   <span className="text-[10px] font-bold text-emerald-400 uppercase">Gestionar</span>
                 </button>
@@ -422,11 +422,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={() => handleMobileNavClick('pos')}
             aria-current={activeTab === 'pos' ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
-              activeTab === 'pos' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
+            className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors duration-200 cursor-pointer ${
+              activeTab === 'pos' ? 'text-white' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'pos' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            {activeTab === 'pos' && <span aria-hidden="true" className="absolute left-1 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-[#a9b994]" />}
+            <div className="p-1 transition-transform duration-200">
               <LayoutGrid className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Mesas</span>
@@ -437,16 +438,17 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={() => handleMobileNavClick('kds')}
             aria-current={activeTab === 'kds' ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 relative transition-colors cursor-pointer ${
-              activeTab === 'kds' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
+            className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors duration-200 cursor-pointer ${
+              activeTab === 'kds' ? 'text-white' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'kds' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            {activeTab === 'kds' && <span aria-hidden="true" className="absolute left-1 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-[#a9b994]" />}
+            <div className="p-1 transition-transform duration-200">
               <ChefHat className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Cocina</span>
             {tenant.plan === 'express' && (
-              <span className="absolute top-1 right-2 text-[8px] font-black bg-stone-800 text-amber-400 px-1 rounded-xs border border-amber-400/40">
+              <span className="absolute top-1 right-2 text-[8px] font-bold bg-stone-800 text-stone-300 px-1 rounded-sm border border-stone-700">
                 PRO
               </span>
             )}
@@ -457,11 +459,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             type="button"
             onClick={() => handleMobileNavClick('billing')}
             aria-current={activeTab === 'billing' ? 'page' : undefined}
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
-              activeTab === 'billing' ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
+            className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors duration-200 cursor-pointer ${
+              activeTab === 'billing' ? 'text-white' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${activeTab === 'billing' ? 'bg-[#a9b994]/20 shadow-xs scale-105' : ''}`}>
+            {activeTab === 'billing' && <span aria-hidden="true" className="absolute left-1 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-[#a9b994]" />}
+            <div className="p-1 transition-transform duration-200">
               <Receipt className="w-5 h-5" />
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Caja</span>
@@ -473,12 +476,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-expanded={mobileMenuOpen}
             aria-controls="mobile-navigation-sheet"
-            className={`flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors cursor-pointer ${
-              mobileMenuOpen ? 'text-[#a9b994]' : 'text-stone-400 hover:text-stone-200'
+            className={`relative flex flex-col items-center justify-center flex-1 h-full py-1 transition-colors duration-200 cursor-pointer ${
+              mobileMenuOpen ? 'text-white' : 'text-stone-400 hover:text-stone-200'
             }`}
           >
-            <div className={`p-1 rounded-xl transition-all ${mobileMenuOpen ? 'bg-[#a9b994]/20 scale-105' : ''}`}>
-              {mobileMenuOpen ? <X className="w-5 h-5 text-[#a9b994]" /> : <Menu className="w-5 h-5" />}
+            {mobileMenuOpen && <span aria-hidden="true" className="absolute left-1 top-1/2 -translate-y-1/2 h-5 w-0.5 bg-[#a9b994]" />}
+            <div className="p-1 transition-transform duration-200">
+              {mobileMenuOpen ? <X className="w-5 h-5 text-white" /> : <Menu className="w-5 h-5" />}
             </div>
             <span className="text-[10px] font-bold tracking-tight mt-0.5">
               {mobileMenuOpen ? 'Cerrar' : 'Más'}
@@ -548,7 +552,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 collapsed={isSidebarCollapsed}
                 id="nav-tab-takeaway"
                 onClick={onQuickTakeaway}
-                icon={<ShoppingBag className="w-5 h-5 text-amber-400" />}
+                icon={<ShoppingBag className="w-5 h-5 text-stone-400" />}
                 label="Para Llevar"
                 sublabel="Venta rápida directa de mostrador"
                 variant="warning"
@@ -587,7 +591,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               label="Cocina & Bar (KDS)"
               sublabel={tenant.plan === 'express' ? "Requiere Plan Pro · Comandas" : "Monitor de comandas en vivo"}
               isActive={activeTab === 'kds'}
-              badge={tenant.plan === 'express' ? <span className="absolute -top-1 -right-1 text-[8px] font-black bg-stone-800 text-amber-400 px-1 rounded-sm border border-amber-400/40">PRO</span> : undefined}
+              badge={tenant.plan === 'express' ? <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-stone-800 text-stone-300 px-1 rounded-sm border border-stone-700">PRO</span> : undefined}
             />
 
             {/* Menú y Catálogo */}
@@ -648,7 +652,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className={`absolute top-1.5 right-1.5 w-2 h-2 rounded-full ${
                       isShiftOpen 
                         ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]' 
-                        : 'bg-amber-400'
+                        : 'bg-stone-500'
                     }`} 
                   />
                 }
@@ -745,12 +749,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className={`relative min-w-0 h-8 rounded-xl hover:bg-stone-800 flex items-center justify-center gap-1.5 text-xs font-bold transition-colors cursor-pointer ${isSidebarCollapsed ? 'w-full' : 'flex-1'}`}
                 title={isOnline ? "Conectado a la nube (Clic para ver cola)" : "Modo Local Offline"}
               >
-                {isOnline ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" /> : <WifiOff className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />}
+                {isOnline ? <Wifi className="w-4 h-4 text-emerald-400 shrink-0" /> : <WifiOff className="w-4 h-4 text-stone-400 shrink-0" />}
                 <span className={`${isSidebarCollapsed ? 'hidden' : 'inline'} text-[11px] text-stone-300 truncate`}>
                   {isOnline ? 'Online' : 'Offline'}
                 </span>
                 {pendingCount > 0 && (
-                  <span className="px-1.5 py-0.2 bg-amber-400 text-stone-950 text-[9px] font-black rounded-full">
+                  <span className="px-1.5 py-0.2 bg-stone-700 text-stone-200 text-[9px] font-bold rounded-sm">
                     {pendingCount}
                   </span>
                 )}

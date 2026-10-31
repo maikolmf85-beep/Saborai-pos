@@ -1,15 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin as supabase } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
-
-function cleanZones(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value
-    .filter(zone => typeof zone === 'string')
-    .map(zone => zone.trim())
-    .filter(Boolean)
-  )).slice(0, 200);
-}
+import { cleanTenantZones, updateTenantZonesInSupabase } from '../_utils/tenantZones.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
@@ -35,20 +27,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'GET') {
-    return res.status(200).json({ success: true, zones: cleanZones(tenant.zones) });
+    return res.status(200).json({ success: true, zones: cleanTenantZones(tenant.zones) || [] });
   }
 
-  const zones = cleanZones((req.body as { zones?: unknown } | undefined)?.zones);
-  const { error: updateError } = await supabase
-    .from('tenants')
-    .update({ zones })
-    .eq('id', tenant.id)
-    .eq('user_id', auth.userId);
+  const requestedZones = (req.body as { zones?: unknown } | undefined)?.zones;
+  const zones = cleanTenantZones(requestedZones);
+  if (!zones) return res.status(400).json({ error: 'La lista de salones es inválida.' });
+  const { data: updatedTenant, error: updateError } = await updateTenantZonesInSupabase(
+    supabase,
+    tenant.id,
+    auth.userId,
+    zones
+  );
 
-  if (updateError) {
+  if (updateError || !updatedTenant) {
     console.error('[Tenant Profile] Error guardando salones:', updateError);
     return res.status(500).json({ error: 'No se pudieron guardar los salones.' });
   }
 
-  return res.status(200).json({ success: true, zones });
+  return res.status(200).json({ success: true, zones: cleanTenantZones(updatedTenant.zones) || [] });
 }

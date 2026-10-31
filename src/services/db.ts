@@ -10,6 +10,7 @@ export interface TenantOfflineSnapshot {
   tenant: any;
   menuItems: any[];
   tables: any[];
+  tableLayoutBase?: any[];
   staff: any[];
   kdsOrders: any[];
 }
