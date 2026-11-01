@@ -1,8 +1,8 @@
 -- PROPUESTA LOCAL NO APLICADA.
 -- No copiar a supabase/migrations ni ejecutar contra Supabase sin aprobación explícita.
--- Requiere las tablas POS base, cajas, terminales y actor_employee_id existentes.
--- Agrega de forma idempotente cash_register_id/terminal_id ausentes en pos_orders;
--- Phase 9 puede ejecutarse después sin duplicar las columnas ni sus FKs.
+-- Requiere tablas POS base, cajas/turnos/terminales y actor_employee_id.
+-- Agrega columnas CAS/compatibilidad ausentes; no se ejecutó ni se aplicó en ninguna base.
+-- linked_zones queda NULL en turnos históricos para distinguir su alcance desconocido.
 --
 -- El objetivo es que UPDATE_TABLE y TRANSFER_TABLE_ITEM tengan el mismo orden de locks,
 -- usen una revisión CAS por orden y escriban líneas/auditoría/ledger dentro de una transacción.
@@ -16,17 +16,67 @@ begin
      or to_regclass('public.pos_cash_registers') is null
      or to_regclass('public.pos_cash_shifts') is null
      or to_regclass('public.pos_terminals') is null
-     or to_regclass('public.pos_audit_events') is null then
+     or to_regclass('public.pos_audit_events') is null
+     or to_regclass('public.pos_employees') is null then
     raise exception using
       errcode = '42P01',
-      message = 'Falta una tabla POS requerida (incluidas cajas/turnos/terminales); aplique primero el esquema base y Phase 8.';
+      message = 'Falta una tabla POS requerida (incluidas cajas/turnos/terminales/empleados); aplique primero el esquema base, Phase 8 y sesiones de empleado.';
   end if;
 end;
 $$;
 
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'pos_audit_events' and column_name = 'actor_employee_id'
+  ) then
+    raise exception using errcode = '42703', message = 'Falta pos_audit_events.actor_employee_id; aplique primero la migración de sesiones de empleado.';
+  end if;
+end;
+$$;
+
+-- Completar de forma idempotente la metadata de caja/turno usada por el flujo local.
+-- En instalaciones Phase 2/8 estas columnas ya existen; no se alteran sus datos.
+alter table public.pos_cash_registers
+  add column if not exists legacy_id text,
+  add column if not exists linked_zones jsonb not null default '[]'::jsonb;
+alter table public.pos_cash_registers
+  drop constraint if exists pos_cash_registers_linked_zones_array_ck;
+alter table public.pos_cash_registers
+  add constraint pos_cash_registers_linked_zones_array_ck
+  check (jsonb_typeof(linked_zones) = 'array');
+create unique index if not exists pos_cash_registers_tenant_legacy_id_uidx
+  on public.pos_cash_registers(tenant_id, legacy_id) where legacy_id is not null;
+
+alter table public.pos_cash_shifts
+  add column if not exists legacy_id text,
+  add column if not exists shift_number bigint,
+  add column if not exists participants jsonb not null default '[]'::jsonb,
+  add column if not exists movements jsonb not null default '[]'::jsonb,
+  add column if not exists system_summary jsonb not null default '{}'::jsonb,
+  add column if not exists cash_breakdown jsonb,
+  add column if not exists counted_cards numeric(14,2),
+  add column if not exists dataphones_breakdown jsonb,
+  add column if not exists counted_sinpe numeric(14,2),
+  add column if not exists difference_reason text,
+  add column if not exists z_report_generated boolean not null default false,
+  add column if not exists updated_at timestamptz not null default now();
+create unique index if not exists pos_cash_shifts_tenant_legacy_id_uidx
+  on public.pos_cash_shifts(tenant_id, legacy_id) where legacy_id is not null;
+
 alter table public.pos_orders
   add column if not exists cash_register_id uuid references public.pos_cash_registers(id) on delete set null,
   add column if not exists terminal_id uuid references public.pos_terminals(id) on delete set null;
+
+alter table public.pos_cash_shifts
+  add column if not exists linked_zones jsonb;
+
+alter table public.pos_cash_shifts
+  drop constraint if exists pos_cash_shifts_linked_zones_array_ck;
+alter table public.pos_cash_shifts
+  add constraint pos_cash_shifts_linked_zones_array_ck
+  check (linked_zones is null or jsonb_typeof(linked_zones) = 'array');
 
 alter table public.pos_order_items
   add column if not exists client_item_id text;
@@ -72,6 +122,23 @@ create trigger pos_orders_bump_revision_on_status_change
 before update of status on public.pos_orders
 for each row execute function public.bump_pos_order_revision_on_status_change();
 
+create table if not exists public.pos_cash_shift_sync_requests (
+  tenant_id uuid not null,
+  operation_id text not null,
+  actor_user_id uuid not null,
+  request_payload jsonb not null,
+  result jsonb,
+  created_at timestamptz not null default now(),
+  constraint pos_cash_shift_sync_requests_pk primary key (tenant_id, operation_id),
+  constraint pos_cash_shift_sync_requests_operation_id_check check (length(btrim(operation_id)) between 1 and 160),
+  constraint pos_cash_shift_sync_requests_payload_check check (jsonb_typeof(request_payload) = 'object'),
+  constraint pos_cash_shift_sync_requests_result_check check (result is null or jsonb_typeof(result) = 'object')
+);
+
+alter table public.pos_cash_shift_sync_requests enable row level security;
+revoke all on table public.pos_cash_shift_sync_requests from public, anon, authenticated;
+grant all on table public.pos_cash_shift_sync_requests to service_role;
+
 create table if not exists public.pos_order_sync_requests (
   tenant_id uuid not null,
   operation_id text not null,
@@ -106,6 +173,195 @@ alter table public.pos_order_item_transfer_requests enable row level security;
 revoke all on table public.pos_order_item_transfer_requests from public, anon, authenticated;
 grant all on table public.pos_order_item_transfer_requests to service_role;
 
+create or replace function public.sync_pos_cash_shift(
+  p_tenant_id uuid,
+  p_operation_id text,
+  p_actor_user_id uuid,
+  p_actor_employee_id uuid,
+  p_action text,
+  p_shift_id text,
+  p_cash_register_legacy_id text,
+  p_payload jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, pg_temp
+as $$
+declare
+  v_payload jsonb;
+  v_inserted integer;
+  v_existing public.pos_cash_shift_sync_requests%rowtype;
+  v_register public.pos_cash_registers%rowtype;
+  v_shift public.pos_cash_shifts%rowtype;
+  v_result jsonb;
+  v_zones jsonb;
+  v_branch_active boolean;
+  v_shift_row_id uuid;
+begin
+  if p_tenant_id is null or p_actor_user_id is null then
+    raise exception 'tenant y actor son requeridos.' using errcode = '22023';
+  end if;
+  if p_operation_id is null or length(btrim(p_operation_id)) not between 1 and 160
+     or p_shift_id is null or length(btrim(p_shift_id)) not between 1 and 160
+     or p_cash_register_legacy_id is null or length(btrim(p_cash_register_legacy_id)) not between 1 and 160 then
+    raise exception 'Los IDs estables del turno y caja no son válidos.' using errcode = '22023';
+  end if;
+  if p_action is null or p_action not in ('OPEN', 'CLOSE') or jsonb_typeof(p_payload) <> 'object' then
+    raise exception 'La acción o el payload de turno no son válidos.' using errcode = '22023';
+  end if;
+  if p_payload ->> 'shiftId' is distinct from p_shift_id
+     or p_payload ->> 'cashRegisterId' is distinct from p_cash_register_legacy_id
+     or p_payload ->> 'status' is distinct from (case when p_action = 'OPEN' then 'OPEN' else 'CLOSED' end) then
+    raise exception 'El snapshot no coincide con la acción de turno.' using errcode = '22023';
+  end if;
+
+  v_zones := coalesce(p_payload -> 'linkedZones', '[]'::jsonb);
+  if jsonb_typeof(v_zones) <> 'array'
+     or exists (select 1 from jsonb_array_elements_text(v_zones) as zones(value) where btrim(value) = '') then
+    raise exception 'El alcance de zonas del turno no es válido.' using errcode = '22023';
+  end if;
+  v_payload := jsonb_build_object(
+    'action', p_action,
+    'shift_id', btrim(p_shift_id),
+    'cash_register_id', btrim(p_cash_register_legacy_id),
+    'payload', p_payload
+  );
+
+  insert into public.pos_cash_shift_sync_requests (tenant_id, operation_id, actor_user_id, request_payload)
+  values (p_tenant_id, btrim(p_operation_id), p_actor_user_id, v_payload)
+  on conflict (tenant_id, operation_id) do nothing;
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then
+    select * into v_existing from public.pos_cash_shift_sync_requests
+    where tenant_id = p_tenant_id and operation_id = btrim(p_operation_id) for update;
+    if not found or v_existing.actor_user_id is distinct from p_actor_user_id
+       or v_existing.request_payload is distinct from v_payload then
+      raise exception 'operation_id ya fue usado con otro actor o payload.' using errcode = '22023';
+    end if;
+    if v_existing.result is null then
+      raise exception 'La operación idempotente anterior no tiene resultado confirmado.' using errcode = '40001';
+    end if;
+    return v_existing.result || jsonb_build_object('alreadyApplied', true);
+  end if;
+
+  select * into v_register from public.pos_cash_registers r
+  where r.tenant_id = p_tenant_id and r.legacy_id = btrim(p_cash_register_legacy_id)
+  for update;
+  if not found and p_cash_register_legacy_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    select * into v_register from public.pos_cash_registers r
+    where r.tenant_id = p_tenant_id and r.id = p_cash_register_legacy_id::uuid
+    for update;
+  end if;
+  if not found or not v_register.is_active then
+    raise exception 'La caja no existe, no pertenece al tenant o está inactiva.' using errcode = '22023';
+  end if;
+  select exists(select 1 from public.pos_branches b where b.id = v_register.branch_id and b.tenant_id = p_tenant_id and b.is_active)
+  into v_branch_active;
+  if not v_branch_active then
+    raise exception 'La sucursal de la caja no está activa.' using errcode = '22023';
+  end if;
+
+  select * into v_shift from public.pos_cash_shifts s
+  where s.tenant_id = p_tenant_id and s.legacy_id = btrim(p_shift_id)
+  for update;
+  if not found and p_shift_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    select * into v_shift from public.pos_cash_shifts s
+    where s.tenant_id = p_tenant_id and s.id = p_shift_id::uuid
+    for update;
+  end if;
+  v_shift_row_id := v_shift.id;
+
+  if p_action = 'OPEN' then
+    if v_shift_row_id is not null then
+      if v_shift.status <> 'OPEN' or v_shift.cash_register_id <> v_register.id then
+        raise exception 'El turno local ya existe con otro estado o caja.' using errcode = '22023';
+      end if;
+      update public.pos_cash_registers set linked_zones = v_zones where id = v_register.id;
+      update public.pos_cash_shifts set
+        opened_by = coalesce(opened_by, p_actor_employee_id, p_actor_user_id),
+        shift_number = coalesce(nullif(p_payload ->> 'shiftNumber', '')::bigint, shift_number),
+        opening_float = coalesce(nullif(p_payload ->> 'initialFloat', '')::numeric, opening_float),
+        expected_cash = coalesce(nullif(p_payload ->> 'expectedCash', '')::numeric, expected_cash),
+        opened_at = coalesce(nullif(p_payload ->> 'openedAt', '')::timestamptz, opened_at),
+        notes = nullif(p_payload ->> 'notes', ''),
+        participants = coalesce(p_payload -> 'participants', participants),
+        movements = coalesce(p_payload -> 'movements', movements),
+        system_summary = coalesce(p_payload -> 'systemSummary', system_summary),
+        linked_zones = v_zones,
+        updated_at = now()
+      where id = v_shift.id returning * into v_shift;
+    else
+      if exists (select 1 from public.pos_cash_shifts s where s.cash_register_id = v_register.id and s.status = 'OPEN') then
+        raise exception 'La caja ya tiene otro turno abierto.' using errcode = '23505';
+      end if;
+      update public.pos_cash_registers set linked_zones = v_zones where id = v_register.id;
+      insert into public.pos_cash_shifts (
+        tenant_id, branch_id, cash_register_id, opened_by, status, opening_float, expected_cash,
+        opened_at, notes, shift_number, participants, movements, system_summary, linked_zones, legacy_id
+      ) values (
+        p_tenant_id, v_register.branch_id, v_register.id, coalesce(p_actor_employee_id, p_actor_user_id), 'OPEN',
+        coalesce(nullif(p_payload ->> 'initialFloat', '')::numeric, 0),
+        coalesce(nullif(p_payload ->> 'expectedCash', '')::numeric, 0),
+        coalesce(nullif(p_payload ->> 'openedAt', '')::timestamptz, now()),
+        nullif(p_payload ->> 'notes', ''),
+        coalesce(nullif(p_payload ->> 'shiftNumber', '')::bigint, 1),
+        coalesce(p_payload -> 'participants', '[]'::jsonb),
+        coalesce(p_payload -> 'movements', '[]'::jsonb),
+        coalesce(p_payload -> 'systemSummary', '{}'::jsonb), v_zones, btrim(p_shift_id)
+      ) returning * into v_shift;
+    end if;
+  else
+    if v_shift_row_id is null or v_shift.status <> 'OPEN' or v_shift.cash_register_id <> v_register.id then
+      raise exception 'CASH_SHIFT_NOT_OPEN' using errcode = '22023';
+    end if;
+    update public.pos_cash_shifts set
+      status = 'CLOSED',
+      closed_by = coalesce(p_actor_employee_id, p_actor_user_id),
+      closed_at = coalesce(nullif(p_payload ->> 'closedAt', '')::timestamptz, now()),
+      expected_cash = coalesce(nullif(p_payload ->> 'expectedCash', '')::numeric, expected_cash),
+      counted_cash = nullif(p_payload ->> 'countedCash', '')::numeric,
+      counted_cards = nullif(p_payload ->> 'countedCards', '')::numeric,
+      counted_sinpe = nullif(p_payload ->> 'countedSinpe', '')::numeric,
+      difference = nullif(p_payload ->> 'difference', '')::numeric,
+      notes = nullif(p_payload ->> 'notes', ''),
+      participants = coalesce(p_payload -> 'participants', participants),
+      movements = coalesce(p_payload -> 'movements', movements),
+      system_summary = coalesce(p_payload -> 'systemSummary', system_summary),
+      cash_breakdown = p_payload -> 'cashBreakdown',
+      dataphones_breakdown = p_payload -> 'dataphonesBreakdown',
+      difference_reason = nullif(p_payload ->> 'differenceReason', ''),
+      z_report_generated = coalesce((p_payload ->> 'zReportGenerated')::boolean, true),
+      linked_zones = coalesce(linked_zones, v_zones),
+      updated_at = now()
+    where id = v_shift.id returning * into v_shift;
+  end if;
+
+  v_result := jsonb_build_object(
+    'shiftId', v_shift.id,
+    'legacyShiftId', coalesce(v_shift.legacy_id, btrim(p_shift_id)),
+    'cashRegisterId', v_register.id,
+    'status', v_shift.status,
+    'linkedZones', v_shift.linked_zones,
+    'alreadyApplied', false
+  );
+  insert into public.pos_audit_events (
+    tenant_id, branch_id, actor_user_id, actor_employee_id, action,
+    entity_type, entity_id, request_id, metadata
+  ) values (
+    p_tenant_id, v_register.branch_id, p_actor_user_id, p_actor_employee_id,
+    case when p_action = 'OPEN' then 'CASH_SHIFT_OPENED' else 'CASH_SHIFT_CLOSED' end,
+    'CASH_SHIFT', v_shift.id::text, btrim(p_operation_id), v_result
+  );
+  update public.pos_cash_shift_sync_requests set result = v_result
+  where tenant_id = p_tenant_id and operation_id = btrim(p_operation_id);
+  return v_result;
+end;
+$$;
+
+revoke all on function public.sync_pos_cash_shift(uuid, text, uuid, uuid, text, text, text, jsonb) from public, anon, authenticated;
+grant execute on function public.sync_pos_cash_shift(uuid, text, uuid, uuid, text, text, text, jsonb) to service_role;
+
 create or replace function public.sync_pos_table_order(
   p_tenant_id uuid,
   p_operation_id text,
@@ -131,6 +387,8 @@ declare
   v_scope_tenant uuid;
   v_scope_branch uuid;
   v_scope_register uuid;
+  v_scope_register_active boolean;
+  v_scope_shift_status text;
   v_table_input_id uuid;
   v_table_id uuid;
   v_table_number integer;
@@ -222,7 +480,8 @@ begin
   -- No depender del trigger Phase 9: producción puede tener las tablas de caja/
   -- terminal pero aún no haber instalado ese trigger ni las columnas en órdenes.
   if v_cash_register_id is not null then
-    select r.tenant_id, r.branch_id into v_scope_tenant, v_scope_branch
+    select r.tenant_id, r.branch_id, r.is_active
+      into v_scope_tenant, v_scope_branch, v_scope_register_active
     from public.pos_cash_registers r where r.id = v_cash_register_id;
     if not found then
       raise exception 'La caja indicada no existe.' using errcode = '22023';
@@ -230,12 +489,15 @@ begin
     if v_scope_tenant is distinct from p_tenant_id or v_scope_branch is distinct from v_branch_id then
       raise exception 'La caja no pertenece al tenant o sucursal de la orden.' using errcode = '22023';
     end if;
+    if not v_scope_register_active then
+      raise exception 'La caja indicada está inactiva.' using errcode = '22023';
+    end if;
   end if;
 
   if v_cash_shift_id is not null then
-    select s.tenant_id, s.branch_id, s.cash_register_id
-      into v_scope_tenant, v_scope_branch, v_scope_register
-    from public.pos_cash_shifts s where s.id = v_cash_shift_id;
+    select s.tenant_id, s.branch_id, s.cash_register_id, s.status
+      into v_scope_tenant, v_scope_branch, v_scope_register, v_scope_shift_status
+    from public.pos_cash_shifts s where s.id = v_cash_shift_id for share;
     if not found then
       raise exception 'El turno indicado no existe.' using errcode = '22023';
     end if;
@@ -243,6 +505,9 @@ begin
        or v_scope_branch is distinct from v_branch_id
        or (v_cash_register_id is not null and v_scope_register is distinct from v_cash_register_id) then
       raise exception 'El turno no pertenece al tenant, sucursal o caja de la orden.' using errcode = '22023';
+    end if;
+    if v_scope_shift_status <> 'OPEN' then
+      raise exception 'CASH_SHIFT_NOT_OPEN' using errcode = '22023';
     end if;
   end if;
 
@@ -363,7 +628,6 @@ begin
         terminal_id = coalesce(v_terminal_id, terminal_id),
         table_id = v_table_id,
         server_name = v_server_name,
-        status = 'OPEN',
         cloud_revision = cloud_revision + 1
       where id = v_order_id and tenant_id = p_tenant_id
       returning cloud_revision into v_new_revision;
@@ -440,6 +704,7 @@ create or replace function public.transfer_pos_order_item(
   p_operation_id text,
   p_actor_user_id uuid,
   p_actor_employee_id uuid,
+  p_cash_shift_id uuid,
   p_source_order_number text,
   p_destination_order_number text,
   p_source_client_item_id text,
@@ -469,6 +734,10 @@ declare
   v_destination_order public.pos_orders%rowtype;
   v_source_table public.pos_tables%rowtype;
   v_destination_table public.pos_tables%rowtype;
+  v_cash_shift public.pos_cash_shifts%rowtype;
+  v_cash_register public.pos_cash_registers%rowtype;
+  v_shift_register_id uuid;
+  v_effective_zones jsonb;
   v_source_item public.pos_order_items%rowtype;
   v_updated_source_item public.pos_order_items%rowtype;
   v_moved_item public.pos_order_items%rowtype;
@@ -487,6 +756,9 @@ declare
 begin
   if p_tenant_id is null or p_actor_user_id is null then
     raise exception 'tenant y actor son requeridos.' using errcode = '22023';
+  end if;
+  if p_cash_shift_id is null then
+    raise exception 'CASH_SHIFT_NOT_OPEN' using errcode = '22023';
   end if;
   if p_operation_id is null or length(btrim(p_operation_id)) not between 1 and 160 then
     raise exception 'operation_id debe tener entre 1 y 160 caracteres.' using errcode = '22023';
@@ -542,6 +814,7 @@ begin
   v_payload := jsonb_build_object(
     'source_order_number', btrim(p_source_order_number),
     'destination_order_number', btrim(p_destination_order_number),
+    'cash_shift_id', p_cash_shift_id,
     'source_client_item_id', btrim(p_source_client_item_id),
     'destination_client_item_id', btrim(p_destination_client_item_id),
     'quantity', p_quantity,
@@ -570,6 +843,26 @@ begin
       raise exception 'La operación idempotente anterior no tiene resultado confirmado.' using errcode = '40001';
     end if;
     return v_existing.result || jsonb_build_object('alreadyApplied', true);
+  end if;
+
+  -- Lock order is cash register -> shift -> tables -> orders, matching lifecycle RPCs.
+  select s.cash_register_id into v_shift_register_id from public.pos_cash_shifts s
+  where s.id = p_cash_shift_id and s.tenant_id = p_tenant_id;
+  if not found then raise exception 'CASH_SHIFT_NOT_OPEN' using errcode = '22023'; end if;
+  select * into v_cash_register from public.pos_cash_registers r
+  where r.id = v_shift_register_id and r.tenant_id = p_tenant_id for share;
+  if not found or not v_cash_register.is_active then
+    raise exception 'La caja del turno no existe o está inactiva.' using errcode = '22023';
+  end if;
+  select * into v_cash_shift from public.pos_cash_shifts s
+  where s.id = p_cash_shift_id and s.tenant_id = p_tenant_id for share;
+  if not found or v_cash_shift.status <> 'OPEN' then
+    raise exception 'CASH_SHIFT_NOT_OPEN' using errcode = '22023';
+  end if;
+  if v_cash_shift.linked_zones is null then
+    v_effective_zones := coalesce(v_cash_register.linked_zones, '[]'::jsonb);
+  else
+    v_effective_zones := v_cash_shift.linked_zones;
   end if;
 
   v_source_key := 'order:' || p_tenant_id::text || ':' || btrim(p_source_order_number);
@@ -627,8 +920,15 @@ begin
   where t.id = v_source_table_id and t.tenant_id = p_tenant_id;
   select * into v_destination_table from public.pos_tables t
   where t.id = v_destination_table_id and t.tenant_id = p_tenant_id;
-  if v_source_table.branch_id is distinct from v_destination_table.branch_id then
-    raise exception 'El traslado debe permanecer en la misma sucursal.' using errcode = '22023';
+  if v_source_table.branch_id is distinct from v_destination_table.branch_id
+     or v_source_table.branch_id is distinct from v_cash_shift.branch_id then
+    raise exception 'El traslado debe permanecer dentro de la sucursal del turno.' using errcode = '22023';
+  end if;
+  if jsonb_array_length(v_effective_zones) > 0 and not exists (
+    select 1 from jsonb_array_elements_text(v_effective_zones) as zones(value)
+    where value = v_destination_table.zone
+  ) then
+    raise exception 'La zona de la mesa destino no está cubierta por la caja/turno.' using errcode = '22023';
   end if;
   if v_source_table.status not in ('OCCUPIED', 'PRE_CHECK')
      or v_destination_table.status not in ('OCCUPIED', 'PRE_CHECK') then
@@ -739,7 +1039,7 @@ begin
 end;
 $$;
 
-revoke all on function public.transfer_pos_order_item(uuid, text, uuid, uuid, text, text, text, text, numeric, integer, integer, jsonb)
+revoke all on function public.transfer_pos_order_item(uuid, text, uuid, uuid, uuid, text, text, text, text, numeric, integer, integer, jsonb)
   from public, anon, authenticated;
-grant execute on function public.transfer_pos_order_item(uuid, text, uuid, uuid, text, text, text, text, numeric, integer, integer, jsonb)
+grant execute on function public.transfer_pos_order_item(uuid, text, uuid, uuid, uuid, text, text, text, text, numeric, integer, integer, jsonb)
   to service_role;

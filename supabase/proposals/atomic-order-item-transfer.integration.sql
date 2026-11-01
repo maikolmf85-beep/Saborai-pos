@@ -25,6 +25,11 @@ do $$
 declare
   v_tenant_id uuid := gen_random_uuid();
   v_branch_id uuid := gen_random_uuid();
+  v_register_id uuid := gen_random_uuid();
+  v_shift_cloud_id uuid;
+  v_register_legacy_id text := 'test-register-' || replace(gen_random_uuid()::text, '-', '');
+  v_shift_legacy_id text := 'test-shift-' || replace(gen_random_uuid()::text, '-', '');
+  v_shift_payload jsonb;
   v_source_table_id uuid := gen_random_uuid();
   v_destination_table_id uuid := gen_random_uuid();
   v_source_order_id uuid := gen_random_uuid();
@@ -38,11 +43,44 @@ declare
   v_sync_payload jsonb;
   v_qty numeric;
   v_revision integer;
+  v_order_status text;
   v_count integer;
   v_failed boolean;
 begin
   insert into public.pos_branches (id, tenant_id, name, code)
   values (v_branch_id, v_tenant_id, 'Atomic transfer test', 'TST');
+
+  insert into public.pos_cash_registers (
+    id, tenant_id, branch_id, name, terminal_code, allows_billing, allows_ordering,
+    is_active, linked_zones, legacy_id
+  ) values (
+    v_register_id, v_tenant_id, v_branch_id, 'Caja test', '98101', true, true,
+    true, '[]'::jsonb, v_register_legacy_id
+  );
+
+  v_shift_payload := jsonb_build_object(
+      'shiftId', v_shift_legacy_id, 'cashRegisterId', v_register_legacy_id,
+      'status', 'OPEN', 'shiftNumber', 1, 'openedAt', now(),
+      'initialFloat', 5000, 'expectedCash', 5000, 'notes', '',
+      'linkedZones', jsonb_build_array('Test'),
+      'participants', jsonb_build_array(jsonb_build_object('userId', v_actor_id::text, 'userName', 'Prueba', 'userRole', 'ADMIN')),
+      'movements', '[]'::jsonb, 'systemSummary', jsonb_build_object('expectedCashInDrawer', 5000)
+    );
+  v_result := public.sync_pos_cash_shift(
+    v_tenant_id, 'test-open-shift', v_actor_id, null, 'OPEN',
+    v_shift_legacy_id, v_register_legacy_id, v_shift_payload
+  );
+  v_shift_cloud_id := (v_result ->> 'shiftId')::uuid;
+  if v_shift_cloud_id is null or v_result ->> 'status' <> 'OPEN' then
+    raise exception 'la RPC debe abrir y devolver un turno central';
+  end if;
+  v_result := public.sync_pos_cash_shift(
+    v_tenant_id, 'test-open-shift', v_actor_id, null, 'OPEN',
+    v_shift_legacy_id, v_register_legacy_id, v_shift_payload
+  );
+  if not coalesce((v_result ->> 'alreadyApplied')::boolean, false) then
+    raise exception 'el replay de apertura debe ser idempotente';
+  end if;
 
   insert into public.pos_tables (id, tenant_id, branch_id, name, table_number, zone, status)
   values
@@ -54,9 +92,9 @@ begin
     opened_by, server_name, idempotency_key, cloud_revision
   ) values
     (v_source_order_id, v_tenant_id, v_branch_id, v_source_table_id, v_source_order_number,
-      'OPEN', 'DINE_IN', v_actor_id, 'Prueba', 'order:' || v_tenant_id::text || ':' || v_source_order_number, 0),
+      'IN_PREPARATION', 'DINE_IN', v_actor_id, 'Prueba', 'order:' || v_tenant_id::text || ':' || v_source_order_number, 0),
     (v_destination_order_id, v_tenant_id, v_branch_id, v_destination_table_id, v_destination_order_number,
-      'OPEN', 'DINE_IN', v_actor_id, 'Prueba', 'order:' || v_tenant_id::text || ':' || v_destination_order_number, 0);
+      'READY', 'DINE_IN', v_actor_id, 'Prueba', 'order:' || v_tenant_id::text || ':' || v_destination_order_number, 0);
 
   -- Línea histórica sin client_item_id; se vinculará solo con snapshot único.
   insert into public.pos_order_items (
@@ -73,8 +111,43 @@ begin
     'selectedModifiers', '[]'::jsonb, 'notes', null, 'kdsStatus', 'PENDING'
   );
 
+  -- La RPC valida en servidor la zona destino contra el snapshot del turno.
+  update public.pos_tables set zone = 'Fuera del turno' where id = v_destination_table_id;
+  v_failed := false;
+  begin
+    perform public.transfer_pos_order_item(
+      v_tenant_id, 'test-zone-rejected', v_actor_id, null,
+      v_shift_cloud_id, v_source_order_number, v_destination_order_number,
+      'legacy-line-partial', 'zone-rejected-line', 1, 0, 0, v_snapshot_partial
+    );
+  exception when sqlstate '22023' then
+    if position('zona' in lower(sqlerrm)) > 0 then v_failed := true; else raise; end if;
+  end;
+  if not v_failed then raise exception 'se aceptó una mesa destino fuera de las zonas del turno'; end if;
+  update public.pos_tables set zone = 'Test' where id = v_destination_table_id;
+
+  -- Turno histórico sin linked_zones: el fallback de servidor usa las zonas de la caja.
+  update public.pos_cash_shifts set linked_zones = null where id = v_shift_cloud_id;
+  update public.pos_cash_registers set linked_zones = '["Test"]'::jsonb where id = v_register_id;
+  update public.pos_tables set zone = 'Fuera de la caja' where id = v_destination_table_id;
+  v_failed := false;
+  begin
+    perform public.transfer_pos_order_item(
+      v_tenant_id, 'test-register-zone-fallback', v_actor_id, null,
+      v_shift_cloud_id, v_source_order_number, v_destination_order_number,
+      'legacy-line-partial', 'register-zone-rejected-line', 1, 0, 0, v_snapshot_partial
+    );
+  exception when sqlstate '22023' then
+    if position('zona' in lower(sqlerrm)) > 0 then v_failed := true; else raise; end if;
+  end;
+  if not v_failed then raise exception 'se aceptó una mesa fuera de las zonas de la caja para un turno histórico'; end if;
+  update public.pos_tables set zone = 'Test' where id = v_destination_table_id;
+  update public.pos_cash_shifts set linked_zones = '["Test"]'::jsonb where id = v_shift_cloud_id;
+  update public.pos_cash_registers set linked_zones = '[]'::jsonb where id = v_register_id;
+
   v_result := public.transfer_pos_order_item(
     v_tenant_id, 'test-partial-transfer', v_actor_id, null,
+    v_shift_cloud_id,
     v_source_order_number, v_destination_order_number,
     'legacy-line-partial', 'partial-destination-line', 2, 0, 0, v_snapshot_partial
   );
@@ -98,6 +171,7 @@ begin
   -- Replay ambiguo devuelve el mismo resultado y no mueve producto ni revisiones otra vez.
   v_result := public.transfer_pos_order_item(
     v_tenant_id, 'test-partial-transfer', v_actor_id, null,
+    v_shift_cloud_id,
     v_source_order_number, v_destination_order_number,
     'legacy-line-partial', 'partial-destination-line', 2, 0, 0, v_snapshot_partial
   );
@@ -119,6 +193,7 @@ begin
   begin
     perform public.transfer_pos_order_item(
       v_tenant_id, 'test-partial-transfer', v_actor_id, null,
+    v_shift_cloud_id,
       v_source_order_number, v_destination_order_number,
       'legacy-line-partial', 'partial-destination-line', 1, 0, 0, v_snapshot_partial
     );
@@ -130,7 +205,7 @@ begin
   -- Aunque lleve un snapshot antiguo con cantidad 5, debe fallar antes de borrar/reinsertar.
   v_sync_payload := jsonb_build_object(
     'branch_id', v_branch_id,
-    'scope', jsonb_build_object('cash_register_id', null, 'cash_shift_id', null, 'terminal_id', null),
+    'scope', jsonb_build_object('cash_register_id', v_register_id, 'cash_shift_id', v_shift_cloud_id, 'terminal_id', null),
     'table', jsonb_build_object(
       'table_id', v_source_table_id, 'table_number', 981, 'name', 'Mesa test origen',
       'zone', 'Test', 'seats', 2, 'status', 'OCCUPIED',
@@ -169,6 +244,8 @@ begin
   v_sync_payload := jsonb_set(v_sync_payload, '{order,items,0,quantity}', '3'::jsonb);
   v_result := public.sync_pos_table_order(v_tenant_id, 'test-writer-wins', v_actor_id, null, v_sync_payload);
   if (v_result ->> 'cloudRevision')::integer <> 2 then raise exception 'el ganador CAS no dejó revisión 2'; end if;
+  select status into v_order_status from public.pos_orders where id = v_source_order_id;
+  if v_order_status <> 'IN_PREPARATION' then raise exception 'UPDATE_TABLE revirtió el estado de cocina a %', v_order_status; end if;
   v_sync_payload := jsonb_set(v_sync_payload, '{order,items,0,quantity}', '2'::jsonb);
   v_failed := false;
   begin
@@ -198,6 +275,7 @@ begin
   begin
     perform public.transfer_pos_order_item(
       v_tenant_id, 'test-stale-transfer', v_actor_id, null,
+    v_shift_cloud_id,
       v_source_order_number, v_destination_order_number,
       'legacy-line-partial', 'stale-destination-line', 1, 2, 1, v_snapshot_partial
     );
@@ -227,6 +305,7 @@ begin
   begin
     perform public.transfer_pos_order_item(
       v_tenant_id, 'test-failed-then-retry', v_actor_id, null,
+    v_shift_cloud_id,
       v_source_order_number, v_destination_order_number,
       'legacy-line-failure', 'failure-destination-line', 2, 3, 1, v_snapshot_failure
     );
@@ -252,12 +331,14 @@ begin
   execute 'drop trigger __pos_transfer_test_fail_before_dest_insert on public.pos_order_items';
   v_result := public.transfer_pos_order_item(
     v_tenant_id, 'test-failed-then-retry', v_actor_id, null,
+    v_shift_cloud_id,
     v_source_order_number, v_destination_order_number,
     'legacy-line-failure', 'failure-destination-line', 2, 3, 1, v_snapshot_failure
   );
   if coalesce((v_result ->> 'alreadyApplied')::boolean, true) then raise exception 'el retry tras rollback no debe ser replay'; end if;
   v_result := public.transfer_pos_order_item(
     v_tenant_id, 'test-failed-then-retry', v_actor_id, null,
+    v_shift_cloud_id,
     v_source_order_number, v_destination_order_number,
     'legacy-line-failure', 'failure-destination-line', 2, 3, 1, v_snapshot_failure
   );
@@ -275,6 +356,41 @@ begin
   select count(*) into v_count from public.pos_audit_events
   where tenant_id = v_tenant_id and request_id = 'test-failed-then-retry';
   if v_count <> 1 then raise exception 'auditoría exitosa debe contener una sola operación'; end if;
+
+  -- Cerrar centralmente el turno y asegurar que la RPC rechaza cualquier nuevo traslado.
+  v_result := public.sync_pos_cash_shift(
+    v_tenant_id, 'test-close-shift', v_actor_id, null, 'CLOSE',
+    v_shift_legacy_id, v_register_legacy_id,
+    jsonb_build_object(
+      'shiftId', v_shift_legacy_id, 'cashRegisterId', v_register_legacy_id,
+      'status', 'CLOSED', 'shiftNumber', 1, 'openedAt', now(), 'closedAt', now(),
+      'initialFloat', 5000, 'expectedCash', 5000, 'countedCash', 5000,
+      'countedCards', 0, 'countedSinpe', 0, 'difference', 0, 'notes', '',
+      'linkedZones', jsonb_build_array('Test'), 'participants', '[]'::jsonb,
+      'movements', '[]'::jsonb, 'systemSummary', jsonb_build_object('expectedCashInDrawer', 5000),
+      'cashBreakdown', null, 'dataphonesBreakdown', null, 'differenceReason', '', 'zReportGenerated', true
+    )
+  );
+  if v_result ->> 'status' <> 'CLOSED' then raise exception 'el cierre debe persistir estado CLOSED'; end if;
+  v_result := public.transfer_pos_order_item(
+    v_tenant_id, 'test-partial-transfer', v_actor_id, null,
+    v_shift_cloud_id, v_source_order_number, v_destination_order_number,
+    'legacy-line-partial', 'partial-destination-line', 2, 0, 0, v_snapshot_partial
+  );
+  if not coalesce((v_result ->> 'alreadyApplied')::boolean, false) then
+    raise exception 'un replay confirmado debe seguir siendo idempotente tras cerrar el turno';
+  end if;
+  v_failed := false;
+  begin
+    perform public.transfer_pos_order_item(
+      v_tenant_id, 'test-after-close-transfer', v_actor_id, null,
+      v_shift_cloud_id, v_source_order_number, v_destination_order_number,
+      'legacy-line-partial', 'closed-shift-line', 1, 4, 2, v_snapshot_partial
+    );
+  exception when sqlstate '22023' then
+    if position('CASH_SHIFT_NOT_OPEN' in sqlerrm) > 0 then v_failed := true; else raise; end if;
+  end;
+  if not v_failed then raise exception 'se aceptó un traslado después del cierre del turno'; end if;
 
   -- Un cambio de estado externo invalida snapshots anteriores.
   update public.pos_orders set status = 'CLOSED' where id = v_source_order_id;

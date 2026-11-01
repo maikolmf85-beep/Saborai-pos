@@ -1,33 +1,31 @@
-# Traslado atómico de productos y revisiones CAS
+# Traslado atómico de productos y revisión de comandas
 
-## Qué se encontró
+## Qué cambió en esta candidata
 
-El checkout no tenía una acción de traslado server-side: el cliente enviaba dos `UPDATE_TABLE` separados para origen y destino. Además, cada actualización de orden reemplazaba sus líneas; una respuesta de red perdida podía provocar un retry con otro ID y una copia antigua podía volver a introducir o borrar productos.
+La rama local fue rebasada sobre la base de producción `3bebcf6ea390ab5096b3fae04e2855748381f18f`, conservando el ajuste de Nyza. La ruta local de sincronización ahora contempla una sola operación de traslado y acciones idempotentes de apertura/cierre de turnos. No hubo push, merge, despliegue ni aplicación de SQL.
 
-## Qué quedó integrado localmente
+El traslado llama a una sola RPC propuesta, con ID de operación estable, control CAS sobre las dos comandas y ledger/auditoría dentro de una transacción. La cola conserva el mismo ID en reintentos, ordena apertura → operaciones → cierre mediante secuencia estable y evita reintentar a ciegas acciones dependientes después de conflictos.
 
-En la rama local, `POST /api/offline/sync` ahora enruta `UPDATE_TABLE` a `sync_pos_table_order` y `TRANSFER_TABLE_ITEM` a `transfer_pos_order_item`. El traslado es una única acción del cliente con un `operationId` estable. La RPC propuesta bloquea mesas y órdenes en un orden consistente, compara las dos revisiones esperadas y mueve la línea completa o parcial, incrementa ambas revisiones y registra el ledger/auditoría dentro de una transacción.
+## Turno, caja y zonas
 
-La metadata de esquema consultada confirmó que producción tiene `pos_cash_registers` y `pos_terminals`, pero `pos_orders` aún no tiene `cash_register_id` ni `terminal_id`. La propuesta se ajustó para agregar ambos campos nullable e idempotentes con FKs a esas tablas, y para validar tenant/sucursal/caja/turno/terminal dentro de la RPC sin depender de un trigger Phase 9 posiblemente pendiente. El preflight exige las tablas base y Phase 8; Phase 9 podrá aplicarse después y sus `ADD COLUMN IF NOT EXISTS` no duplicarán esos campos. Solo se consultó `information_schema`, no filas de operación.
+La UI transmite el ID del turno activo. La candidata sincroniza apertura y cierre como acciones separadas, guarda el `linked_zones` que estaba vigente al abrir y resuelve los IDs locales de turno/caja a sus registros cloud. La RPC de traslado propuesta bloquea caja y turno, exige que el turno siga `OPEN`, comprueba tenant/sucursal y permite el destino únicamente si su zona coincide exactamente con una zona cubierta. Una lista vacía conserva la semántica existente de “sin restricción de zona”. El guardado normal también valida que el turno asociado siga abierto.
 
-Los guardados normales incluyen `cloudRevision` y los IDs estables de cada línea. La RPC propuesta compara la revisión antes de reemplazar artículos, guarda el nuevo número y usa un ledger idempotente para un retry con el mismo ID y payload. La cola offline conserva el ID de operación, solo encadena revisiones de operaciones que aún no se enviaron, no rebasa automáticamente requests de resultado ambiguo y marca conflictos CAS como atención requerida; bloquea las acciones posteriores de las comandas afectadas. Los cambios de estado hechos por el flujo existente de pago incrementarían la revisión mediante un trigger propuesto.
+El cierre se autoriza en el endpoint usando el rol persistido de la sesión: responsable de apertura o un rol con override (`ADMIN`, `CAJERO` o `SALONERO_CAJA`). La RPC de turno usa ledger idempotente; la cola mantiene apertura/cierre en orden y bloquea los pedidos relacionados ante un error terminal.
 
-## Límite operativo importante
+## Estado de preparación y revisiones
 
-**La nube aún no ofrece esta garantía.** El endpoint y cliente locales llaman a `sync_pos_table_order` y `transfer_pos_order_item`, pero esas funciones no existen en la base hasta aplicar la propuesta SQL. No afirmo que el traslado o el CAS estén activos, ni que esta rama deba desplegarse antes de revisar y aprobar la SQL.
+La RPC de `UPDATE_TABLE` ya no fuerza `pos_orders.status = 'OPEN'`; conserva `SENT`, `IN_PREPARATION`, `READY` y los demás estados que ya existan. Solo los cambios reales de estado incrementan `cloud_revision` mediante el trigger, y los cambios de contenido suben la revisión una vez dentro de la RPC, sin doble incremento por el mismo guardado.
 
-Además, el POS no lee actualmente `pos_orders` para rehidratar comandas activas: usa snapshots locales y los comparte por Realtime entre dispositivos conectados. Una instalación con un snapshot antiguo o sin `cloudRevision` enviará revisión 0; el CAS rechazará el guardado en vez de sobrescribir la nube, pero no existe todavía una ruta de lectura/reconciliación automática para recuperar ese estado. Ese caso queda visible como conflicto y necesita conciliación antes de reintentar.
+La metadata consultada confirmó que producción tiene cajas y terminales, mientras `pos_orders` aún carece de `cash_register_id` y `terminal_id`. La SQL propuesta añade estas columnas nullable e idempotentes, además de revisar/declarar las dependencias de `legacy_id` y `linked_zones`; no consulta ni modifica filas existentes salvo DDL y no se ha ejecutado.
 
-El cierre del flujo de pago existente queda cubierto por el trigger de revisión diseñado, pero el pipeline de pago continúa siendo una secuencia de operaciones API separadas. Esta propuesta no lo convierte en una transacción atómica de pago.
+## Límite pendiente
 
-## SQL propuesto, no aplicado
+**La nube aún no ofrece esta garantía: estas reglas todavía no están activas.** El endpoint local llama a RPCs que no existen en producción hasta que se revise y apruebe esta versión exacta de la SQL. La SQL cambió desde la versión aprobada anteriormente; requiere una nueva aprobación explícita antes de cualquier aplicación. Se deja fuera de `supabase/migrations` y no se ejecutó contra Supabase.
 
-[`atomic-order-item-transfer.sql`](../../supabase/proposals/atomic-order-item-transfer.sql) está fuera de `supabase/migrations`. Incluye columna de revisión, trigger de cambios de estado, ledger para guardados normales, RPC de actualización CAS y RPC transaccional de traslado. No se ejecutó ni se conectó a Supabase.
+El POS todavía no rehidrata comandas activas desde `pos_orders`. Un dispositivo sin `cloudRevision` o con snapshot obsoleto puede enviar revisión 0; el CAS lo rechazará de forma segura, pero no hay una lectura/reconciliación automática de la comanda remota. El usuario deberá conciliar/actualizar el estado antes de reintentar. Tampoco se convierte el pipeline de pago/inventario/factura en una única transacción; el cambio de estado de pago solo invalida snapshots mediante el trigger propuesto.
 
-La prueba PostgreSQL [`atomic-order-item-transfer.integration.sql`](../../supabase/proposals/atomic-order-item-transfer.integration.sql) está preparada para una base desechable. Cubre traslado parcial, rollback ante fallo entre la reducción de origen y la inserción de destino, replay sin duplicados, guardado obsoleto tras un traslado, dos escritores con la misma revisión, idempotencia de guardado, revisión de ambos lados y cambio de estado. **No se ejecutó**, porque no hay PostgreSQL local desechable disponible y no se usaron credenciales ni datos reales.
+## SQL y pruebas
 
-## Validación y siguientes límites
+La propuesta [`atomic-order-item-transfer.sql`](../../supabase/proposals/atomic-order-item-transfer.sql) y el test [`atomic-order-item-transfer.integration.sql`](../../supabase/proposals/atomic-order-item-transfer.integration.sql) están fuera de migraciones activas. La prueba cubre apertura idempotente, destino fuera de zona, preservación de estado de cocina, rollback de traslado ante inserción fallida, replay sin duplicados, escritores CAS obsoletos, cierre de turno y rechazo de un nuevo traslado después del cierre. **La prueba SQL no se ejecutó ni se conectó a Supabase**: no hay PostgreSQL local desechable; no se usaron credenciales ni datos reales.
 
-La suite local de pruebas y el build deben validar el código cliente/endpoint; además, los tests unitarios ejercitan el encadenamiento de revisiones de la cola. Eso no sustituye ejecutar la prueba SQL en una base desechable ni aplicar la migración con aprobación.
-
-No se aplicó SQL, no se usaron secretos ni datos reales, y no se hizo push, merge ni despliegue. Antes de habilitar esto en un entorno, hay que revisar/aprobar la propuesta, ejecutar la prueba de integración contra PostgreSQL desechable y después planificar la migración con la aprobación correspondiente.
+La suite, el typecheck, el build y el lint locales verifican cliente/endpoint y contratos; no sustituyen ejecutar el SQL de integración en una base desechable ni revisar la propuesta antes de aprobarla. El cambio permanece en una rama local basada en el SHA de producción y no se publicó.

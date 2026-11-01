@@ -27,6 +27,19 @@ export function relatedOrderNumbers(action: string, payload: any): string[] {
   return [...new Set(candidates.map(orderNumber).filter((value): value is string => Boolean(value)))];
 }
 
+export function relatedCashShiftIds(action: string, payload: any): string[] {
+  const candidate = action === 'OPEN_CASH_SHIFT' || action === 'CLOSE_CASH_SHIFT'
+    ? payload?.shiftId
+    : action === 'UPDATE_TABLE' || action === 'TRANSFER_TABLE_ITEM'
+      ? payload?.cashShiftId
+      : null;
+  return typeof candidate === 'string' && candidate.trim() ? [candidate.trim()] : [];
+}
+
+export function isShiftLifecycleAction(action: string): boolean {
+  return action === 'OPEN_CASH_SHIFT' || action === 'CLOSE_CASH_SHIFT';
+}
+
 /**
  * Rebase only queue entries that are known not to have reached the server.
  * An ambiguous prior request must retain its original idempotency payload.

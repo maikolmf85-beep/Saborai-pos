@@ -38,3 +38,16 @@ test('sync de mesas admite roles operativos; pagos, inventario y facturas requie
   }
   assert.equal(hasRolePermission(undefined, ROLE_PERMISSIONS.offlineSync.PAYMENT), false);
 });
+
+test('apertura y cierre de turno admiten roles operativos, pero el cierre ajeno requiere override', () => {
+  for (const role of ['ADMIN', 'SALONERO', 'CAJERO', 'SALONERO_CAJA', 'WAITER']) {
+    assert.equal(hasRolePermission(role, ROLE_PERMISSIONS.offlineSync.OPEN_CASH_SHIFT), true);
+    assert.equal(hasRolePermission(role, ROLE_PERMISSIONS.offlineSync.CLOSE_CASH_SHIFT), true);
+  }
+  for (const role of ['ADMIN', 'CAJERO', 'SALONERO_CAJA']) {
+    assert.equal(hasRolePermission(role, ROLE_PERMISSIONS.cashShiftCloseOverride), true);
+  }
+  for (const role of ['SALONERO', 'WAITER']) {
+    assert.equal(hasRolePermission(role, ROLE_PERMISSIONS.cashShiftCloseOverride), false);
+  }
+});

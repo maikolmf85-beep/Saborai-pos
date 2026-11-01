@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { filterPendingItemsForTenant } from '../src/services/db.ts';
 import {
   readNonNegativeRevision,
   recordCommittedOrderRevisions,
+  isShiftLifecycleAction,
+  relatedCashShiftIds,
   relatedOrderNumbers,
   withLatestQueuedRevisions
 } from '../src/services/orderSyncRevisions.ts';
@@ -57,4 +60,33 @@ test('los pagos y demás operaciones de una comanda quedan bloqueados junto con 
   assert.deepEqual(relatedOrderNumbers('PAYMENT', { orderNumber: 'ORD-P' }), ['ORD-P']);
   assert.deepEqual(relatedOrderNumbers('DEDUCT_INVENTORY', { orderNumber: 'ORD-I' }), ['ORD-I']);
   assert.deepEqual(relatedOrderNumbers('UPDATE_TABLE', { activeOrder: { orderNumber: 'ORD-U' } }), ['ORD-U']);
+});
+
+
+test('las acciones de turno, comanda y traslado se asocian al mismo turno estable', () => {
+  assert.deepEqual(relatedCashShiftIds('OPEN_CASH_SHIFT', { shiftId: 'shift-local-1' }), ['shift-local-1']);
+  assert.deepEqual(relatedCashShiftIds('CLOSE_CASH_SHIFT', { shiftId: 'shift-local-1' }), ['shift-local-1']);
+  assert.deepEqual(relatedCashShiftIds('UPDATE_TABLE', { cashShiftId: 'shift-local-1' }), ['shift-local-1']);
+  assert.deepEqual(relatedCashShiftIds('TRANSFER_TABLE_ITEM', { cashShiftId: 'shift-local-1' }), ['shift-local-1']);
+  assert.equal(isShiftLifecycleAction('OPEN_CASH_SHIFT'), true);
+  assert.equal(isShiftLifecycleAction('TRANSFER_TABLE_ITEM'), false);
+});
+
+test('IDs vacíos o ausentes no crean dependencias falsas entre turnos', () => {
+  assert.deepEqual(relatedCashShiftIds('TRANSFER_TABLE_ITEM', { cashShiftId: '  ' }), []);
+  assert.deepEqual(relatedCashShiftIds('PAYMENT', { cashShiftId: 'shift-local-1' }), []);
+});
+
+
+test('la cola offline conserva apertura → operaciones → cierre mediante secuencia monotónica', () => {
+  const timestamp = '2026-11-01T12:00:00.000Z';
+  const base = { tenantId: 'tenant-1', synced: false, status: 'PENDING', timestamp };
+  const ordered = filterPendingItemsForTenant([
+    { ...base, id: 'close', sequence: 400, action: 'CLOSE_CASH_SHIFT', payload: { shiftId: 'shift-1' } },
+    { ...base, id: 'transfer', sequence: 300, action: 'TRANSFER_TABLE_ITEM', payload: { cashShiftId: 'shift-1' } },
+    { ...base, id: 'update', sequence: 200, action: 'UPDATE_TABLE', payload: { cashShiftId: 'shift-1' } },
+    { ...base, id: 'open', sequence: 100, action: 'OPEN_CASH_SHIFT', payload: { shiftId: 'shift-1' } },
+    { ...base, id: 'other-tenant', sequence: 50, tenantId: 'tenant-2', action: 'UPDATE_TABLE', payload: {} }
+  ], 'tenant-1');
+  assert.deepEqual(ordered.map(item => item.id), ['open', 'update', 'transfer', 'close']);
 });

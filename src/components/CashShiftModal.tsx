@@ -47,6 +47,7 @@ import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOpeningZones';
+import { syncCashShiftChange } from '../services/cashShiftSync';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -285,7 +286,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   ));
 
   // Handlers
-  const handleOpenShiftSubmit = () => {
+  const handleOpenShiftSubmit = async () => {
     setOpeningError(null);
 
     const cashierToUse = selectedOpeningCashier;
@@ -328,6 +329,9 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     try {
+      const previousLinkedZones = registerToOpen.linkedZones
+        ? [...registerToOpen.linkedZones]
+        : registerToOpen.linkedZone ? [registerToOpen.linkedZone] : null;
       const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
       const newShift = cashShiftService.openShift(
         tenant,
@@ -338,6 +342,16 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         undefined,
         validOpeningZones
       );
+      const syncResult = await syncCashShiftChange('OPEN_CASH_SHIFT', newShift, tenant.id);
+      if (syncResult.outcome === 'CONFLICT') {
+        cashShiftService.cancelLocalOpenShift(regIdToUse, newShift.id, previousLinkedZones);
+        setOpeningError(syncResult.error?.message || 'La nube rechazó la apertura; revisa el estado de la caja antes de continuar.');
+        soundService.playErrorBuzz();
+        return;
+      }
+      if (syncResult.outcome === 'QUEUED') {
+        setOpeningError('El turno quedó abierto en este dispositivo y su sincronización se reintentará al recuperar la conexión.');
+      }
       soundService.playSuccessChime();
       setOpeningPin('');
       setActiveShift(newShift);
@@ -412,7 +426,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       message: `Estás a punto de cerrar el turno de ${currentRegisterObj?.name || 'la caja'} y generar el Reporte Z oficial. Se registrará un total en efectivo contado de ₡${countedCashTotal.toLocaleString()} y datáfonos de ₡${totalDataphonesCounted.toLocaleString()}. ¿Deseas proceder?`,
       confirmLabel: 'Sí, cerrar turno',
       type: 'warning',
-      onConfirm: () => {
+      onConfirm: async () => {
         try {
           const { closedShift, zReport } = cashShiftService.closeShift(
             countedCashTotal,
@@ -424,6 +438,12 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             selectedRegisterId,
             dataphones
           );
+          const syncResult = await syncCashShiftChange('CLOSE_CASH_SHIFT', closedShift, tenant.id);
+          if (syncResult.outcome === 'CONFLICT') {
+            setCloseError(syncResult.error?.message || 'La nube rechazó el cierre; la operación quedó marcada para revisión.');
+          } else if (syncResult.outcome === 'QUEUED') {
+            setCloseError('El cierre quedó registrado en este dispositivo y se sincronizará al recuperar la conexión.');
+          }
 
           soundService.playSuccessChime();
           setActiveShift(null);

@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { supabaseAdmin } from '../_utils/supabase.js';
 import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
-import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
+import { hasRolePermission, ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ITEM', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ITEM', 'OPEN_CASH_SHIFT', 'CLOSE_CASH_SHIFT', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -21,17 +21,54 @@ type OperationalScope = {
 
 function readOperationalScope(payload: any): OperationalScope {
   const source = payload && typeof payload === 'object' ? payload : {};
-  const read = (value: unknown, label: string) => {
+  const readUuid = (value: unknown, label: string) => {
     if (value === undefined || value === null || value === '') return null;
     if (!isUuid(value)) rejectOrderSyncOperation(`${label} no tiene un UUID válido.`);
     return value;
   };
-  return {
-    branchId: read(source.branchId, 'branchId'),
-    cashRegisterId: read(source.cashRegisterId, 'cashRegisterId'),
-    cashShiftId: read(source.cashShiftId, 'cashShiftId'),
-    terminalId: read(source.terminalId, 'terminalId')
+  const readLocalId = (value: unknown, label: string) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || !value.trim() || value.trim().length > 160) {
+      rejectOrderSyncOperation(`${label} no es válido.`);
+    }
+    return value.trim();
   };
+  return {
+    branchId: readUuid(source.branchId, 'branchId'),
+    cashRegisterId: readLocalId(source.cashRegisterId, 'cashRegisterId'),
+    cashShiftId: readLocalId(source.cashShiftId, 'cashShiftId'),
+    terminalId: readUuid(source.terminalId, 'terminalId')
+  };
+}
+
+async function findCashRegisterByLocalId(tenantId: string, localId: string) {
+  if (isUuid(localId)) {
+    const byId = await supabaseAdmin.from('pos_cash_registers')
+      .select('id, tenant_id, branch_id, is_active, linked_zones, legacy_id')
+      .eq('tenant_id', tenantId).eq('id', localId).maybeSingle();
+    if (byId.error) throw new Error('No se pudo resolver la caja del turno.');
+    if (byId.data) return byId.data;
+  }
+  const byLegacyId = await supabaseAdmin.from('pos_cash_registers')
+    .select('id, tenant_id, branch_id, is_active, linked_zones, legacy_id')
+    .eq('tenant_id', tenantId).eq('legacy_id', localId).maybeSingle();
+  if (byLegacyId.error) throw new Error('No se pudo resolver la caja del turno.');
+  return byLegacyId.data;
+}
+
+async function findCashShiftByLocalId(tenantId: string, localId: string) {
+  if (isUuid(localId)) {
+    const byId = await supabaseAdmin.from('pos_cash_shifts')
+      .select('id, tenant_id, branch_id, cash_register_id, status, opened_by, participants, linked_zones, legacy_id')
+      .eq('tenant_id', tenantId).eq('id', localId).maybeSingle();
+    if (byId.error) throw new Error('No se pudo resolver el turno en la nube.');
+    if (byId.data) return byId.data;
+  }
+  const byLegacyId = await supabaseAdmin.from('pos_cash_shifts')
+    .select('id, tenant_id, branch_id, cash_register_id, status, opened_by, participants, linked_zones, legacy_id')
+    .eq('tenant_id', tenantId).eq('legacy_id', localId).maybeSingle();
+  if (byLegacyId.error) throw new Error('No se pudo resolver el turno en la nube.');
+  return byLegacyId.data;
 }
 
 function safeStatus(value: unknown): 'AVAILABLE' | 'OCCUPIED' | 'PRE_CHECK' | 'RESERVED' {
@@ -60,8 +97,17 @@ function rejectOrderSyncOperation(message: string): never {
   throw conflict;
 }
 
+function rejectCashShiftOperation(message: string, code = 'CASH_SHIFT_SYNC_REJECTED'): never {
+  const conflict = new Error(message);
+  (conflict as Error & { code?: string }).code = code;
+  throw conflict;
+}
+
 function throwOrderSyncRpcError(error: any): never {
-  if (error?.code === '40001' || String(error?.message || '').includes('STALE_ORDER_REVISION')) {
+  if (String(error?.message || '').includes('CASH_SHIFT_NOT_OPEN')) {
+    rejectCashShiftOperation('El turno de caja no está abierto en la nube.', 'CASH_SHIFT_NOT_OPEN');
+  }
+  if (String(error?.message || '').includes('STALE_ORDER_REVISION')) {
     const conflict = new Error('La comanda cambió en otro dispositivo. Se conserva esta operación para conciliación.');
     (conflict as Error & { code?: string }).code = 'STALE_ORDER_REVISION';
     throw conflict;
@@ -73,7 +119,20 @@ function throwOrderSyncRpcError(error: any): never {
 }
 
 async function syncTable(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
-  const scope = readOperationalScope(payload);
+  const requestedScope = readOperationalScope(payload);
+  let scope = requestedScope;
+  if (requestedScope.cashRegisterId) {
+    const register = await findCashRegisterByLocalId(tenantId, requestedScope.cashRegisterId);
+    if (!register || !register.is_active) rejectCashShiftOperation('La caja local no está sincronizada o se encuentra inactiva.');
+    scope = { ...scope, cashRegisterId: register.id };
+  }
+  if (requestedScope.cashShiftId) {
+    const shift = await findCashShiftByLocalId(tenantId, requestedScope.cashShiftId);
+    if (!shift) rejectCashShiftOperation('El turno local aún no está sincronizado.');
+    if (shift.status !== 'OPEN') rejectCashShiftOperation('El turno de caja no está abierto en la nube.', 'CASH_SHIFT_NOT_OPEN');
+    if (scope.cashRegisterId && scope.cashRegisterId !== shift.cash_register_id) rejectCashShiftOperation('La caja no corresponde al turno indicado.');
+    scope = { ...scope, cashShiftId: shift.id, cashRegisterId: shift.cash_register_id };
+  }
   const table = payload && typeof payload === 'object' ? payload : null;
   if (!table || typeof table.name !== 'string' || !table.name.trim()) rejectOrderSyncOperation('El payload de la mesa es inválido.');
 
@@ -188,11 +247,18 @@ async function syncOrderItemTransfer(tenantId: string, userId: string, employeeI
     rejectOrderSyncOperation('Las revisiones de las comandas no son válidas.');
   }
 
+  const requestedShiftId = typeof payload?.cashShiftId === 'string' ? payload.cashShiftId.trim() : '';
+  if (!requestedShiftId) rejectCashShiftOperation('El traslado requiere un turno de caja abierto.');
+  const shift = await findCashShiftByLocalId(tenantId, requestedShiftId);
+  if (!shift) rejectCashShiftOperation('El turno local aún no está sincronizado.');
+  if (shift.status !== 'OPEN') rejectCashShiftOperation('El turno de caja no está abierto en la nube.', 'CASH_SHIFT_NOT_OPEN');
+
   const result = await supabaseAdmin.rpc('transfer_pos_order_item', {
     p_tenant_id: tenantId,
     p_operation_id: operationId,
     p_actor_user_id: userId,
     p_actor_employee_id: employeeId || null,
+    p_cash_shift_id: shift.id,
     p_source_order_number: sourceOrderNumber,
     p_destination_order_number: destinationOrderNumber,
     p_source_client_item_id: sourceClientItemId,
@@ -205,6 +271,49 @@ async function syncOrderItemTransfer(tenantId: string, userId: string, employeeI
   if (result.error) throwOrderSyncRpcError(result.error);
   if (!result.data) throw new Error('La nube no devolvió el resultado del traslado.');
   return result.data;
+}
+
+async function syncCashShift(
+  tenantId: string,
+  userId: string,
+  employeeId: string | undefined,
+  operationId: string,
+  action: 'OPEN_CASH_SHIFT' | 'CLOSE_CASH_SHIFT',
+  payload: any
+) {
+  const shiftId = typeof payload?.shiftId === 'string' ? payload.shiftId.trim() : '';
+  const cashRegisterId = typeof payload?.cashRegisterId === 'string' ? payload.cashRegisterId.trim() : '';
+  const expectedStatus = action === 'OPEN_CASH_SHIFT' ? 'OPEN' : 'CLOSED';
+  if (!shiftId || shiftId.length > 160 || !cashRegisterId || cashRegisterId.length > 160) {
+    rejectCashShiftOperation('Falta el identificador estable del turno o de la caja.');
+  }
+  if (payload?.status !== expectedStatus) rejectCashShiftOperation('El estado del turno no coincide con la acción solicitada.');
+  const register = await findCashRegisterByLocalId(tenantId, cashRegisterId);
+  if (!register || !register.is_active) rejectCashShiftOperation('La caja local no está sincronizada o se encuentra inactiva.');
+
+  const rpc = await supabaseAdmin.rpc('sync_pos_cash_shift', {
+    p_tenant_id: tenantId,
+    p_operation_id: operationId,
+    p_actor_user_id: userId,
+    p_actor_employee_id: employeeId || null,
+    p_action: action === 'OPEN_CASH_SHIFT' ? 'OPEN' : 'CLOSE',
+    p_shift_id: shiftId,
+    p_cash_register_legacy_id: cashRegisterId,
+    p_payload: payload
+  });
+  if (rpc.error) {
+    if (String(rpc.error.message || '').includes('CASH_SHIFT_NOT_OPEN')) {
+      rejectCashShiftOperation('El turno no está abierto en la nube.', 'CASH_SHIFT_NOT_OPEN');
+    }
+    if (['22023', '23505', '23503'].includes(rpc.error.code || '')) {
+      rejectCashShiftOperation(rpc.error.message || 'El estado de caja/turno requiere conciliación.');
+    }
+    // Errores de concurrencia/transporte mantienen la misma clave para replay;
+    // la RPC revierte cualquier escritura parcial antes de devolverlos.
+    throw new Error(rpc.error.message || 'No se pudo sincronizar el turno en la nube.');
+  }
+  if (!rpc.data) throw new Error('La nube no devolvió el resultado del turno.');
+  return rpc.data;
 }
 
 async function syncEmployeeCredit(tenantId: string, userId: string, operationId: string, orderId: string, orderNumber: string, payload: any, amount: number) {
@@ -467,9 +576,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!SUPPORTED_ACTIONS.has(action)) {
     return res.status(422).json({ error: `La operación ${action || 'desconocida'} aún no está habilitada para sincronización.` });
   }
+  if ((action === 'OPEN_CASH_SHIFT' || action === 'CLOSE_CASH_SHIFT')
+    && !hasRolePermission(auth.role, ROLE_PERMISSIONS.offlineSync[action])) {
+    return res.status(403).json({ code: 'CASH_SHIFT_SYNC_REJECTED', error: 'El rol no puede sincronizar este turno.' });
+  }
   if (!requireRole(auth, res, ROLE_PERMISSIONS.offlineSync[action as keyof typeof ROLE_PERMISSIONS.offlineSync])) return;
+  if (action === 'CLOSE_CASH_SHIFT') {
+    const shiftId = typeof (body.payload as any)?.shiftId === 'string' ? (body.payload as any).shiftId.trim() : '';
+    const shift = shiftId ? await findCashShiftByLocalId(tenantId, shiftId) : null;
+    if (!shift) return res.status(409).json({ code: 'CASH_SHIFT_SYNC_REJECTED', error: 'No se encontró el turno que se intenta cerrar.' });
+    const opener = shift.opened_by;
+    const actorMatches = Boolean(opener && [auth.userId, auth.employeeId].filter(Boolean).includes(opener));
+    if (!actorMatches && !hasRolePermission(auth.role, ROLE_PERMISSIONS.cashShiftCloseOverride)) {
+      return res.status(403).json({
+        code: 'CASH_SHIFT_SYNC_REJECTED',
+        error: 'El cierre requiere al responsable de apertura o un rol autorizado.'
+      });
+    }
+  }
 
-  if (action !== 'UPDATE_TABLE' && action !== 'TRANSFER_TABLE_ITEM') {
+  if (!['UPDATE_TABLE', 'TRANSFER_TABLE_ITEM', 'OPEN_CASH_SHIFT', 'CLOSE_CASH_SHIFT'].includes(action)) {
     const existingAudit = await supabaseAdmin
       .from('pos_audit_events')
       .select('id, metadata')
@@ -485,7 +611,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
       : action === 'TRANSFER_TABLE_ITEM'
         ? await syncOrderItemTransfer(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-        : action === 'PAYMENT'
+        : action === 'OPEN_CASH_SHIFT' || action === 'CLOSE_CASH_SHIFT'
+          ? await syncCashShift(tenantId, auth.userId, auth.employeeId, operationId, action, body.payload)
+          : action === 'PAYMENT'
       ? await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
       : action === 'DEDUCT_INVENTORY'
         ? await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
@@ -495,7 +623,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, alreadyApplied: result?.alreadyApplied === true, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
-    const code = ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(error?.code) ? error.code : undefined;
+    const code = ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED', 'CASH_SHIFT_SYNC_REJECTED', 'CASH_SHIFT_NOT_OPEN'].includes(error?.code) ? error.code : undefined;
     return res.status(409).json({ code, error: error?.message || 'No se pudo aplicar la operación offline.' });
   }
 }

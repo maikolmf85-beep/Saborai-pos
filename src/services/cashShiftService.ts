@@ -77,7 +77,7 @@ class CashShiftService {
     this.cloudRealtimeUnsubscribe = cashControlCloudService.subscribe(tenantId, () => {
       void this.refreshFromCloud();
     });
-    void this.reconcileWithCloud(tenantId);
+    void this.reconcileWithCloud();
   }
 
   private resetInMemoryState(): void {
@@ -273,6 +273,19 @@ class CashShiftService {
   getActiveShift(registerId?: string): CashShift | null {
     const targetId = registerId || this.currentTerminalId;
     return this.activeShiftsMap[targetId] || null;
+  }
+
+  cancelLocalOpenShift(registerId: string, shiftId: string, previousLinkedZones: string[] | null): boolean {
+    const activeShift = this.activeShiftsMap[registerId];
+    if (!activeShift || activeShift.id !== shiftId || activeShift.status !== 'OPEN') return false;
+    delete this.activeShiftsMap[registerId];
+    const register = this.registers.find(item => item.id === registerId);
+    if (register) {
+      register.linkedZones = previousLinkedZones === null ? undefined : [...previousLinkedZones];
+      register.linkedZone = previousLinkedZones?.length === 1 ? previousLinkedZones[0] : undefined;
+    }
+    this.saveToStorage();
+    return true;
   }
 
   /** Añade al usuario al turno abierto; cambiar de usuario no cambia el turno. */
@@ -516,7 +529,7 @@ class CashShiftService {
     }
   }
 
-  private async reconcileWithCloud(tenantId: string): Promise<void> {
+  private async reconcileWithCloud(): Promise<void> {
     if (!cashControlCloudService.isAvailable()) return;
     try {
       // Al iniciar o cambiar de tenant, Supabase es la fuente de verdad.

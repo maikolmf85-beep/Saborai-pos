@@ -37,6 +37,7 @@ type CloudShift = {
   status: 'OPEN' | 'CLOSED' | 'VOIDED';
   shift_number: number | null;
   legacy_id?: string | null;
+  linked_zones?: string[] | null;
   opened_by?: string | null;
   closed_by?: string | null;
   opening_float?: number | null;
@@ -188,7 +189,7 @@ class CashControlCloudService {
         .order('terminal_code'),
       supabaseClient
         .from('pos_cash_shifts')
-        .select('id, tenant_id, branch_id, cash_register_id, status, shift_number, legacy_id, opened_by, closed_by, opening_float, expected_cash, counted_cash, difference, opened_at, closed_at, notes, participants, movements, system_summary, cash_breakdown, counted_cards, dataphones_breakdown, counted_sinpe, difference_reason, z_report_generated')
+        .select('id, tenant_id, branch_id, cash_register_id, status, shift_number, legacy_id, opened_by, closed_by, opening_float, expected_cash, counted_cash, difference, opened_at, closed_at, notes, participants, movements, system_summary, cash_breakdown, counted_cards, dataphones_breakdown, counted_sinpe, difference_reason, z_report_generated, linked_zones')
         .eq('tenant_id', tenantId)
         .order('opened_at', { ascending: false }),
       supabaseClient
@@ -247,6 +248,10 @@ class CashControlCloudService {
         cashRegisterId: localRegisterId,
         cashRegisterName: remoteRegister?.name || 'Caja',
         terminalCode: remoteRegister?.terminal_code || '00001',
+        linkedZones: Array.isArray(remote.linked_zones) ? remote.linked_zones : (remoteRegister?.linked_zones || []),
+        linkedZone: Array.isArray(remote.linked_zones) && remote.linked_zones.length === 1
+          ? remote.linked_zones[0]
+          : undefined,
         openedBy: {
           userId: remote.opened_by || firstParticipant?.userId || 'cloud-user',
           userName: firstParticipant?.userName || 'Usuario POS',
@@ -421,7 +426,8 @@ class CashControlCloudService {
         difference_reason: shift.differenceReason || null,
         z_report_generated: Boolean(shift.zReportGenerated),
         legacy_id: shift.id,
-        source_device_key: deviceKey
+        source_device_key: deviceKey,
+        linked_zones: shift.linkedZones || (shift.linkedZone ? [shift.linkedZone] : [])
       }).select('id').single();
       if (result.error) conflicts.push(`No se pudo importar el turno ${shift.shiftNumber}: ${result.error.message}`);
       else importedShifts += 1;

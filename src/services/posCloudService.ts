@@ -1,6 +1,8 @@
 import type { ElectronicInvoiceCR, Table } from '../types';
+import { cashShiftService } from './cashShiftService';
+import { localDB } from './db';
 
-export type PosCloudAction = 'UPDATE_TABLE' | 'TRANSFER_TABLE_ITEM' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
+export type PosCloudAction = 'UPDATE_TABLE' | 'TRANSFER_TABLE_ITEM' | 'OPEN_CASH_SHIFT' | 'CLOSE_CASH_SHIFT' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
 
 export interface SaleCloudPayload {
   table: Table;
@@ -86,13 +88,27 @@ class PosCloudService {
     const actor = getSessionActor();
     if (!actor) throw new Error('No se pudo verificar la identidad que inició la operación.');
 
+    let requestPayload = payload;
+    if (action === 'UPDATE_TABLE' || action === 'TRANSFER_TABLE_ITEM') {
+      const activeShift = cashShiftService.getActiveShift();
+      requestPayload = {
+        ...payload,
+        cashRegisterId: payload.cashRegisterId || (activeShift?.status === 'OPEN' ? activeShift.cashRegisterId : undefined),
+        cashShiftId: payload.cashShiftId || (activeShift?.status === 'OPEN' ? activeShift.id : undefined)
+      };
+      const shiftId = typeof requestPayload.cashShiftId === 'string' ? requestPayload.cashShiftId : '';
+      if (shiftId && await localDB.hasPendingCashShiftLifecycleAction(tenantId, shiftId)) {
+        throw new PosCloudSyncError('La apertura o el cierre de este turno aún está pendiente; la operación se guardará en cola.', 'SHIFT_SYNC_PENDING');
+      }
+    }
+
     const response = await fetch('/api/offline/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ operationId, tenantId, action, ...actor, payload })
+      body: JSON.stringify({ operationId, tenantId, action, ...actor, payload: requestPayload })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
