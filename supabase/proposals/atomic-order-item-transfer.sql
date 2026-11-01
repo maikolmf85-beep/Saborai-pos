@@ -1,9 +1,32 @@
 -- PROPUESTA LOCAL NO APLICADA.
 -- No copiar a supabase/migrations ni ejecutar contra Supabase sin aprobación explícita.
--- Requiere las migraciones POS existentes, incluidas columnas operativas y actor_employee_id.
+-- Requiere las tablas POS base, cajas, terminales y actor_employee_id existentes.
+-- Agrega de forma idempotente cash_register_id/terminal_id ausentes en pos_orders;
+-- Phase 9 puede ejecutarse después sin duplicar las columnas ni sus FKs.
 --
 -- El objetivo es que UPDATE_TABLE y TRANSFER_TABLE_ITEM tengan el mismo orden de locks,
 -- usen una revisión CAS por orden y escriban líneas/auditoría/ledger dentro de una transacción.
+
+do $$
+begin
+  if to_regclass('public.pos_orders') is null
+     or to_regclass('public.pos_order_items') is null
+     or to_regclass('public.pos_tables') is null
+     or to_regclass('public.pos_branches') is null
+     or to_regclass('public.pos_cash_registers') is null
+     or to_regclass('public.pos_cash_shifts') is null
+     or to_regclass('public.pos_terminals') is null
+     or to_regclass('public.pos_audit_events') is null then
+    raise exception using
+      errcode = '42P01',
+      message = 'Falta una tabla POS requerida (incluidas cajas/turnos/terminales); aplique primero el esquema base y Phase 8.';
+  end if;
+end;
+$$;
+
+alter table public.pos_orders
+  add column if not exists cash_register_id uuid references public.pos_cash_registers(id) on delete set null,
+  add column if not exists terminal_id uuid references public.pos_terminals(id) on delete set null;
 
 alter table public.pos_order_items
   add column if not exists client_item_id text;
@@ -105,6 +128,9 @@ declare
   v_cash_register_id uuid;
   v_cash_shift_id uuid;
   v_terminal_id uuid;
+  v_scope_tenant uuid;
+  v_scope_branch uuid;
+  v_scope_register uuid;
   v_table_input_id uuid;
   v_table_id uuid;
   v_table_number integer;
@@ -191,6 +217,47 @@ begin
   where id = v_branch_id and tenant_id = p_tenant_id and is_active = true;
   if not found then
     raise exception 'La sucursal no está activa para este tenant.' using errcode = '22023';
+  end if;
+
+  -- No depender del trigger Phase 9: producción puede tener las tablas de caja/
+  -- terminal pero aún no haber instalado ese trigger ni las columnas en órdenes.
+  if v_cash_register_id is not null then
+    select r.tenant_id, r.branch_id into v_scope_tenant, v_scope_branch
+    from public.pos_cash_registers r where r.id = v_cash_register_id;
+    if not found then
+      raise exception 'La caja indicada no existe.' using errcode = '22023';
+    end if;
+    if v_scope_tenant is distinct from p_tenant_id or v_scope_branch is distinct from v_branch_id then
+      raise exception 'La caja no pertenece al tenant o sucursal de la orden.' using errcode = '22023';
+    end if;
+  end if;
+
+  if v_cash_shift_id is not null then
+    select s.tenant_id, s.branch_id, s.cash_register_id
+      into v_scope_tenant, v_scope_branch, v_scope_register
+    from public.pos_cash_shifts s where s.id = v_cash_shift_id;
+    if not found then
+      raise exception 'El turno indicado no existe.' using errcode = '22023';
+    end if;
+    if v_scope_tenant is distinct from p_tenant_id
+       or v_scope_branch is distinct from v_branch_id
+       or (v_cash_register_id is not null and v_scope_register is distinct from v_cash_register_id) then
+      raise exception 'El turno no pertenece al tenant, sucursal o caja de la orden.' using errcode = '22023';
+    end if;
+  end if;
+
+  if v_terminal_id is not null then
+    select t.tenant_id, t.branch_id, t.cash_register_id
+      into v_scope_tenant, v_scope_branch, v_scope_register
+    from public.pos_terminals t where t.id = v_terminal_id;
+    if not found then
+      raise exception 'La terminal indicada no existe.' using errcode = '22023';
+    end if;
+    if v_scope_tenant is distinct from p_tenant_id
+       or v_scope_branch is distinct from v_branch_id
+       or (v_cash_register_id is not null and v_scope_register is distinct from v_cash_register_id) then
+      raise exception 'La terminal no pertenece al tenant, sucursal o caja de la orden.' using errcode = '22023';
+    end if;
   end if;
 
   -- Resolver mesa dentro del tenant/sucursal antes de escribir. Las tablas por

@@ -21,6 +21,9 @@ const queue = readFileSync(resolve(root, 'src/services/db.ts'), 'utf8');
 
 test('la propuesta declara revisiones y RPCs protegidas para orden y traslado', () => {
   assert.match(sql, /add column if not exists cloud_revision integer not null default 0/i);
+  assert.match(sql, /add column if not exists cash_register_id uuid references public\.pos_cash_registers\(id\) on delete set null/i);
+  assert.match(sql, /add column if not exists terminal_id uuid references public\.pos_terminals\(id\) on delete set null/i);
+  assert.match(sql, /to_regclass\('public\.pos_terminals'\)/i);
   assert.match(sql, /create or replace function public\.sync_pos_table_order\s*\(/i);
   assert.match(sql, /create or replace function public\.transfer_pos_order_item\s*\(/i);
   assert.match(sql, /security definer/i);
@@ -28,6 +31,14 @@ test('la propuesta declara revisiones y RPCs protegidas para orden y traslado', 
   assert.match(sql, /create unique index if not exists pos_order_items_client_item_id_uidx/i);
   assert.match(sql, /grant execute on function public\.sync_pos_table_order[\s\S]*to service_role/i);
   assert.match(sql, /grant execute on function public\.transfer_pos_order_item[\s\S]*to service_role/i);
+});
+
+test('las RPC no dependen del trigger Phase 9 para validar alcance operativo', () => {
+  assert.match(sql, /v_cash_register_id is not null[\s\S]*from public\.pos_cash_registers/i);
+  assert.match(sql, /v_cash_shift_id is not null[\s\S]*from public\.pos_cash_shifts/i);
+  assert.match(sql, /v_terminal_id is not null[\s\S]*from public\.pos_terminals/i);
+  assert.match(sql, /v_scope_tenant is distinct from p_tenant_id/i);
+  assert.match(sql, /v_scope_branch is distinct from v_branch_id/i);
 });
 
 test('UPDATE_TABLE usa ledger idempotente y compara cloud_revision antes de reemplazar líneas', () => {
