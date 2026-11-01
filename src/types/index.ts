@@ -102,6 +102,7 @@ export interface ActiveOrder {
   openedAt: string;
   subAccounts: SubAccount[];
   items: TableItem[];
+  cloudRevision?: number;
   executiveEmployeeId?: string;
   executiveEmployeeName?: string;
 }

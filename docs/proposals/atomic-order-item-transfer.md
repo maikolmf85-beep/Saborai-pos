@@ -1,51 +1,31 @@
-# Propuesta pendiente: traslado atómico entre comandas
+# Traslado atómico de productos y revisiones CAS
 
-## Hallazgo
+## Qué se encontró
 
-No existe en el checkout una acción de traslado server-side ni una RPC que actualice ambas comandas. El handler actual de `UPDATE_TABLE` llama secuencialmente a `pos_tables.upsert`, actualiza `pos_orders`, elimina y vuelve a insertar `pos_order_items`, y escribe el evento de auditoría al final. Cada request de origen y destino es independiente; no comparte transacción.
+El checkout no tenía una acción de traslado server-side: el cliente enviaba dos `UPDATE_TABLE` separados para origen y destino. Además, cada actualización de orden reemplazaba sus líneas; una respuesta de red perdida podía provocar un retry con otro ID y una copia antigua podía volver a introducir o borrar productos.
 
-El código de traslado actual llama a `UPDATE_TABLE` dos veces con operation IDs generados por separado. Si se pierde la respuesta después de que una escritura se haya confirmado, el cliente puede encolar otra operación con otro ID. La cola offline también genera un ID nuevo al encolar, por lo que no puede deduplicar con certeza ese resultado ambiguo. En consecuencia, el comportamiento actual **no es atómico en la nube** y no se debe integrar, desplegar ni presentar como atómico.
+## Qué quedó integrado localmente
 
-## Propuesta SQL
+En la rama local, `POST /api/offline/sync` ahora enruta `UPDATE_TABLE` a `sync_pos_table_order` y `TRANSFER_TABLE_ITEM` a `transfer_pos_order_item`. El traslado es una única acción del cliente con un `operationId` estable. La RPC propuesta bloquea mesas y órdenes en un orden consistente, compara las dos revisiones esperadas y mueve la línea completa o parcial, incrementa ambas revisiones y registra el ledger/auditoría dentro de una transacción.
 
-El archivo [`atomic-order-item-transfer.sql`](../../supabase/proposals/atomic-order-item-transfer.sql) es una propuesta, fuera de `supabase/migrations`; no se ha aplicado ni ejecutado contra Supabase.
+Los guardados normales incluyen `cloudRevision` y los IDs estables de cada línea. La RPC propuesta compara la revisión antes de reemplazar artículos, guarda el nuevo número y usa un ledger idempotente para un retry con el mismo ID y payload. La cola offline conserva el ID de operación, solo encadena revisiones de operaciones que aún no se enviaron, no rebasa automáticamente requests de resultado ambiguo y marca conflictos CAS como atención requerida; bloquea las acciones posteriores de las comandas afectadas. Los cambios de estado hechos por el flujo existente de pago incrementarían la revisión mediante un trigger propuesto.
 
-Incluye una columna `client_item_id` para conservar el ID de la línea que usa el POS, un índice único por orden y una tabla de idempotencia. La RPC `transfer_pos_order_item`:
+## Límite operativo importante
 
-- valida tenant, comandas activas, mesas distintas de la misma sucursal, snapshot vigente y cantidad;
-- bloquea las mesas y comandas antes de modificar líneas;
-- mueve una línea completa actualizando su `order_id`, o una cantidad parcial reduciendo origen e insertando destino;
-- guarda resultado, ledger idempotente y auditoría dentro de la misma transacción PostgreSQL;
-- devuelve el mismo resultado ante el mismo `operation_id`; rechaza reutilizarlo con otro actor o payload;
-- resuelve líneas antiguas sin `client_item_id` solo si el snapshot coincide exactamente con una fila; si la coincidencia es ambigua o está desactualizada, rechaza sin modificar datos.
+**La nube aún no ofrece esta garantía.** El endpoint y cliente locales llaman a `sync_pos_table_order` y `transfer_pos_order_item`, pero esas funciones no existen en la base hasta aplicar la propuesta SQL. No afirmo que el traslado o el CAS estén activos, ni que esta rama deba desplegarse antes de revisar y aprobar la SQL.
 
-## Contrato que debe integrarse después de aprobar
+Además, el POS no lee actualmente `pos_orders` para rehidratar comandas activas: usa snapshots locales y los comparte por Realtime entre dispositivos conectados. Una instalación con un snapshot antiguo o sin `cloudRevision` enviará revisión 0; el CAS rechazará el guardado en vez de sobrescribir la nube, pero no existe todavía una ruta de lectura/reconciliación automática para recuperar ese estado. Ese caso queda visible como conflicto y necesita conciliación antes de reintentar.
 
-El endpoint existente `POST /api/offline/sync` deberá admitir una única acción `TRANSFER_TABLE_ITEM` y delegar en una llamada a `supabaseAdmin.rpc('transfer_pos_order_item', ...)`. La autorización debe reutilizar la sesión, el actor y el permiso de actualización de mesas; para esta acción, el endpoint no debe tratar el evento de auditoría genérico como sustituto del ledger de la RPC.
+El cierre del flujo de pago existente queda cubierto por el trigger de revisión diseñado, pero el pipeline de pago continúa siendo una secuencia de operaciones API separadas. Esta propuesta no lo convierte en una transacción atómica de pago.
 
-Payload propuesto:
+## SQL propuesto, no aplicado
 
-```ts
-type TransferTableItemPayload = {
-  sourceOrderNumber: string;
-  destinationOrderNumber: string;
-  sourceClientItemId: string;
-  destinationClientItemId: string; // igual al origen si es traslado completo; nuevo si es parcial
-  quantity: number;
-  sourceItemSnapshot: TableItem;
-};
-```
+[`atomic-order-item-transfer.sql`](../../supabase/proposals/atomic-order-item-transfer.sql) está fuera de `supabase/migrations`. Incluye columna de revisión, trigger de cambios de estado, ledger para guardados normales, RPC de actualización CAS y RPC transaccional de traslado. No se ejecutó ni se conectó a Supabase.
 
-El cliente debe generar un único `operationId` antes de llamar al endpoint y reutilizarlo exactamente al persistir/reintentar la acción offline. Eso requiere ampliar `OfflineSyncQueueItem.action` y `enqueueOfflineAction` para aceptar ese ID, además de persistir `item.id` como `client_item_id` en las sincronizaciones ordinarias. El traslado no debe volver a llamar `UPDATE_TABLE` por separado para origen y destino.
+La prueba PostgreSQL [`atomic-order-item-transfer.integration.sql`](../../supabase/proposals/atomic-order-item-transfer.integration.sql) está preparada para una base desechable. Cubre traslado parcial, rollback ante fallo entre la reducción de origen y la inserción de destino, replay sin duplicados, guardado obsoleto tras un traslado, dos escritores con la misma revisión, idempotencia de guardado, revisión de ambos lados y cambio de estado. **No se ejecutó**, porque no hay PostgreSQL local desechable disponible y no se usaron credenciales ni datos reales.
 
-La cola puede guardar el traslado como una sola acción mientras no hay conexión; eso no significa que la nube ya lo haya aplicado. Una vez que el servidor recibe la operación, el commit del movimiento, el ledger y la auditoría es único. La integración debe conservar errores de validación/conflicto en la cola local y distinguirlos de fallos reintentables para evitar reintentos inútiles; nunca debe borrar la acción sin confirmación server-side.
+## Validación y siguientes límites
 
-## Pruebas preparadas
+La suite local de pruebas y el build deben validar el código cliente/endpoint; además, los tests unitarios ejercitan el encadenamiento de revisiones de la cola. Eso no sustituye ejecutar la prueba SQL en una base desechable ni aplicar la migración con aprobación.
 
-[`atomic-order-item-transfer.integration.sql`](../../supabase/proposals/atomic-order-item-transfer.integration.sql) es una prueba de integración para una base desechable después de aprobar y aplicar la propuesta. Verifica un traslado parcial, replay idempotente, rechazo de payload diferente con la misma clave y un fallo inyectado después de reducir la cantidad origen pero antes de insertar destino; luego comprueba rollback total y que reintentar la misma clave produce un solo movimiento.
-
-La prueba SQL aún no se ejecutó: este entorno no tiene `psql` ni una instancia PostgreSQL/Supabase disponible. No se usaron credenciales ni datos reales. La única prueba ejecutable ahora es un test estático de contrato que valida los elementos esenciales del borrador; no sustituye la prueba PostgreSQL.
-
-## Decisión pendiente
-
-Se necesita aprobación antes de convertir el archivo en una migración activa o aplicar SQL. Después de aprobar, el siguiente cambio debe integrar endpoint, cola offline y cliente como una sola acción server-side; hasta entonces, la rama actual sigue teniendo dos escrituras `UPDATE_TABLE` y no ofrece atomicidad en la nube.
+No se aplicó SQL, no se usaron secretos ni datos reales, y no se hizo push, merge ni despliegue. Antes de habilitar esto en un entorno, hay que revisar/aprobar la propuesta, ejecutar la prueba de integración contra PostgreSQL desechable y después planificar la migración con la aprobación correspondiente.

@@ -1,6 +1,6 @@
 import type { ElectronicInvoiceCR, Table } from '../types';
 
-export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
+export type PosCloudAction = 'UPDATE_TABLE' | 'TRANSFER_TABLE_ITEM' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
 
 export interface SaleCloudPayload {
   table: Table;
@@ -11,15 +11,55 @@ export interface SaleCloudPayload {
   items: Array<{ name: string; quantity: number; menuItemId?: string }>;
 }
 
-export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
-  const orderNumber = sale.table.activeOrder?.orderNumber;
-  if (!orderNumber) throw new Error('La venta no tiene número de orden.');
-  return `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}:payment`;
+export interface OrderSyncResult {
+  tableId?: string;
+  orderId?: string | null;
+  orderNumber?: string;
+  cloudRevision?: number;
 }
 
-function createOperationId(action: PosCloudAction): string {
+export interface TransferSyncResult {
+  sourceRevision: number;
+  destinationRevision: number;
+  sourceOrderNumber: string;
+  destinationOrderNumber: string;
+}
+
+export class PosCloudSyncError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'PosCloudSyncError';
+    this.code = code;
+  }
+}
+
+export function createOperationId(action: PosCloudAction): string {
   const randomId = globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2);
   return `pos_${action.toLowerCase()}_${Date.now()}_${randomId}`;
+}
+
+function saleOperationPrefix(tenantId: string, sale: SaleCloudPayload): string {
+  const orderNumber = sale.table.activeOrder?.orderNumber;
+  if (!orderNumber) throw new Error('La venta no tiene número de orden.');
+  return `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
+}
+
+export function saleOrderOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  return `${saleOperationPrefix(tenantId, sale)}:order`;
+}
+
+export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  return `${saleOperationPrefix(tenantId, sale)}:payment`;
+}
+
+export function saleInventoryOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  return `${saleOperationPrefix(tenantId, sale)}:inventory`;
+}
+
+export function saleInvoiceOperationId(tenantId: string, sale: SaleCloudPayload): string {
+  return `${saleOperationPrefix(tenantId, sale)}:invoice`;
 }
 
 function getToken(): string | null {
@@ -55,18 +95,23 @@ class PosCloudService {
       body: JSON.stringify({ operationId, tenantId, action, ...actor, payload })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `No se pudo sincronizar ${action}.`);
+    if (!response.ok) {
+      throw new PosCloudSyncError(data.error || `No se pudo sincronizar ${action}.`, data.code);
+    }
     return data.result as T;
   }
 
-  async syncSale(tenantId: string, sale: SaleCloudPayload): Promise<void> {
+  async syncSale(tenantId: string, sale: SaleCloudPayload): Promise<OrderSyncResult> {
     const orderNumber = sale.table.activeOrder?.orderNumber;
     if (!orderNumber) throw new Error('La venta no tiene número de orden.');
 
-    const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
-    const paymentOperationId = salePaymentOperationId(tenantId, sale);
-    await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
-    await this.syncOperation('PAYMENT', {
+    const orderResult = await this.syncOperation<OrderSyncResult>(
+      'UPDATE_TABLE',
+      sale.table as unknown as Record<string, unknown>,
+      tenantId,
+      saleOrderOperationId(tenantId, sale)
+    );
+    const paymentResult = await this.syncOperation<OrderSyncResult & { orderId?: string; paymentIds?: string[] }>('PAYMENT', {
       orderNumber,
       payments: [{
         amount: sale.total,
@@ -79,15 +124,15 @@ class PosCloudService {
         ? {
             employeeId: sale.table.activeOrder.executiveEmployeeId,
             employeeName: sale.table.activeOrder.executiveEmployeeName || 'Trabajador',
-            idempotencyKey: `credit:${paymentOperationId}`
+            idempotencyKey: `credit:${salePaymentOperationId(tenantId, sale)}`
           }
         : undefined,
       closeOrder: sale.closeOrder
-    }, tenantId, paymentOperationId);
+    }, tenantId, salePaymentOperationId(tenantId, sale));
     await this.syncOperation('DEDUCT_INVENTORY', {
       orderNumber,
       items: sale.items
-    }, tenantId, `${operationPrefix}:inventory`);
+    }, tenantId, saleInventoryOperationId(tenantId, sale));
     await this.syncOperation('EMIT_INVOICE', {
       orderNumber,
       clave: sale.invoice.clave50Digitos,
@@ -96,7 +141,14 @@ class PosCloudService {
       total: sale.invoice.totalComprobante,
       invoiceData: sale.invoice,
       xmlContent: sale.invoice.xmlContent
-    }, tenantId, `${operationPrefix}:invoice`);
+    }, tenantId, saleInvoiceOperationId(tenantId, sale));
+
+    return {
+      orderId: paymentResult.orderId || orderResult.orderId,
+      orderNumber,
+      tableId: orderResult.tableId,
+      cloudRevision: paymentResult.cloudRevision ?? orderResult.cloudRevision
+    };
   }
 }
 

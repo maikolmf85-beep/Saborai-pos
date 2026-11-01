@@ -1,4 +1,5 @@
 // IndexedDB Native Service for Offline-First POS Operation in Costa Rica
+import { recordCommittedOrderRevisions, relatedOrderNumbers, withLatestQueuedRevisions } from './orderSyncRevisions.ts';
 
 const DB_NAME = 'saborai_pos_local_db';
 const DB_VERSION = 3;
@@ -17,17 +18,18 @@ export interface TenantOfflineSnapshot {
 
 export interface OfflineSyncQueueItem {
   id: string;
-  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'PAYMENT';
+  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'TRANSFER_TABLE_ITEM' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'PAYMENT';
   payload: any;
   timestamp: string;
   tenantId?: string;
   actorUserId?: string;
   actorEmployeeId?: string | null;
   synced: boolean;
-  status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
+  status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED' | 'CONFLICT';
   attemptCount?: number;
   nextAttemptAt?: string;
   lastError?: string;
+  mayHaveBeenSent?: boolean;
   description: string;
 }
 
@@ -187,12 +189,20 @@ export class SaboraiLocalDB {
     });
   }
 
-  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
-    const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+  async enqueueOfflineAction(
+    action: OfflineSyncQueueItem['action'],
+    payload: any,
+    description?: string,
+    tenantId?: string,
+    operationId?: string,
+    options: { mayHaveBeenSent?: boolean; conflict?: boolean; lastError?: string } = {}
+  ): Promise<void> {
+    const stableOperationId = operationId?.trim()
+      || `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
     const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const item: OfflineSyncQueueItem = {
-      id: operationId,
+      id: stableOperationId,
       action,
       payload,
       timestamp: new Date().toISOString(),
@@ -200,8 +210,10 @@ export class SaboraiLocalDB {
       actorUserId,
       actorEmployeeId,
       synced: false,
-      status: 'PENDING',
+      status: options.conflict ? 'CONFLICT' : 'PENDING',
       attemptCount: 0,
+      mayHaveBeenSent: options.mayHaveBeenSent ?? false,
+      lastError: options.lastError,
       description: description || `Operación ${action} almacenada en memoria local`
     };
 
@@ -285,16 +297,26 @@ export class SaboraiLocalDB {
     });
   }
 
-  async syncAllPending(tenantId = this.activeTenantId ?? ''): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
-    if (!tenantId) return { syncedCount: 0, failedCount: 0, remainingCount: 0 };
+  private async markConflict(item: OfflineSyncQueueItem, message: string): Promise<void> {
+    await this.updateQueueItem({
+      ...item,
+      status: 'CONFLICT',
+      synced: false,
+      nextAttemptAt: undefined,
+      lastError: message
+    });
+  }
+
+  async syncAllPending(tenantId = this.activeTenantId ?? ''): Promise<{ syncedCount: number; failedCount: number; conflictCount: number; remainingCount: number }> {
+    if (!tenantId) return { syncedCount: 0, failedCount: 0, conflictCount: 0, remainingCount: 0 };
     if (this.syncInFlight) {
-      return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount(tenantId) };
+      return { syncedCount: 0, failedCount: 0, conflictCount: 0, remainingCount: await this.getPendingCount(tenantId) };
     }
     this.syncInFlight = true;
     const pending = await this.getPendingItems(tenantId);
     if (!this.isOnline() || pending.length === 0) {
       this.syncInFlight = false;
-      return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
+      return { syncedCount: 0, failedCount: 0, conflictCount: 0, remainingCount: pending.length };
     }
 
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
@@ -306,12 +328,22 @@ export class SaboraiLocalDB {
       const remainingCount = await this.getPendingCount(tenantId);
       await this.notifyActiveTenantCount();
       this.syncInFlight = false;
-      return { syncedCount: 0, failedCount: pending.length, remainingCount };
+      return { syncedCount: 0, failedCount: pending.length, conflictCount: 0, remainingCount };
     }
 
     let syncedCount = 0;
     let failedCount = 0;
+    let conflictCount = 0;
+    const revisions = new Map<string, number>();
+    const blockedOrders = new Set<string>();
     for (const originalItem of pending) {
+      const affectedOrders = relatedOrderNumbers(originalItem.action, originalItem.payload);
+      if (affectedOrders.some(orderNumber => blockedOrders.has(orderNumber))) continue;
+      if (originalItem.status === 'CONFLICT') {
+        conflictCount += 1;
+        affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
+        continue;
+      }
       if (!originalItem.actorUserId || !originalItem.tenantId) {
         await this.updateQueueItem({
           ...originalItem,
@@ -320,14 +352,32 @@ export class SaboraiLocalDB {
           lastError: 'No se puede verificar el tenant o la identidad original de esta operación. Se conserva localmente y no se enviará automáticamente.'
         });
         failedCount += 1;
+        affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
         continue;
       }
       if (originalItem.actorUserId !== accountUserId
         || (originalItem.actorEmployeeId || null) !== (employeeId || null)
-        || originalItem.tenantId !== activeTenantId) continue;
-      if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
+        || originalItem.tenantId !== activeTenantId) {
+        affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
+        continue;
+      }
+      if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) {
+        affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
+        continue;
+      }
 
-      const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
+      const payload = withLatestQueuedRevisions(
+        originalItem.action,
+        originalItem.payload,
+        revisions,
+        Boolean(originalItem.mayHaveBeenSent)
+      );
+      const processingItem: OfflineSyncQueueItem = {
+        ...originalItem,
+        payload,
+        status: 'PROCESSING',
+        mayHaveBeenSent: true
+      };
       await this.updateQueueItem(processingItem);
       try {
         const response = await fetch('/api/offline/sync', {
@@ -344,7 +394,30 @@ export class SaboraiLocalDB {
           })
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status}`);
+        if (!response.ok) {
+          const message = data.error || `Error HTTP ${response.status}`;
+          if (['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(data.code)) {
+            await this.markConflict(processingItem, message);
+            conflictCount += 1;
+          } else {
+            await this.markFailed(processingItem, message);
+            failedCount += 1;
+          }
+          affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
+          continue;
+        }
+
+        const revisionUpdates = recordCommittedOrderRevisions(
+          processingItem.action,
+          processingItem.payload,
+          data.result,
+          revisions
+        );
+        if (revisionUpdates.length && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('saborai_order_cloud_revision', {
+            detail: { tenantId: processingItem.tenantId, updates: revisionUpdates }
+          }));
+        }
 
         await this.updateQueueItem({
           ...processingItem,
@@ -357,13 +430,14 @@ export class SaboraiLocalDB {
       } catch (error: any) {
         await this.markFailed(processingItem, error?.message || 'No se pudo sincronizar la operación.');
         failedCount += 1;
+        affectedOrders.forEach(orderNumber => blockedOrders.add(orderNumber));
       }
     }
 
     const remainingCount = await this.getPendingCount(tenantId);
     await this.notifyActiveTenantCount();
     this.syncInFlight = false;
-    return { syncedCount, failedCount, remainingCount };
+    return { syncedCount, failedCount, conflictCount, remainingCount };
   }
 }
 

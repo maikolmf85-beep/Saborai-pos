@@ -6,7 +6,7 @@ import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ITEM', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -23,7 +23,7 @@ function readOperationalScope(payload: any): OperationalScope {
   const source = payload && typeof payload === 'object' ? payload : {};
   const read = (value: unknown, label: string) => {
     if (value === undefined || value === null || value === '') return null;
-    if (!isUuid(value)) throw new Error(`${label} no tiene un UUID válido.`);
+    if (!isUuid(value)) rejectOrderSyncOperation(`${label} no tiene un UUID válido.`);
     return value;
   };
   return {
@@ -54,13 +54,31 @@ async function findBranch(tenantId: string, branchId?: string | null) {
   return data;
 }
 
+function rejectOrderSyncOperation(message: string): never {
+  const conflict = new Error(message);
+  (conflict as Error & { code?: string }).code = 'ORDER_SYNC_REJECTED';
+  throw conflict;
+}
+
+function throwOrderSyncRpcError(error: any): never {
+  if (error?.code === '40001' || String(error?.message || '').includes('STALE_ORDER_REVISION')) {
+    const conflict = new Error('La comanda cambió en otro dispositivo. Se conserva esta operación para conciliación.');
+    (conflict as Error & { code?: string }).code = 'STALE_ORDER_REVISION';
+    throw conflict;
+  }
+  if (error?.code === '22023' || error?.code === '23505') {
+    rejectOrderSyncOperation(error?.message || 'La operación requiere revisar el estado actual de la comanda.');
+  }
+  throw new Error(error?.message || 'No se pudo guardar la comanda en la nube.');
+}
+
 async function syncTable(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
   const scope = readOperationalScope(payload);
   const table = payload && typeof payload === 'object' ? payload : null;
-  if (!table || !table.name) throw new Error('El payload de la mesa es inválido.');
+  if (!table || typeof table.name !== 'string' || !table.name.trim()) rejectOrderSyncOperation('El payload de la mesa es inválido.');
 
   const branch = await findBranch(tenantId, scope.branchId);
-  if (!branch) throw new Error('No existe una sucursal activa para este restaurante.');
+  if (!branch) rejectOrderSyncOperation('No existe una sucursal activa para este restaurante.');
 
   let existingTable: { id: string } | null = null;
   if (isUuid(table.id)) {
@@ -83,89 +101,21 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
     existingTable = result.data;
   }
 
-  const tableRow: Record<string, unknown> = {
-    tenant_id: tenantId,
-    branch_id: branch.id,
-    name: String(table.name).slice(0, 120),
-    table_number: Number.isInteger(table.number) ? table.number : null,
-    zone: typeof table.zone === 'string' && table.zone.trim() ? table.zone.trim().slice(0, 120) : 'Principal',
-    seats: Math.max(1, Math.floor(safeNumber(table.seats, 2))),
-    status: safeStatus(table.status),
-    position: {
-      x: safeNumber(table.x, 0),
-      y: safeNumber(table.y, 0),
-      rotation: safeNumber(table.rotation, 0),
-      shape: table.shape === 'round' || table.shape === 'bar' ? table.shape : 'square'
-    },
-    updated_at: new Date().toISOString()
-  };
-
-  if (existingTable) tableRow.id = existingTable.id;
-  const tableResult = await supabaseAdmin.from('pos_tables').upsert(tableRow, { onConflict: 'id' }).select('id').single();
-  if (tableResult.error || !tableResult.data) throw new Error('No se pudo guardar la mesa en la nube.');
-
   const activeOrder = table.activeOrder;
-  let orderId: string | null = null;
-  if (activeOrder && typeof activeOrder.orderNumber === 'string' && activeOrder.orderNumber.trim()) {
-    const orderKey = `order:${tenantId}:${activeOrder.orderNumber.trim()}`;
-    const existingOrder = await supabaseAdmin
-      .from('pos_orders')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('idempotency_key', orderKey)
-      .maybeSingle();
-
-    if (existingOrder.data) {
-      orderId = existingOrder.data.id;
-      const updateResult = await supabaseAdmin
-        .from('pos_orders')
-        .update({
-          branch_id: branch.id,
-          ...(scope.cashRegisterId ? { cash_register_id: scope.cashRegisterId } : {}),
-          ...(scope.cashShiftId ? { cash_shift_id: scope.cashShiftId } : {}),
-          ...(scope.terminalId ? { terminal_id: scope.terminalId } : {}),
-          table_id: tableResult.data.id,
-          server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
-          status: 'OPEN'
-        })
-        .eq('id', orderId)
-        .eq('tenant_id', tenantId);
-      if (updateResult.error) throw new Error('No se pudo actualizar la orden en la nube.');
-      const deleteItemsResult = await supabaseAdmin
-        .from('pos_order_items')
-        .delete()
-        .eq('order_id', orderId)
-        .eq('tenant_id', tenantId);
-      if (deleteItemsResult.error) throw new Error('No se pudieron actualizar los artículos de la orden.');
-    } else {
-      const orderResult = await supabaseAdmin
-        .from('pos_orders')
-        .insert({
-          tenant_id: tenantId,
-          branch_id: branch.id,
-          cash_register_id: scope.cashRegisterId,
-          cash_shift_id: scope.cashShiftId,
-          terminal_id: scope.terminalId,
-          table_id: tableResult.data.id,
-          order_number: activeOrder.orderNumber.trim().slice(0, 80),
-          status: 'OPEN',
-          service_type: String(table.id || '').startsWith('takeaway_') ? 'TAKEAWAY' : 'DINE_IN',
-          opened_by: userId,
-          server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
-          opened_at: activeOrder.openedAt || new Date().toISOString(),
-          idempotency_key: orderKey
-        })
-        .select('id')
-        .single();
-      if (orderResult.error || !orderResult.data) throw new Error('No se pudo guardar la orden en la nube.');
-      orderId = orderResult.data.id;
-
+  let orderPayload: Record<string, unknown> | null = null;
+  if (activeOrder !== undefined && activeOrder !== null) {
+    if (typeof activeOrder.orderNumber !== 'string' || !activeOrder.orderNumber.trim()) {
+      rejectOrderSyncOperation('La orden no contiene un número válido.');
     }
+    const revision = activeOrder.cloudRevision === undefined ? 0 : safeNumber(activeOrder.cloudRevision, Number.NaN);
+    if (!Number.isSafeInteger(revision) || revision < 0) rejectOrderSyncOperation('cloudRevision no es una revisión válida.');
     const items = Array.isArray(activeOrder.items) ? activeOrder.items : [];
-    if (items.length > 0) {
-      const itemRows = items.map((item: any) => ({
-        tenant_id: tenantId,
-        order_id: orderId,
+    const normalizedItems = items.map((item: any) => {
+      if (!item || typeof item !== 'object') rejectOrderSyncOperation('Una línea de la orden no contiene un objeto de producto válido.');
+      const clientItemId = typeof item.id === 'string' ? item.id.trim() : '';
+      if (!clientItemId || clientItemId.length > 160) rejectOrderSyncOperation('Cada producto debe tener un identificador estable para sincronizar la comanda.');
+      return {
+        client_item_id: clientItemId,
         menu_item_id: isUuid(item.id) ? item.id : null,
         name_snapshot: String(item.name || 'Producto').slice(0, 200),
         quantity: Math.max(0.001, safeNumber(item.quantity, 1)),
@@ -175,24 +125,86 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
         notes: typeof item.notes === 'string' ? item.notes.slice(0, 500) : null,
         station: item.category === 'Bar' ? 'Bar' : item.category === 'Postres' ? 'Postres' : 'Cocina',
         kds_status: item.kdsStatus || 'PENDING'
-      }));
-      const itemResult = await supabaseAdmin.from('pos_order_items').insert(itemRows);
-      if (itemResult.error) throw new Error('No se pudieron guardar los artículos de la orden.');
-    }
+      };
+    });
+    orderPayload = {
+      order_number: activeOrder.orderNumber.trim().slice(0, 80),
+      expected_revision: revision,
+      server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
+      opened_at: typeof activeOrder.openedAt === 'string' ? activeOrder.openedAt : null,
+      service_type: String(table.id || '').startsWith('takeaway_') ? 'TAKEAWAY' : 'DINE_IN',
+      items: normalizedItems
+    };
   }
 
-  await supabaseAdmin.from('pos_audit_events').insert({
-    tenant_id: tenantId,
-    actor_user_id: userId,
-    action: 'OFFLINE_SYNC',
-    actor_employee_id: employeeId || null,
-    entity_type: 'TABLE',
-    entity_id: tableResult.data.id,
-    request_id: operationId,
-    metadata: { orderId, tableNumber: table.number, source: 'pwa' }
+  const rpcPayload = {
+    branch_id: branch.id,
+    scope: {
+      cash_register_id: scope.cashRegisterId,
+      cash_shift_id: scope.cashShiftId,
+      terminal_id: scope.terminalId
+    },
+    table: {
+      table_id: existingTable?.id || (isUuid(table.id) ? table.id : null),
+      table_number: Number.isInteger(table.number) ? table.number : null,
+      name: String(table.name).slice(0, 120),
+      zone: typeof table.zone === 'string' && table.zone.trim() ? table.zone.trim().slice(0, 120) : 'Principal',
+      seats: Math.max(1, Math.floor(safeNumber(table.seats, 2))),
+      status: safeStatus(table.status),
+      position: {
+        x: safeNumber(table.x, 0),
+        y: safeNumber(table.y, 0),
+        rotation: safeNumber(table.rotation, 0),
+        shape: table.shape === 'round' || table.shape === 'bar' ? table.shape : 'square'
+      }
+    },
+    order: orderPayload
+  };
+  const result = await supabaseAdmin.rpc('sync_pos_table_order', {
+    p_tenant_id: tenantId,
+    p_operation_id: operationId,
+    p_actor_user_id: userId,
+    p_actor_employee_id: employeeId || null,
+    p_payload: rpcPayload
   });
+  if (result.error) throwOrderSyncRpcError(result.error);
+  if (!result.data) throw new Error('La nube no devolvió el resultado de sincronizar la comanda.');
+  return result.data;
+}
 
-  return { tableId: tableResult.data.id, orderId };
+async function syncOrderItemTransfer(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
+  const sourceOrderNumber = typeof payload?.sourceOrderNumber === 'string' ? payload.sourceOrderNumber.trim() : '';
+  const destinationOrderNumber = typeof payload?.destinationOrderNumber === 'string' ? payload.destinationOrderNumber.trim() : '';
+  const sourceClientItemId = typeof payload?.sourceClientItemId === 'string' ? payload.sourceClientItemId.trim() : '';
+  const destinationClientItemId = typeof payload?.destinationClientItemId === 'string' ? payload.destinationClientItemId.trim() : '';
+  const quantity = safeNumber(payload?.quantity, 0);
+  const expectedSourceRevision = safeNumber(payload?.expectedSourceRevision, Number.NaN);
+  const expectedDestinationRevision = safeNumber(payload?.expectedDestinationRevision, Number.NaN);
+  if (!sourceOrderNumber || !destinationOrderNumber || sourceOrderNumber === destinationOrderNumber) rejectOrderSyncOperation('Las comandas de origen y destino deben ser distintas y válidas.');
+  if (!sourceClientItemId || !destinationClientItemId || !payload?.sourceItemSnapshot || typeof payload.sourceItemSnapshot !== 'object' || Array.isArray(payload.sourceItemSnapshot)) rejectOrderSyncOperation('Faltan los identificadores estables o el snapshot del producto trasladado.');
+  if (!Number.isFinite(quantity) || quantity <= 0) rejectOrderSyncOperation('La cantidad trasladada debe ser positiva.');
+  if (!Number.isSafeInteger(expectedSourceRevision) || expectedSourceRevision < 0
+    || !Number.isSafeInteger(expectedDestinationRevision) || expectedDestinationRevision < 0) {
+    rejectOrderSyncOperation('Las revisiones de las comandas no son válidas.');
+  }
+
+  const result = await supabaseAdmin.rpc('transfer_pos_order_item', {
+    p_tenant_id: tenantId,
+    p_operation_id: operationId,
+    p_actor_user_id: userId,
+    p_actor_employee_id: employeeId || null,
+    p_source_order_number: sourceOrderNumber,
+    p_destination_order_number: destinationOrderNumber,
+    p_source_client_item_id: sourceClientItemId,
+    p_destination_client_item_id: destinationClientItemId,
+    p_quantity: quantity,
+    p_expected_source_revision: expectedSourceRevision,
+    p_expected_destination_revision: expectedDestinationRevision,
+    p_source_item_snapshot: payload.sourceItemSnapshot
+  });
+  if (result.error) throwOrderSyncRpcError(result.error);
+  if (!result.data) throw new Error('La nube no devolvió el resultado del traslado.');
+  return result.data;
 }
 
 async function syncEmployeeCredit(tenantId: string, userId: string, operationId: string, orderId: string, orderNumber: string, payload: any, amount: number) {
@@ -224,7 +236,7 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
 
   const orderResult = await supabaseAdmin
     .from('pos_orders')
-    .select('id, branch_id, cash_shift_id, cash_register_id, terminal_id')
+    .select('id, branch_id, cash_shift_id, cash_register_id, terminal_id, cloud_revision')
     .eq('tenant_id', tenantId)
     .eq('idempotency_key', `order:${tenantId}:${orderNumber}`)
     .maybeSingle();
@@ -277,13 +289,17 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
     .reduce((total: number, payment: any) => total + safeNumber(payment?.amount, 0), 0);
   if (creditAmount > 0) await syncEmployeeCredit(tenantId, userId, operationId, orderResult.data.id, orderNumber, payload, creditAmount);
 
+  let cloudRevision = safeNumber(orderResult.data.cloud_revision, 0);
   if (payload?.closeOrder === true) {
     const closeResult = await supabaseAdmin
       .from('pos_orders')
       .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
       .eq('id', orderResult.data.id)
-      .eq('tenant_id', tenantId);
-    if (closeResult.error) throw new Error('No se pudo cerrar la orden en la nube.');
+      .eq('tenant_id', tenantId)
+      .select('cloud_revision')
+      .single();
+    if (closeResult.error || !closeResult.data) throw new Error('No se pudo cerrar la orden en la nube.');
+    cloudRevision = safeNumber(closeResult.data.cloud_revision, cloudRevision);
   }
 
   await supabaseAdmin.from('pos_audit_events').insert({
@@ -294,10 +310,10 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
     entity_type: 'PAYMENT',
     entity_id: orderResult.data.id,
     request_id: operationId,
-    metadata: { paymentIds: inserted, orderNumber, status: 'PENDING', source: 'pwa' }
+    metadata: { paymentIds: inserted, orderNumber, status: 'PENDING', source: 'pwa', cloudRevision }
   });
 
-  return { orderId: orderResult.data.id, paymentIds: inserted, status: 'PENDING' };
+  return { orderId: orderResult.data.id, orderNumber, paymentIds: inserted, status: 'PENDING', cloudRevision };
 }
 
 async function findOrder(tenantId: string, orderNumber: unknown) {
@@ -453,26 +469,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (!requireRole(auth, res, ROLE_PERMISSIONS.offlineSync[action as keyof typeof ROLE_PERMISSIONS.offlineSync])) return;
 
-  const existingAudit = await supabaseAdmin
-    .from('pos_audit_events')
-    .select('id, metadata')
-    .eq('tenant_id', tenantId)
-    .eq('request_id', operationId)
-    .limit(1)
-    .maybeSingle();
-  if (existingAudit.data) return res.status(200).json({ success: true, alreadyApplied: true, result: existingAudit.data.metadata });
+  if (action !== 'UPDATE_TABLE' && action !== 'TRANSFER_TABLE_ITEM') {
+    const existingAudit = await supabaseAdmin
+      .from('pos_audit_events')
+      .select('id, metadata')
+      .eq('tenant_id', tenantId)
+      .eq('request_id', operationId)
+      .limit(1)
+      .maybeSingle();
+    if (existingAudit.data) return res.status(200).json({ success: true, alreadyApplied: true, result: existingAudit.data.metadata });
+  }
 
   try {
-    const result = action === 'PAYMENT'
+    const result = action === 'UPDATE_TABLE'
+      ? await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+      : action === 'TRANSFER_TABLE_ITEM'
+        ? await syncOrderItemTransfer(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+        : action === 'PAYMENT'
       ? await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
       : action === 'DEDUCT_INVENTORY'
         ? await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
         : action === 'EMIT_INVOICE'
           ? await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-          : await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    return res.status(200).json({ success: true, alreadyApplied: false, result });
+          : null;
+    return res.status(200).json({ success: true, alreadyApplied: result?.alreadyApplied === true, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
-    return res.status(409).json({ error: error?.message || 'No se pudo aplicar la operación offline.' });
+    const code = ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(error?.code) ? error.code : undefined;
+    return res.status(409).json({ code, error: error?.message || 'No se pudo aplicar la operación offline.' });
   }
 }

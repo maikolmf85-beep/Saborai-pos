@@ -50,7 +50,9 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
     setIsSyncing(false);
     setItems(await localDB.getPendingItems(tenantId));
     setSyncSuccessMsg(
-      result.failedCount > 0
+      result.conflictCount > 0
+        ? `${result.syncedCount} sincronizadas, ${result.conflictCount} con conflicto que requiere conciliación. Se conservan localmente. Quedan ${result.remainingCount} pendientes.`
+        : result.failedCount > 0
         ? `${result.syncedCount} sincronizadas, ${result.failedCount} con error. Quedan ${result.remainingCount} pendientes.`
         : `${result.syncedCount} operaciones sincronizadas. Quedan ${result.remainingCount} pendientes.`
     );
@@ -107,7 +109,7 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
 
           <p className="text-[11px] leading-relaxed opacity-90">
             {isOnline
-              ? 'Los datos operativos guardados localmente están disponibles. Las operaciones pendientes se conservarán hasta que exista un sincronizador de nube idempotente.'
+              ? 'Los datos operativos están disponibles localmente. Las operaciones pendientes se envían con la identidad original; los conflictos se conservan para conciliación.'
               : 'El menú, las mesas y los datos operativos disponibles localmente siguen accesibles. Los cobros y la facturación electrónica requieren conexión.'}
           </p>
           <p className="text-[11px] leading-relaxed opacity-90">
@@ -151,8 +153,8 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
                       </span>
                     )}
                   </div>
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${it.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
-                    {it.status === 'FAILED' ? 'Error / reintento' : 'Pendiente'}
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${it.status === 'CONFLICT' ? 'bg-orange-100 text-orange-900' : it.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {it.status === 'CONFLICT' ? 'Revisión requerida' : it.status === 'FAILED' ? 'Error / reintento' : 'Pendiente'}
                   </span>
                 </div>
               ))

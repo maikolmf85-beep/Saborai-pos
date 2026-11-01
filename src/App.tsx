@@ -36,7 +36,8 @@ import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
-import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
+import { createOperationId, OrderSyncResult, PosCloudSyncError, posCloudService, SaleCloudPayload, saleInvoiceOperationId, saleInventoryOperationId, saleOrderOperationId, salePaymentOperationId, TransferSyncResult } from './services/posCloudService';
+import { readNonNegativeRevision } from './services/orderSyncRevisions';
 import { transferOrderItemAcrossTables } from './services/orderItemTransfer';
 import { employeeCreditService } from './services/employeeCreditService';
 import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
@@ -808,6 +809,39 @@ export function App() {
   }, [tenant.id]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
+  const applyOrderCloudRevision = (orderNumber: string, revisionValue: unknown) => {
+    const revision = readNonNegativeRevision(revisionValue);
+    if (!orderNumber || revision === null) return;
+    let changed = false;
+    const nextTables = tablesRef.current.map(table => {
+      if (table.activeOrder?.orderNumber !== orderNumber) return table;
+      const currentRevision = readNonNegativeRevision(table.activeOrder.cloudRevision) ?? 0;
+      if (revision <= currentRevision) return table;
+      changed = true;
+      const updated = { ...table, activeOrder: { ...table.activeOrder, cloudRevision: revision } };
+      void localDB.saveItem('tables', updated);
+      return updated;
+    });
+    if (changed) handleUpdateTables(nextTables);
+    setSelectedTableForOrder(current => {
+      if (current?.activeOrder?.orderNumber !== orderNumber) return current;
+      const currentRevision = readNonNegativeRevision(current.activeOrder.cloudRevision) ?? 0;
+      return revision > currentRevision
+        ? { ...current, activeOrder: { ...current.activeOrder, cloudRevision: revision } }
+        : current;
+    });
+  };
+  const applyOrderCloudRevisionRef = useRef(applyOrderCloudRevision);
+  applyOrderCloudRevisionRef.current = applyOrderCloudRevision;
+  useEffect(() => {
+    const handleOrderRevision = (event: Event) => {
+      const detail = (event as CustomEvent<{ tenantId?: string; updates?: Array<{ orderNumber: string; cloudRevision: number }> }>).detail;
+      if (detail?.tenantId !== tenant.id || !Array.isArray(detail.updates)) return;
+      detail.updates.forEach(update => applyOrderCloudRevisionRef.current(update.orderNumber, update.cloudRevision));
+    };
+    window.addEventListener('saborai_order_cloud_revision', handleOrderRevision);
+    return () => window.removeEventListener('saborai_order_cloud_revision', handleOrderRevision);
+  }, [tenant.id]);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
@@ -1487,20 +1521,28 @@ export function App() {
     }
 
     if (localDB.isOnline()) {
-      void posCloudService.syncSale(tenant.id, sale).then(() => {
+      void posCloudService.syncSale(tenant.id, sale).then(result => {
+        if (result.cloudRevision !== undefined) applyOrderCloudRevision(sale.table.activeOrder?.orderNumber || '', result.cloudRevision);
         void employeeCreditService.refreshLedger(tenant.id).catch(error => console.warn('[Employee Credit] No se pudo actualizar la vista local:', error));
       }).catch(async error => {
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
-        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id);
+        const orderSyncConflict = error instanceof PosCloudSyncError && ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(error.code || '');
+        await localDB.enqueueOfflineAction(
+          'UPDATE_TABLE', sale.table, `Comanda previa al pago en ${sale.table.name}`, tenant.id,
+          saleOrderOperationId(tenant.id, sale),
+          { mayHaveBeenSent: !orderSyncConflict, conflict: orderSyncConflict, lastError: orderSyncConflict ? error.message : undefined }
+        );
+        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id, salePaymentOperationId(tenant.id, sale), { mayHaveBeenSent: true });
+        await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id, saleInventoryOperationId(tenant.id, sale), { mayHaveBeenSent: true });
+        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id, saleInvoiceOperationId(tenant.id, sale), { mayHaveBeenSent: true });
       });
       return;
     }
 
-    void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id);
+    void localDB.enqueueOfflineAction('UPDATE_TABLE', sale.table, `Comanda previa al pago en ${sale.table.name}`, tenant.id, saleOrderOperationId(tenant.id, sale));
+    void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id, salePaymentOperationId(tenant.id, sale));
+    void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id, saleInventoryOperationId(tenant.id, sale));
+    void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id, saleInvoiceOperationId(tenant.id, sale));
   };
 
   const handleSaveOrder = (updatedTable: Table) => {
@@ -1605,11 +1647,24 @@ export function App() {
     localDB.saveItem('tables', updatedTable);
 
     const orderDescription = `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`;
+    const operationId = createOperationId('UPDATE_TABLE');
     if (localDB.isOnline()) {
-      void posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id)
-        .catch(() => localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id));
+      void posCloudService.syncOperation<OrderSyncResult>('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id, operationId)
+        .then(result => {
+          if (result.cloudRevision !== undefined && updatedTable.activeOrder?.orderNumber) {
+            applyOrderCloudRevision(updatedTable.activeOrder.orderNumber, result.cloudRevision);
+          }
+        })
+        .catch(error => {
+          const orderSyncConflict = error instanceof PosCloudSyncError && ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(error.code || '');
+          return localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id, operationId, {
+            mayHaveBeenSent: !orderSyncConflict,
+            conflict: orderSyncConflict,
+            lastError: orderSyncConflict ? error.message : undefined
+          });
+        });
     } else {
-      void localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id);
+      void localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id, operationId);
     }
   };
 
@@ -1635,18 +1690,21 @@ export function App() {
     quantity: number
   ): Table | null => {
     const currentTables = tablesRef.current;
+    const currentSource = currentTables.find(table => table.id === sourceTable.id);
     const destination = currentTables.find(table => table.id === targetTableId);
     const activeShift = cashShiftService.getActiveShift();
-    if (!destination || !hasActiveShiftForZone(destination.zone, {
+    if (!currentSource?.activeOrder || !destination?.activeOrder || !hasActiveShiftForZone(destination.zone, {
       hasActiveShift: Boolean(activeShift),
       activeShiftZone: activeShift?.linkedZone,
       activeShiftZones: activeShift?.linkedZones
     })) return null;
 
+    const sourceItemSnapshot = currentSource.activeOrder.items.find(item => item.id === itemId);
+    if (!sourceItemSnapshot) return null;
     const result = transferOrderItemAcrossTables(
       currentTables,
       kdsOrders,
-      sourceTable,
+      currentSource,
       targetTableId,
       itemId,
       quantity
@@ -1654,18 +1712,41 @@ export function App() {
     if (!result) return null;
 
     handleUpdateTables(result.tables);
-    setSelectedTableForOrder(current => current?.id === sourceTable.id ? result.sourceTable : current);
+    setSelectedTableForOrder(current => current?.id === currentSource.id ? result.sourceTable : current);
     handleUpdateKdsOrdersRealtime(result.kdsOrders);
 
     for (const updatedTable of [result.sourceTable, result.destinationTable]) {
       localDB.saveItem('tables', updatedTable);
-      const description = `Comanda actualizada en ${updatedTable.name} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`;
-      if (localDB.isOnline()) {
-        void posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id)
-          .catch(() => localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, description, tenant.id));
-      } else {
-        void localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, description, tenant.id);
-      }
+    }
+
+    const transferPayload = {
+      sourceOrderNumber: currentSource.activeOrder.orderNumber,
+      destinationOrderNumber: destination.activeOrder.orderNumber,
+      sourceClientItemId: itemId,
+      destinationClientItemId: result.movedItem.id,
+      quantity,
+      expectedSourceRevision: currentSource.activeOrder.cloudRevision ?? 0,
+      expectedDestinationRevision: destination.activeOrder.cloudRevision ?? 0,
+      sourceItemSnapshot
+    };
+    const operationId = createOperationId('TRANSFER_TABLE_ITEM');
+    const description = `Traslado de producto: ${currentSource.name} → ${destination.name}`;
+    if (localDB.isOnline()) {
+      void posCloudService.syncOperation<TransferSyncResult>(
+        'TRANSFER_TABLE_ITEM', transferPayload, tenant.id, operationId
+      ).then(syncResult => {
+        applyOrderCloudRevision(syncResult.sourceOrderNumber, syncResult.sourceRevision);
+        applyOrderCloudRevision(syncResult.destinationOrderNumber, syncResult.destinationRevision);
+      }).catch(error => {
+        const orderSyncConflict = error instanceof PosCloudSyncError && ['STALE_ORDER_REVISION', 'ORDER_SYNC_REJECTED'].includes(error.code || '');
+        return localDB.enqueueOfflineAction('TRANSFER_TABLE_ITEM', transferPayload, description, tenant.id, operationId, {
+          mayHaveBeenSent: !orderSyncConflict,
+          conflict: orderSyncConflict,
+          lastError: orderSyncConflict ? error.message : undefined
+        });
+      });
+    } else {
+      void localDB.enqueueOfflineAction('TRANSFER_TABLE_ITEM', transferPayload, description, tenant.id, operationId);
     }
 
     return result.sourceTable;
