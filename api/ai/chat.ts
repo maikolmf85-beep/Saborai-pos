@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { authenticateRequest, handleOptions, setCorsHeaders } from '../_utils/security.js';
+import { NYZA_GLOBAL_DEADLINE_MS, runNyzaModelRequests } from './nyzaRetryPolicy.js';
 
 try {
   dotenv.config();
@@ -203,7 +204,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const cleanUserText = userText.trim();
-  const providerErrors: string[] = [];
 
   if (isSimpleGreeting(cleanUserText)) {
     return res.status(200).json({
@@ -294,68 +294,73 @@ ${needsMenu ? `Menú relevante:\n${menuSummary || 'catálogo vacío'}` : 'No se 
     process.env.GEMINI_API_TOKEN
   ) : '';
   if (geminiKey) {
-    const geminiModels = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
-
+    let ai: GoogleGenAI;
     try {
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      for (const modelName of geminiModels) {
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-          try {
-            const response = await ai.models.generateContent({
-              model: modelName,
-              contents: [{
-                role: 'user',
-                parts: [{ text: `${baseInstruction}\n\n${fullPrompt}` }]
-              }],
-              config: { tools: nyzaUITools as any }
-            });
-
-            const rawText = extractAssistantText(response.text || '');
-            const functionAction = functionCallToAction(response.functionCalls?.[0]);
-            if (functionAction) {
-              return res.status(200).json({
-                success: true,
-                response: rawText || 'Puedo proponer esa acción para que la revises.',
-                rawResponse: rawText,
-                action: functionAction,
-                provider: 'gemini-function-calling',
-                model: modelName
-              });
-            }
-            if (rawText) {
-              const parsed = parseAction(rawText);
-              return res.status(200).json({
-                success: true,
-                response: parsed.display || rawText,
-                rawResponse: rawText,
-                action: parsed.action,
-                provider: 'gemini',
-                model: modelName
-              });
-            }
-          } catch (modelError: any) {
-            const message = String(modelError?.message || modelError);
-            const transient = /503|429|unavailable|high demand|resource_exhausted|overloaded/i.test(message);
-            if (transient && attempt === 0) {
-              await new Promise(resolve => setTimeout(resolve, 900));
-              continue;
-            }
-            providerErrors.push(`Gemini ${modelName}: ${message.slice(0, 240)}`);
-            console.warn(`[API AI Chat] Modelo ${modelName} no disponible:`, message);
-          }
-        }
-      }
-    } catch (providerError: any) {
-      providerErrors.push(`Gemini: ${String(providerError?.message || providerError).slice(0, 240)}`);
-      console.warn('[API AI Chat] Error conectando a Gemini:', providerError?.message || providerError);
+      ai = new GoogleGenAI({ apiKey: geminiKey });
+    } catch {
+      return res.status(502).json({
+        error: 'Nyza no pudo inicializar el proveedor de IA. Revisa su configuración y permisos; si persiste, contacta soporte.'
+      });
     }
-  }
 
-  if (providerErrors.length > 0) {
-    const detail = Array.from(new Set(providerErrors)).slice(-2).join(' | ');
+    const result = await runNyzaModelRequests(async (modelName, abortSignal) => {
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: [{
+          role: 'user',
+          parts: [{ text: `${baseInstruction}\n\n${fullPrompt}` }]
+        }],
+        config: { tools: nyzaUITools as any, abortSignal }
+      });
+
+      return {
+        rawText: extractAssistantText(response.text || ''),
+        functionAction: functionCallToAction(response.functionCalls?.[0])
+      };
+    });
+
+    if (result.kind === 'deadline') {
+      return res.status(504).json({
+        error: `Nyza tardó más de ${NYZA_GLOBAL_DEADLINE_MS / 1000} segundos en responder. Intenta de nuevo en un momento.`
+      });
+    }
+
+    if (result.kind === 'failure') {
+      if (result.failureClass === 'non-transient') {
+        return res.status(502).json({
+          error: 'Nyza no pudo procesar esta solicitud por un problema de configuración o permisos del proveedor. Si persiste, contacta soporte.'
+        });
+      }
+      return res.status(503).json({
+        error: 'Nyza está temporalmente ocupada o sin conexión. Intenta de nuevo en unos minutos.'
+      });
+    }
+
+    const { model: modelName, value: { rawText, functionAction } } = result;
+    if (functionAction) {
+      return res.status(200).json({
+        success: true,
+        response: rawText || 'Puedo proponer esa acción para que la revises.',
+        rawResponse: rawText,
+        action: functionAction,
+        provider: 'gemini-function-calling',
+        model: modelName
+      });
+    }
+    if (rawText) {
+      const parsed = parseAction(rawText);
+      return res.status(200).json({
+        success: true,
+        response: parsed.display || rawText,
+        rawResponse: rawText,
+        action: parsed.action,
+        provider: 'gemini',
+        model: modelName
+      });
+    }
+
     return res.status(502).json({
-      error: `Nyza encontró las variables de IA, pero el proveedor rechazó o no pudo procesar la solicitud. ${detail}`,
-      details: detail
+      error: 'Nyza recibió una respuesta vacía del proveedor. Intenta de nuevo en un momento.'
     });
   }
 
