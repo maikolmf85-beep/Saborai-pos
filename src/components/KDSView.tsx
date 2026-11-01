@@ -36,7 +36,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
   }, []);
 
   useEffect(() => {
-    const newOrders = orders.filter(o => !seenOrderIds.current.has(o.id));
+    const newOrders = orders.filter(o => !o.isTransfer && !seenOrderIds.current.has(o.id));
     
     if (newOrders.length > 0) {
       const relevantNewOrders = stationFilter === 'ALL' 
@@ -336,9 +336,16 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                 {/* Header info */}
                 <div className="flex items-start justify-between pb-3 border-b border-stone-100 mb-3">
                   <div>
-                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
-                      {order.station}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                        {order.station}
+                      </span>
+                      {order.isTransfer && (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-blue-700">
+                          Traslado
+                        </span>
+                      )}
+                    </div>
                     <h3 className="text-lg font-black text-stone-900 leading-tight">
                       Mesa {order.tableNumber}
                     </h3>

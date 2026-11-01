@@ -30,6 +30,8 @@ interface OrderTakingProps {
   table: Table;
   tenant: TenantInfo;
   menuItems: MenuItem[];
+  transferTargetTables?: Table[];
+  onTransferItemToTable?: (sourceTable: Table, targetTableId: string, itemId: string, quantity: number) => Table | null;
   onSaveOrder: (updatedTable: Table) => void;
   onBackToTables: () => void;
   onDirectInvoice?: (table: Table) => void;
@@ -44,6 +46,8 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   table,
   tenant,
   menuItems,
+  transferTargetTables = [],
+  onTransferItemToTable,
   onSaveOrder,
   onBackToTables,
   onDirectInvoice,
@@ -89,6 +93,12 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   const [transferringItem, setTransferringItem] = useState<TableItem | null>(null);
   const [transferQty, setTransferQty] = useState<number>(1);
   const [targetDinerId, setTargetDinerId] = useState<number>(initialSubAccounts[1]?.id || initialSubAccounts[0].id);
+  const [transferToTableItem, setTransferToTableItem] = useState<TableItem | null>(null);
+  const [transferToTableQty, setTransferToTableQty] = useState(1);
+  const [transferToTableId, setTransferToTableId] = useState('');
+  const [transferToTableError, setTransferToTableError] = useState('');
+  const [draggingOrderItemId, setDraggingOrderItemId] = useState<string | null>(null);
+  const [dragOverTableId, setDragOverTableId] = useState<string | null>(null);
 
   // Payment modal state
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -435,6 +445,71 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     }
 
     setTransferringItem(null);
+  };
+
+  const openTableTransfer = (item: TableItem, destinationTableId = '') => {
+    setTransferToTableItem(item);
+    setTransferToTableQty(1);
+    setTransferToTableId(destinationTableId);
+    setTransferToTableError('');
+  };
+
+  const handleTransferDragStart = (event: React.DragEvent, item: TableItem) => {
+    if (!onTransferItemToTable || transferTargetTables.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', item.id);
+    setDraggingOrderItemId(item.id);
+  };
+
+  const handleTransferDrop = (event: React.DragEvent, destination: Table) => {
+    event.preventDefault();
+    const itemId = event.dataTransfer.getData('text/plain') || draggingOrderItemId;
+    const item = currentOrderItems.find(orderItem => orderItem.id === itemId);
+    if (!item) return;
+    openTableTransfer(item, destination.id);
+    setDraggingOrderItemId(null);
+    setDragOverTableId(null);
+  };
+
+  const handleConfirmTransferToTable = () => {
+    if (!transferToTableItem || !onTransferItemToTable) return;
+    const item = currentOrderItems.find(orderItem => orderItem.id === transferToTableItem.id);
+    const destination = transferTargetTables.find(target => target.id === transferToTableId);
+    if (!item || !destination || transferToTableQty < 1 || transferToTableQty > item.quantity) {
+      setTransferToTableError('El producto o la comanda destino ya no están disponibles. Revisa la selección e inténtalo de nuevo.');
+      return;
+    }
+
+    const sourceTable: Table = {
+      ...table,
+      activeOrder: {
+        ...(table.activeOrder || {}),
+        orderNumber: table.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+        server: assignedServerName,
+        openedAt: table.activeOrder?.openedAt || 'Ahora',
+        subAccounts,
+        items: currentOrderItems
+      }
+    };
+    const updatedSourceTable = onTransferItemToTable(sourceTable, destination.id, item.id, transferToTableQty);
+    if (!updatedSourceTable) {
+      setTransferToTableError('No se pudo trasladar el producto. La comanda pudo cambiar; actualiza la vista e inténtalo de nuevo.');
+      return;
+    }
+
+    setCurrentOrderItems(updatedSourceTable.activeOrder?.items || []);
+    soundService.playSuccessChime();
+    onNotify?.({
+      id: `table_transfer_${Date.now()}`,
+      type: 'ORDER_READY',
+      title: 'Producto trasladado',
+      message: `Se movió ${transferToTableQty}x "${item.name}" a ${destination.name} (${destination.activeOrder?.orderNumber || 'comanda activa'}).`,
+      timestamp: new Date()
+    });
+    setTransferToTableItem(null);
   };
 
   const handleSaveAndNotifyKitchen = () => {
@@ -1005,7 +1080,17 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                 </div>
               ) : (
                 currentOrderItems.filter(i => i.subAccountId === selectedSubAccount).map((item) => (
-                  <div key={item.id} className="py-2.5 flex items-start justify-between gap-2 group">
+                  <div
+                    key={item.id}
+                    draggable={Boolean(onTransferItemToTable && transferTargetTables.length > 0)}
+                    onDragStart={event => handleTransferDragStart(event, item)}
+                    onDragEnd={() => {
+                      setDraggingOrderItemId(null);
+                      setDragOverTableId(null);
+                    }}
+                    title={transferTargetTables.length > 0 ? 'Arrastra este producto a otra comanda activa' : undefined}
+                    className={`py-2.5 flex items-start justify-between gap-2 group ${transferTargetTables.length > 0 ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-xs text-stone-900 truncate">{item.name}</span>
@@ -1045,6 +1130,16 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
                         >
                           <ArrowRightLeft className="w-2.5 h-2.5" />
                           <span>Mover</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openTableTransfer(item)}
+                          disabled={!onTransferItemToTable}
+                          className="text-[10px] text-stone-400 hover:text-[#588157] underline flex items-center gap-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+                          title="Trasladar a otra comanda activa"
+                        >
+                          <ArrowRightLeft className="w-2.5 h-2.5" />
+                          <span>Mesa</span>
                         </button>
                       </div>
 
@@ -1265,6 +1360,35 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         </div>
       )}
 
+      {draggingOrderItemId && transferTargetTables.length > 0 && (
+        <div className="fixed inset-x-3 bottom-4 z-40 rounded-2xl border border-[#588157]/40 bg-white/95 p-3 shadow-2xl backdrop-blur-md sm:inset-x-6">
+          <p className="mb-2 text-center text-xs font-bold text-stone-700">Suelta el producto en la comanda destino</p>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {transferTargetTables.map(destination => (
+              <div
+                key={destination.id}
+                onDragOver={event => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                  setDragOverTableId(destination.id);
+                }}
+                onDragLeave={() => setDragOverTableId(current => current === destination.id ? null : current)}
+                onDrop={event => handleTransferDrop(event, destination)}
+                className={`min-w-36 flex-1 rounded-xl border-2 border-dashed px-3 py-2 text-center transition-colors ${
+                  dragOverTableId === destination.id
+                    ? 'border-[#588157] bg-[#588157]/10 text-[#3e5f3e]'
+                    : 'border-stone-300 bg-stone-50 text-stone-700'
+                }`}
+                aria-label={`Soltar producto para trasladarlo a ${destination.name}`}
+              >
+                <span className="block text-xs font-black">{destination.name}</span>
+                <span className="block text-[10px]">{destination.activeOrder?.orderNumber || 'Comanda activa'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Transfer Item Modal */}
       {transferringItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
@@ -1332,6 +1456,92 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
               >
                 Confirmar Traslado
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {transferToTableItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-3xl border border-stone-200 bg-white p-5 shadow-2xl">
+            <div>
+              <h3 className="text-base font-black text-stone-900">Trasladar a otra comanda</h3>
+              <p className="mt-1 text-xs text-stone-500">{transferToTableItem.name} · desde {table.name}</p>
+            </div>
+
+            {transferToTableItem.quantity > 1 && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-stone-700">
+                  Cantidad a trasladar (de {transferToTableItem.quantity})
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTransferToTableQty(current => Math.max(1, current - 1))}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-100 font-bold text-stone-700 hover:bg-stone-200"
+                    aria-label="Reducir cantidad"
+                  >−</button>
+                  <span className="w-8 text-center text-sm font-black text-stone-900">{transferToTableQty}</span>
+                  <button
+                    type="button"
+                    onClick={() => setTransferToTableQty(current => Math.min(transferToTableItem.quantity, current + 1))}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-stone-100 font-bold text-stone-700 hover:bg-stone-200"
+                    aria-label="Aumentar cantidad"
+                  >+</button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferToTableQty(transferToTableItem.quantity)}
+                    className="ml-auto text-[11px] font-bold text-[#588157] hover:underline"
+                  >Todos ({transferToTableItem.quantity})</button>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="mb-2 text-xs font-semibold text-stone-700">Comanda destino</p>
+              {transferTargetTables.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-3 text-xs text-stone-500">
+                  No hay otra comanda activa disponible en las zonas cubiertas por el turno.
+                </p>
+              ) : (
+                <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                  {transferTargetTables.map(destination => (
+                    <button
+                      key={destination.id}
+                      type="button"
+                      onClick={() => {
+                        setTransferToTableId(destination.id);
+                        setTransferToTableError('');
+                      }}
+                      aria-pressed={transferToTableId === destination.id}
+                      className={`rounded-xl border p-3 text-left transition-colors ${
+                        transferToTableId === destination.id
+                          ? 'border-[#588157] bg-[#588157]/10 ring-1 ring-[#588157]/30'
+                          : 'border-stone-200 bg-white hover:border-stone-400'
+                      }`}
+                    >
+                      <span className="block text-sm font-black text-stone-900">{destination.name}</span>
+                      <span className="block text-[11px] text-stone-500">{destination.activeOrder?.orderNumber || 'Comanda activa'} · {destination.zone}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {transferToTableError && <p role="alert" className="text-xs font-semibold text-red-700">{transferToTableError}</p>}
+
+            <div className="flex justify-end gap-2 border-t border-stone-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setTransferToTableItem(null)}
+                className="rounded-xl border border-stone-200 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-50"
+              >Cancelar</button>
+              <button
+                type="button"
+                onClick={handleConfirmTransferToTable}
+                disabled={!transferToTableId || transferTargetTables.length === 0}
+                className="rounded-xl bg-stone-900 px-4 py-2 text-xs font-bold text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >Confirmar traslado</button>
             </div>
           </div>
         </div>

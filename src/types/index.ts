@@ -144,6 +144,7 @@ export interface KDSOrder {
   tableNumber: number;
   tableName: string;
   server: string;
+  isTransfer?: boolean;
   timestamp: Date;
   status: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
   station: 'Cocina' | 'Bar';

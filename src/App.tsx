@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { Navbar, ActiveTab } from './components/Navbar';
 import { TableMap } from './components/TableMap';
 import { OrderTaking } from './components/OrderTaking';
+import { hasActiveShiftForZone } from './components/tableMapOrderFlow';
 import { KDSView } from './components/KDSView';
 
 // Carga diferida (Code Splitting / Lazy Loading) de módulos grandes y modales secundarios
@@ -36,6 +37,7 @@ import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
+import { transferOrderItemAcrossTables } from './services/orderItemTransfer';
 import { employeeCreditService } from './services/employeeCreditService';
 import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
@@ -1611,6 +1613,64 @@ export function App() {
     }
   };
 
+  const getTransferTargetTables = (sourceTableId: string): Table[] => {
+    const activeShift = cashShiftService.getActiveShift();
+    const shiftState = {
+      hasActiveShift: Boolean(activeShift),
+      activeShiftZone: activeShift?.linkedZone,
+      activeShiftZones: activeShift?.linkedZones
+    };
+    return tables.filter(table =>
+      table.id !== sourceTableId &&
+      Boolean(table.activeOrder) &&
+      (table.status === 'OCCUPIED' || table.status === 'PRE_CHECK') &&
+      hasActiveShiftForZone(table.zone, shiftState)
+    );
+  };
+
+  const handleTransferItemToTable = (
+    sourceTable: Table,
+    targetTableId: string,
+    itemId: string,
+    quantity: number
+  ): Table | null => {
+    const currentTables = tablesRef.current;
+    const destination = currentTables.find(table => table.id === targetTableId);
+    const activeShift = cashShiftService.getActiveShift();
+    if (!destination || !hasActiveShiftForZone(destination.zone, {
+      hasActiveShift: Boolean(activeShift),
+      activeShiftZone: activeShift?.linkedZone,
+      activeShiftZones: activeShift?.linkedZones
+    })) return null;
+
+    const result = transferOrderItemAcrossTables(
+      currentTables,
+      kdsOrders,
+      sourceTable,
+      targetTableId,
+      itemId,
+      quantity
+    );
+    if (!result) return null;
+
+    handleUpdateTables(result.tables);
+    setSelectedTableForOrder(current => current?.id === sourceTable.id ? result.sourceTable : current);
+    handleUpdateKdsOrdersRealtime(result.kdsOrders);
+
+    for (const updatedTable of [result.sourceTable, result.destinationTable]) {
+      localDB.saveItem('tables', updatedTable);
+      const description = `Comanda actualizada en ${updatedTable.name} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`;
+      if (localDB.isOnline()) {
+        void posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id)
+          .catch(() => localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, description, tenant.id));
+      } else {
+        void localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, description, tenant.id);
+      }
+    }
+
+    return result.sourceTable;
+  };
+
   const handleUpdateTenantStatus = (status: SubscriptionStatus, graceEnds?: string) => {
     setTenant(prev => ({
       ...prev,
@@ -1939,6 +1999,8 @@ export function App() {
                   table={selectedTableForOrder}
                   tenant={tenant}
                   menuItems={menuItems}
+                  transferTargetTables={getTransferTargetTables(selectedTableForOrder.id)}
+                  onTransferItemToTable={handleTransferItemToTable}
                   onSaveOrder={handleSaveOrder}
                   onBackToTables={() => setSelectedTableForOrder(null)}
                   onDirectInvoice={() => setActiveTab('billing')}
