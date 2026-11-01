@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { authenticateRequest, handleOptions, setCorsHeaders } from '../_utils/security.js';
-import { NYZA_GLOBAL_DEADLINE_MS, runNyzaModelRequests } from './nyzaRetryPolicy.js';
+import { NYZA_GLOBAL_DEADLINE_MS, runNyzaModelRequests } from '../_utils/nyzaRetryPolicy.js';
 
 try {
   dotenv.config();

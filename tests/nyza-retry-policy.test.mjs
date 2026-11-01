@@ -8,7 +8,7 @@ import {
   NYZA_RETRY_DELAY_MS,
   resolveNyzaDeadlineMs,
   runNyzaModelRequests
-} from '../api/ai/nyzaRetryPolicy.ts';
+} from '../api/_utils/nyzaRetryPolicy.ts';
 
 const apiError = (status, message = 'synthetic provider error') => Object.assign(new Error(message), { status });
 
