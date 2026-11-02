@@ -1534,6 +1534,7 @@ export function App() {
             id: i.id, 
             name: i.name, 
             quantity: i.quantity, 
+            dinerName: i.dinerName,
             notes: i.notes, 
             modifiers: i.selectedModifiers?.map(m => m.choiceName),
             completed: false 
@@ -1561,6 +1562,7 @@ export function App() {
             id: i.id, 
             name: i.name, 
             quantity: i.quantity, 
+            dinerName: i.dinerName,
             notes: i.notes, 
             modifiers: i.selectedModifiers?.map(m => m.choiceName),
             completed: false 

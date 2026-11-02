@@ -14,6 +14,7 @@ import {
 import { KDSOrder, MenuItem } from '../types';
 import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
+import { formatDinerNames } from '../utils/orderDiners';
 
 interface KDSViewProps {
   orders: KDSOrder[];
@@ -294,6 +295,7 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
         ) : (
           filteredOrders.map((order) => {
             const mins = getElapsedTimeInMinutes(order.timestamp);
+            const dinerNamesLabel = formatDinerNames(order.items);
           
           // Calculate max prep time
           let maxPrepTime = 15; // default 15 mins if no items have prepTime
@@ -342,6 +344,9 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                     <h3 className="text-lg font-black text-stone-900 leading-tight">
                       Mesa {order.tableNumber}
                     </h3>
+                    {dinerNamesLabel && (
+                      <p className="text-xs font-semibold text-[#588157]">{dinerNamesLabel}</p>
+                    )}
                     <p className="text-xs text-stone-500">{order.server}</p>
                   </div>
 

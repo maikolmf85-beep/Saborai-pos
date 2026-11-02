@@ -152,6 +152,7 @@ export interface KDSOrder {
     id?: string;
     name: string;
     quantity: number;
+    dinerName?: string;
     notes?: string;
     modifiers?: string[]; // Modificadores elegidos
     completed?: boolean;

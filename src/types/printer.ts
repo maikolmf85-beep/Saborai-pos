@@ -33,6 +33,7 @@ export interface PrintReceiptData {
   items: Array<{
     name: string;
     quantity: number;
+    dinerName?: string;
     price?: number;
     subtotal?: number;
     notes?: string;

@@ -438,6 +438,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
   };
 
   const handleSaveAndNotifyKitchen = () => {
+    const itemsToPrint = currentOrderItems.filter(i => !i.kdsStatus);
     const updatedTable: Table = {
       ...table,
       status: 'OCCUPIED',
@@ -452,23 +453,26 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     };
     onSaveOrder(updatedTable);
 
-    // Thermal printing (80mm/58mm) to kitchen and bar printers
-    try {
-      printerService.printKitchenBarOrder({
-        printJobId: `order_${updatedTable.activeOrder?.orderNumber || 'ORD-001'}_${Date.now()}`,
-        tableName: table.name,
-        orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
-        server: assignedServerName,
-        items: currentOrderItems.map(i => ({
-          name: i.name,
-          quantity: i.quantity,
-          notes: i.notes,
-          modifiers: i.selectedModifiers?.map(m => m.choiceName),
-          category: i.category
-        }))
-      });
-    } catch (e) {
-      console.warn('Error al imprimir comanda térmica:', e);
+    // Thermal printing (80mm/58mm) to kitchen and bar printers; only new items.
+    if (itemsToPrint.length > 0) {
+      try {
+        printerService.printKitchenBarOrder({
+          printJobId: `order_${updatedTable.activeOrder?.orderNumber || 'ORD-001'}_${Date.now()}`,
+          tableName: table.name,
+          orderNumber: updatedTable.activeOrder?.orderNumber || 'ORD-001',
+          server: assignedServerName,
+          items: itemsToPrint.map(i => ({
+            name: i.name,
+            quantity: i.quantity,
+            dinerName: i.dinerName,
+            notes: i.notes,
+            modifiers: i.selectedModifiers?.map(m => m.choiceName),
+            category: i.category
+          }))
+        });
+      } catch (e) {
+        console.warn('Error al imprimir comanda térmica:', e);
+      }
     }
 
     // Play chime sound for kitchen & bar arrival
