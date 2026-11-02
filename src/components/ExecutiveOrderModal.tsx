@@ -19,8 +19,15 @@ import {
   getSelectableEmployees,
   type EmployeeCreditEmployee,
   type EmployeeCreditLedger,
+  type EmployeeCreditPeriodReport,
   type EmployeeCreditTransaction
 } from '../services/employeeCreditService';
+import {
+  formatEmployeeCreditPeriodRange,
+  getCostaRicaDateInputValue,
+  getEmployeeCreditPeriodRange,
+  type EmployeeCreditPeriod
+} from '../services/employeeCreditPeriod';
 
 type ExecutiveOrderView = 'new-order' | 'ledger';
 
@@ -40,7 +47,7 @@ interface ExecutiveOrderModalProps {
 function formatDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
-  return new Intl.DateTimeFormat('es-CR', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  return new Intl.DateTimeFormat('es-CR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Costa_Rica' }).format(date);
 }
 
 function transactionTitle(transaction: EmployeeCreditTransaction): string {
@@ -74,8 +81,23 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
   const [paymentError, setPaymentError] = useState('');
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentAttempt, setPaymentAttempt] = useState<{ employeeId: string; amount: number; key: string } | null>(null);
+  const [reportPeriod, setReportPeriod] = useState<EmployeeCreditPeriod>('month');
+  const [reportDate, setReportDate] = useState(() => getCostaRicaDateInputValue());
+  const [periodReport, setPeriodReport] = useState<EmployeeCreditPeriodReport | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState('');
+  const [reportRefreshVersion, setReportRefreshVersion] = useState(0);
 
   const currencyFormatter = useMemo(() => new Intl.NumberFormat('es-CR', { style: 'currency', currency }), [currency]);
+  const reportRange = useMemo(() => {
+    try {
+      return getEmployeeCreditPeriodRange(reportPeriod, reportDate);
+    } catch {
+      return null;
+    }
+  }, [reportPeriod, reportDate]);
+  const reportFrom = reportRange?.from;
+  const reportTo = reportRange?.to;
   const cachedEmployees = useMemo(() => getSelectableEmployees(staffList, ownerUserId), [staffList, ownerUserId]);
   const selectionEmployees = useMemo(
     () => serverRosterLoaded ? ledger.employees.filter(employee => employee.active) : cachedEmployees,
@@ -96,8 +118,13 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
         active: previous?.active ?? false
       });
     });
+    periodReport?.employeeSummaries.forEach(summary => {
+      if (!employees.has(summary.employeeId)) {
+        employees.set(summary.employeeId, { id: summary.employeeId, name: summary.employeeName, active: false });
+      }
+    });
     return [...employees.values()].sort((left, right) => left.name.localeCompare(right.name, 'es'));
-  }, [ledger.employees, ledger.accounts]);
+  }, [ledger.employees, ledger.accounts, periodReport?.employeeSummaries]);
   const totalDebt = useMemo(() => ledger.accounts.reduce((sum, account) => sum + Math.max(0, account.balance), 0), [ledger.accounts]);
   const visibleLedgerEmployees = useMemo(() => ledgerEmployees.filter(employee =>
     employee.name.toLocaleLowerCase('es').includes(search.trim().toLocaleLowerCase('es'))
@@ -105,9 +132,13 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
   const selectedBalance = selectedLedgerEmployee
     ? ledger.accounts.find(account => account.employeeId === selectedLedgerEmployee.id)?.balance || 0
     : 0;
-  const employeeTransactions = useMemo(() => selectedLedgerEmployee
-    ? ledger.transactions.filter(transaction => transaction.employeeId === selectedLedgerEmployee.id)
-    : [], [ledger.transactions, selectedLedgerEmployee]);
+  const employeeTransactions = useMemo(() => {
+    if (!selectedLedgerEmployee) return [];
+    const transactions = periodReport?.transactions || ledger.transactions;
+    return transactions.filter(transaction => transaction.employeeId === selectedLedgerEmployee.id
+      && (!reportFrom || transaction.createdAt >= reportFrom)
+      && (!reportTo || transaction.createdAt < reportTo));
+  }, [ledger.transactions, periodReport, selectedLedgerEmployee, reportFrom, reportTo]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -127,11 +158,30 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
     return () => { cancelled = true; };
   }, [isOpen, tenantId, initialView]);
 
+  useEffect(() => {
+    if (!isOpen || activeView !== 'ledger' || !reportFrom || !reportTo) return;
+    let cancelled = false;
+    setPeriodReport(null);
+    setReportLoading(true);
+    setReportError('');
+    employeeCreditService.getPeriodReport(tenantId, { from: reportFrom, to: reportTo }, selectedLedgerEmployee?.id)
+      .then(report => { if (!cancelled) setPeriodReport(report); })
+      .catch(error => {
+        if (!cancelled) {
+          setPeriodReport(null);
+          setReportError(error instanceof Error ? error.message : 'No se pudo actualizar el informe de consumo.');
+        }
+      })
+      .finally(() => { if (!cancelled) setReportLoading(false); });
+    return () => { cancelled = true; };
+  }, [isOpen, activeView, tenantId, reportFrom, reportTo, selectedLedgerEmployee?.id, reportRefreshVersion]);
+
   if (!isOpen) return null;
 
   const refresh = async () => {
     setRefreshing(true);
     setLoadError('');
+    setReportRefreshVersion(version => version + 1);
     try {
       const nextLedger = await employeeCreditService.refreshLedger(tenantId);
       setLedger(nextLedger);
@@ -261,6 +311,54 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
+              <section className="rounded-2xl border border-stone-200 bg-stone-50 p-3.5 sm:p-4" aria-label="Informe de consumo por periodo">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr]">
+                  <label className="text-[10px] font-bold uppercase tracking-wide text-stone-500">
+                    Periodo
+                    <select value={reportPeriod} onChange={event => setReportPeriod(event.target.value as EmployeeCreditPeriod)}
+                      aria-label="Periodo del informe" className="mt-1 min-h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-800 outline-none focus:border-[#588157] focus:ring-4 focus:ring-[#588157]/10">
+                      <option value="day">Día</option>
+                      <option value="week">Semana</option>
+                      <option value="month">Mes</option>
+                      <option value="year">Año</option>
+                    </select>
+                  </label>
+                  <label className="text-[10px] font-bold uppercase tracking-wide text-stone-500">
+                    Fecha de referencia
+                    <input type="date" value={reportDate} onChange={event => {
+                      const value = event.target.value;
+                      setReportDate(value);
+                      if (!value) {
+                        setPeriodReport(null);
+                        setReportLoading(false);
+                        setReportError('');
+                      }
+                    }}
+                      aria-label="Fecha de referencia del informe" className="mt-1 min-h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-800 outline-none focus:border-[#588157] focus:ring-4 focus:ring-[#588157]/10" />
+                  </label>
+                  <div className="flex items-end pb-2 text-xs font-semibold text-stone-600">
+                    {reportRange ? formatEmployeeCreditPeriodRange(reportRange) : 'Selecciona una fecha válida'}
+                  </div>
+                </div>
+                {reportLoading && <p role="status" className="mt-2 text-[11px] text-stone-500">Calculando el periodo…</p>}
+                {reportError && <p role="status" className="mt-2 text-[11px] text-amber-800">{reportError} La información disponible en este dispositivo puede ser parcial.</p>}
+                {periodReport && (
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl bg-white px-3 py-2.5">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-stone-500">Consumo del periodo</p>
+                      <p className="mt-1 text-sm font-black tabular-nums text-amber-800">{currencyFormatter.format(periodReport.chargeTotal)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white px-3 py-2.5">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-stone-500">Abonos del periodo</p>
+                      <p className="mt-1 text-sm font-black tabular-nums text-emerald-800">{currencyFormatter.format(periodReport.paymentTotal)}</p>
+                    </div>
+                    <div className="rounded-xl bg-white px-3 py-2.5">
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-stone-500">Movimientos</p>
+                      <p className="mt-1 text-sm font-black tabular-nums text-stone-900">{periodReport.transactionCount}</p>
+                    </div>
+                  </div>
+                )}
+              </section>
               {selectedLedgerEmployee ? (
                 <>
                   <button type="button" onClick={() => { setSelectedLedgerEmployee(null); setPaymentError(''); }} className="inline-flex min-h-10 items-center gap-2 rounded-xl px-2 text-xs font-bold text-stone-600 hover:bg-stone-100 hover:text-stone-900">
@@ -299,7 +397,7 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
                   <section>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <h4 className="text-xs font-black uppercase tracking-wide text-stone-600">Movimientos</h4>
-                      {ledger.hasMoreTransactions && <span className="text-[10px] text-stone-400">Mostrando movimientos recientes</span>}
+                      {periodReport?.hasMoreTransactions && <span className="text-[10px] text-stone-400">Mostrando los 500 más recientes del periodo</span>}
                     </div>
                     {employeeTransactions.length > 0 ? (
                       <div className="divide-y divide-stone-100 rounded-2xl border border-stone-200 bg-white">
@@ -322,6 +420,7 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
                         ))}
                       </div>
                     ) : <p className="rounded-2xl border border-dashed border-stone-300 px-4 py-8 text-center text-xs text-stone-500">Todavía no hay movimientos registrados.</p>}
+                    {periodReport?.hasMoreTransactions && <p className="mt-2 text-center text-[10px] text-stone-400">Los totales del periodo incluyen todos los movimientos, aunque la lista muestre solo los más recientes.</p>}
                   </section>
                 </>
               ) : (
@@ -354,13 +453,33 @@ export const ExecutiveOrderModal: React.FC<ExecutiveOrderModalProps> = ({
                     <div className="space-y-2">
                       {visibleLedgerEmployees.map(employee => {
                         const balance = ledger.accounts.find(account => account.employeeId === employee.id)?.balance || 0;
-                        const transactions = ledger.transactions.filter(item => item.employeeId === employee.id).length;
+                        const periodSummary = periodReport?.employeeSummaries.find(item => item.employeeId === employee.id);
+                        const localPeriodTransactions = reportRange
+                          ? ledger.transactions.filter(item => item.employeeId === employee.id
+                            && item.createdAt >= reportRange.from && item.createdAt < reportRange.to)
+                          : [];
+                        const localPeriodCharges = localPeriodTransactions
+                          .filter(item => item.type === 'CHARGE')
+                          .reduce((sum, item) => sum + item.amount, 0);
+                        const transactions = periodReport
+                          ? periodSummary?.transactionCount || 0
+                          : reportError && reportRange
+                            ? localPeriodTransactions.length
+                            : ledger.transactions.filter(item => item.employeeId === employee.id).length;
                         return (
                           <button key={employee.id} type="button" onClick={() => { setSelectedLedgerEmployee(employee); setPaymentAmount(''); setPaymentError(''); }}
                             className="flex min-h-16 w-full items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-left transition hover:border-[#588157] hover:bg-[#a9b994]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#588157]">
                             <span className="min-w-0">
                               <span className="block truncate text-sm font-bold text-stone-900">{employee.name}</span>
-                              <span className="mt-0.5 block text-[10px] text-stone-500">{transactions} {transactions === 1 ? 'movimiento' : 'movimientos'}</span>
+                              <span className="mt-0.5 block text-[10px] text-stone-500">
+                                {periodReport
+                                  ? `${currencyFormatter.format(periodSummary?.chargeTotal || 0)} consumido · ${transactions} ${transactions === 1 ? 'movimiento' : 'movimientos'} en el periodo`
+                                  : reportLoading
+                                    ? 'Calculando el periodo…'
+                                    : reportError && reportRange
+                                      ? `${currencyFormatter.format(localPeriodCharges)} disponible en dispositivo · ${transactions} movimientos`
+                                  : `${transactions} ${transactions === 1 ? 'movimiento' : 'movimientos'}`}
+                              </span>
                             </span>
                             <span className="flex shrink-0 items-center gap-2">
                               <span className={`text-sm font-black tabular-nums ${balance > 0 ? 'text-amber-800' : 'text-emerald-800'}`}>{currencyFormatter.format(Math.max(0, balance))}</span>
