@@ -9,6 +9,7 @@ import { buildEmployeeTokenClaims, isEmployeeRole, normalizeEmployeeRoster } fro
 import { processTilopaySubscription } from './_utils/tilopayClient.js';
 import { consumeTilopaySignupHandoff, getTilopaySignupHandoff } from './_utils/tilopaySignupHandoff.js';
 import { consumePasswordResetToken, createPasswordResetToken } from './_utils/passwordReset.js';
+import { consumeOwnerEmployeePinResetAttempt, isOwnerAdminSession, parseOwnEmployeePinResetInput } from './_utils/employeePinReset.js';
 
 const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -237,6 +238,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       return res.status(200).json({ success: true, synced: rows.length });
+    }
+
+    if (rawAction === 'reset-own-employee-pin') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (!isOwnerAdminSession(auth)) {
+        return res.status(403).json({ error: 'Solo el ADMIN de la cuenta propietaria puede restablecer su PIN.' });
+      }
+
+      const input = parseOwnEmployeePinResetInput(req.body);
+      if (!input) {
+        return res.status(400).json({ error: 'Se requieren la contraseña actual de la cuenta y un PIN nuevo de cuatro dígitos.' });
+      }
+
+      let attemptAllowed: boolean;
+      try {
+        attemptAllowed = await consumeOwnerEmployeePinResetAttempt(supabase, auth.userId);
+      } catch {
+        console.error('[Auth] No se pudo validar el límite persistente del reset de PIN.');
+        return res.status(503).json({ error: 'No se pudo verificar el límite persistente de intentos.' });
+      }
+      if (!attemptAllowed) {
+        return res.status(429).json({ error: 'Demasiados intentos. Espera un minuto antes de volver a intentarlo.' });
+      }
+
+      const { data: owner, error: ownerError } = await supabase
+        .from('users')
+        .select('id, email, role, active, password_hash')
+        .eq('id', auth.userId)
+        .maybeSingle();
+      if (ownerError) {
+        console.error('[Auth] No se pudo verificar la cuenta propietaria para el reset de PIN.');
+        return res.status(503).json({ error: 'No se pudo verificar la cuenta propietaria.' });
+      }
+      if (!owner || owner.active === false || owner.role !== 'ADMIN'
+        || String(owner.email || '').toLowerCase() !== String(auth.email || '').toLowerCase()) {
+        return res.status(403).json({ error: 'La sesión no corresponde a un ADMIN propietario activo.' });
+      }
+
+      let passwordVerified = false;
+      if (typeof owner.password_hash === 'string' && owner.password_hash) {
+        passwordVerified = await bcrypt.compare(input.currentPassword, owner.password_hash);
+      }
+      if (!passwordVerified) {
+        passwordVerified = Boolean(await getSupabaseSession(owner.email, input.currentPassword));
+      }
+      if (!passwordVerified) {
+        return res.status(401).json({ error: 'La contraseña de la cuenta propietaria es incorrecta.' });
+      }
+
+      const { data: tenant, error: tenantError } = await supabase
+        .from('tenants')
+        .select('id, user_id')
+        .eq('id', auth.tenantId)
+        .maybeSingle();
+      if (tenantError) {
+        console.error('[Auth] No se pudo verificar el tenant para el reset de PIN.');
+        return res.status(503).json({ error: 'No se pudo verificar el restaurante asociado.' });
+      }
+      if (!tenant || tenant.user_id !== owner.id) {
+        return res.status(403).json({ error: 'La sesión no corresponde al propietario de este restaurante.' });
+      }
+
+      const pinHash = await bcrypt.hash(input.newPin, 12);
+      const { error: pinError } = await supabase
+        .from('pos_owner_employee_pins')
+        .upsert({
+          user_id: owner.id,
+          tenant_id: tenant.id,
+          pin_hash: pinHash,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' });
+      if (pinError) {
+        console.error('[Auth] No se pudo guardar el hash del PIN propio.');
+        return res.status(503).json({ error: 'No se pudo guardar el PIN.' });
+      }
+
+      return res.status(200).json({ success: true, message: 'PIN actualizado. La contraseña de la cuenta no cambió.' });
     }
 
     if (rawAction === 'employee-session') {

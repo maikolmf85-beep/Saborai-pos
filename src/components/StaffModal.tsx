@@ -25,6 +25,8 @@ interface StaffModalProps {
   currentUser: UserProfile | null;
   currentTenant: TenantInfo;
   staffList: UserProfile[];
+  canResetOwnPin: boolean;
+  onResetOwnPin: (currentPassword: string, newPin: string) => Promise<void>;
   onAddStaffMember: (newMember: UserProfile) => void | Promise<void>;
   onResetStaffPin?: (userId: string, newPin: string) => void | Promise<void>;
   onSelectUser: (user: UserProfile) => void;
@@ -38,6 +40,8 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   currentUser,
   currentTenant,
   staffList,
+  canResetOwnPin,
+  onResetOwnPin,
   onAddStaffMember,
   onResetStaffPin,
   onSelectUser,
@@ -53,6 +57,10 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   const [feedback, setFeedback] = useState<string | null>(null);
   const [resetPinFor, setResetPinFor] = useState<UserProfile | null>(null);
   const [resetPin, setResetPin] = useState('');
+  const [ownerPassword, setOwnerPassword] = useState('');
+  const [ownPin, setOwnPin] = useState('');
+  const [confirmOwnPin, setConfirmOwnPin] = useState('');
+  const [isResettingOwnPin, setIsResettingOwnPin] = useState(false);
 
   if (!isOpen) return null;
 
@@ -143,6 +151,39 @@ export const StaffModal: React.FC<StaffModalProps> = ({
     setTimeout(() => setFeedback(null), 4000);
   };
 
+  const handleResetOwnPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(ownPin)) {
+      setFeedback('El nuevo PIN debe tener exactamente cuatro dígitos.');
+      return;
+    }
+    if (ownPin !== confirmOwnPin) {
+      setFeedback('La confirmación del PIN no coincide.');
+      return;
+    }
+
+    setIsResettingOwnPin(true);
+    setFeedback(null);
+    try {
+      await onResetOwnPin(ownerPassword, ownPin);
+      setFeedback('PIN actualizado. La contraseña de acceso a tu cuenta no cambió.');
+    } catch (error: any) {
+      setFeedback(error?.message || 'No se pudo restablecer tu PIN.');
+    } finally {
+      setOwnerPassword('');
+      setOwnPin('');
+      setConfirmOwnPin('');
+      setIsResettingOwnPin(false);
+    }
+  };
+
+  const handleClose = () => {
+    setOwnerPassword('');
+    setOwnPin('');
+    setConfirmOwnPin('');
+    onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-stone-950/70 backdrop-blur-md animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
@@ -167,7 +208,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
           </div>
 
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -182,6 +223,70 @@ export const StaffModal: React.FC<StaffModalProps> = ({
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{feedback}</span>
             </div>
+          )}
+
+          {canResetOwnPin && currentUser?.role === 'ADMIN' && (
+            <form onSubmit={handleResetOwnPin} className="bg-[#f5f7f2] border border-[#dbe3d3] rounded-2xl p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-stone-700" />
+                <h3 className="text-xs font-bold text-stone-800 uppercase tracking-wider">Restablecer mi PIN de empleado</h3>
+              </div>
+              <p className="text-xs text-stone-600">
+                Este PIN se guarda separado de la contraseña de tu cuenta. Confirma la contraseña actual para cambiarlo.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-stone-700">Contraseña actual de la cuenta</label>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    maxLength={1024}
+                    value={ownerPassword}
+                    onChange={e => setOwnerPassword(e.target.value)}
+                    className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-stone-700">PIN nuevo (4 dígitos)</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    maxLength={4}
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    value={ownPin}
+                    onChange={e => setOwnPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 font-mono focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-stone-700">Confirmar PIN nuevo</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    maxLength={4}
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    value={confirmOwnPin}
+                    onChange={e => setConfirmOwnPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs text-stone-900 font-mono focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={isResettingOwnPin || !ownerPassword || ownPin.length !== 4 || confirmOwnPin.length !== 4}
+                  className="px-4 py-2 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-[#a9b994]" />
+                  {isResettingOwnPin ? 'Verificando y guardando…' : 'Restablecer mi PIN'}
+                </button>
+              </div>
+            </form>
           )}
 
           {/* New User Registration Form */}
@@ -444,7 +549,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
           </span>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-5 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 transition-colors shadow-xs"
           >
             Cerrar

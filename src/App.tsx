@@ -37,7 +37,7 @@ import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, M
 import { localDB } from './services/db';
 import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
 import { employeeCreditService } from './services/employeeCreditService';
-import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
+import { createEmployeeSession, fetchEmployeeRoster, resetOwnEmployeePin, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -869,6 +869,18 @@ export function App() {
       return;
     }
     handleUpdateStaff(updated);
+  };
+
+  const handleResetOwnEmployeePin = async (currentPassword: string, newPin: string) => {
+    if (currentUser?.role !== 'ADMIN'
+      || getAccountUserId(currentUser.id) !== currentUser.id
+      || localStorage.getItem('saborai_employee_id')) {
+      throw new Error('Inicia sesión con la cuenta propietaria para restablecer tu PIN.');
+    }
+    if (!isCloudTenantUuid(tenant.id)) {
+      throw new Error('El restablecimiento del PIN propio requiere una cuenta conectada.');
+    }
+    await resetOwnEmployeePin(currentPassword, newPin);
   };
 
   const handleResetStaffPin = async (userId: string, newPin: string) => {
@@ -2091,6 +2103,14 @@ export function App() {
         currentUser={currentUser}
         currentTenant={tenant}
         staffList={staffList}
+        canResetOwnPin={Boolean(
+          currentUser?.role === 'ADMIN'
+          && isCloudTenantUuid(tenant.id)
+          && typeof localStorage !== 'undefined'
+          && !localStorage.getItem('saborai_employee_id')
+          && getAccountUserId(currentUser.id) === currentUser.id
+        )}
+        onResetOwnPin={handleResetOwnEmployeePin}
         onAddStaffMember={handleAddStaffMember}
         onResetStaffPin={handleResetStaffPin}
         onSelectUser={handleSelectUser}

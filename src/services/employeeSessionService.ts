@@ -112,3 +112,18 @@ export async function createEmployeeSession(
     employeeId: data.employeeId
   };
 }
+
+export async function resetOwnEmployeePin(currentPassword: string, newPin: string): Promise<void> {
+  const token = currentToken();
+  if (!token) throw new Error('Inicia sesión con la cuenta propietaria para restablecer tu PIN.');
+
+  const response = await fetch('/api/auth/reset-own-employee-pin', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ currentPassword, newPin })
+  });
+  await readResponse(response);
+}
