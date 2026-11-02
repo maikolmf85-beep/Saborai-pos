@@ -12,13 +12,13 @@ import {
 
 const apiError = (status, message = 'synthetic provider error') => Object.assign(new Error(message), { status });
 
-test('conserva el orden de los modelos y fija un presupuesto global de 12 segundos', () => {
+test('conserva el orden de los modelos y fija un presupuesto global de 8 segundos', () => {
   assert.deepEqual(NYZA_GEMINI_MODELS, ['gemini-3.8-flash', 'gemini-3.5-flash-lite']);
-  assert.equal(NYZA_GLOBAL_DEADLINE_MS, 12_000);
+  assert.equal(NYZA_GLOBAL_DEADLINE_MS, 8_000);
   assert.equal(NYZA_MAX_ATTEMPTS_PER_MODEL, 2);
-  assert.equal(NYZA_RETRY_DELAY_MS, 900);
-  assert.equal(resolveNyzaDeadlineMs(), 12_000);
-  assert.equal(resolveNyzaDeadlineMs(60_000), 12_000);
+  assert.equal(NYZA_RETRY_DELAY_MS, 300);
+  assert.equal(resolveNyzaDeadlineMs(), 8_000);
+  assert.equal(resolveNyzaDeadlineMs(60_000), 8_000);
   assert.equal(resolveNyzaDeadlineMs(1_500), 1_500);
   assert.equal(resolveNyzaDeadlineMs(0), 1);
 });

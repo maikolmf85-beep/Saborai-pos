@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { authenticateRequest, handleOptions, setCorsHeaders } from '../_utils/security.js';
-import { NYZA_GLOBAL_DEADLINE_MS, runNyzaModelRequests } from '../_utils/nyzaRetryPolicy.js';
+import { runNyzaModelRequests } from '../_utils/nyzaRetryPolicy.js';
 
 try {
   dotenv.config();
@@ -273,7 +273,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ? `sesión autenticada (${authenticatedUser.role || 'USER'})`
     : 'modo demostración sin sesión autenticada';
   const baseInstruction = `Eres Nyza, el asistente de SaborAI POS para restaurantes de Costa Rica.
-Responde en español costarricense, con precisión y máximo 4 oraciones salvo que el usuario solicite un reporte detallado.
+Responde en español costarricense, con precisión y en máximo 2 oraciones salvo que el usuario solicite un reporte detallado.
 No inventes datos. Si falta información, dilo y pide solo el dato necesario.
 Puedes sugerir modificaciones de comanda de forma contextual, pero siempre como opciones. Ninguna acción se ejecuta hasta que el usuario revise una vista previa y la confirme explícitamente en la interfaz.
 Si una acción se propone, nunca afirmes que ya se realizó ni uses lenguaje de resultado completado. No afirmes haber consultado el estado actual de una impresora, una base de datos o Hacienda, ni haber reparado el sistema, si no hay un resultado verificado de una herramienta.
@@ -321,7 +321,7 @@ ${needsMenu ? `Menú relevante:\n${menuSummary || 'catálogo vacío'}` : 'No se 
 
     if (result.kind === 'deadline') {
       return res.status(504).json({
-        error: `Nyza tardó más de ${NYZA_GLOBAL_DEADLINE_MS / 1000} segundos en responder. Intenta de nuevo en un momento.`
+        error: 'No pude responder ahora. Intenta de nuevo en unos segundos.'
       });
     }
 

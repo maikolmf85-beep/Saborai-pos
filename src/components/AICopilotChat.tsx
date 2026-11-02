@@ -131,7 +131,7 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       const learningContext = /aprend|mejor|iq|evoluciona|conocimiento|regla|nota local/i.test(userText)
         ? nyzaLearningService.getLocalLearningSummary()
         : undefined;
-      const compactMenu = needsMenuContext ? menuItems.slice(0, 500).map(m => ({
+      const compactMenu = needsMenuContext ? menuItems.slice(0, needsStockContext ? 500 : 80).map(m => ({
         name: m.name,
         price: m.price,
         category: m.category,
@@ -149,34 +149,40 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       })) : [];
 
       const token = localStorage.getItem('saborai_token');
-      const apiRes = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          userText,
-          messages: messages.slice(-6),
-          context: {
-            menuItems: compactMenu,
-            menuItemCount: needsMenuContext ? menuItems.length : 0,
-            selectedTable: needsOrderContext && selectedTable
-              ? { id: selectedTable.id, name: selectedTable.name, status: selectedTable.status, seats: selectedTable.seats }
-              : null,
-            zones: needsZoneContext ? zones : [],
-            localLearningSummary: learningContext
-          }
-        })
-      });
+      const requestController = new AbortController();
+      const requestTimeout = window.setTimeout(() => requestController.abort(), 9_000);
+      let apiRes: Response;
+      try {
+        apiRes = await fetch('/api/ai/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          signal: requestController.signal,
+          body: JSON.stringify({
+            userText,
+            messages: messages.slice(-4),
+            context: {
+              menuItems: compactMenu,
+              menuItemCount: needsMenuContext ? menuItems.length : 0,
+              selectedTable: needsOrderContext && selectedTable
+                ? { id: selectedTable.id, name: selectedTable.name, status: selectedTable.status, seats: selectedTable.seats }
+                : null,
+              zones: needsZoneContext ? zones : [],
+              localLearningSummary: learningContext
+            }
+          })
+        });
+      } finally {
+        window.clearTimeout(requestTimeout);
+      }
 
       if (currentTenantIdRef.current !== requestTenantId) return;
       setIsTyping(false);
 
       if (!apiRes.ok) {
-        const errJson = await apiRes.json().catch(() => ({}));
-        const errorParts = [errJson.error, errJson.details].filter(Boolean);
-        throw new Error(Array.from(new Set(errorParts)).join(' ') || 'No se pudo comunicar con el servicio de IA.');
+        throw new Error(`http_${apiRes.status}`);
       }
 
       const data = await apiRes.json();
@@ -222,10 +228,11 @@ export const AICopilotChat: React.FC<AICopilotChatProps> = ({
       if (currentTenantIdRef.current !== requestTenantId) return;
       const errMsg = error instanceof Error ? error.message : String(error);
       console.error('Nyza AI Error:', errMsg);
+      const customerMessage = 'No pude responder ahora. Intenta de nuevo en unos segundos.';
       setIsTyping(false);
       setMessages(prev => [
         ...prev.map(message => message.id === aiMsgId
-          ? { ...message, isError: true, text: `Lo siento, hubo un inconveniente al conectarme: ${errMsg}` }
+          ? { ...message, isError: true, text: customerMessage }
           : message)
       ]);
     }

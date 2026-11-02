@@ -1,6 +1,6 @@
 export const NYZA_GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'] as const;
-export const NYZA_GLOBAL_DEADLINE_MS = 12_000;
-export const NYZA_RETRY_DELAY_MS = 900;
+export const NYZA_GLOBAL_DEADLINE_MS = 8_000;
+export const NYZA_RETRY_DELAY_MS = 300;
 export const NYZA_MAX_ATTEMPTS_PER_MODEL = 2;
 
 export type GeminiFailureClass = 'transient' | 'non-transient';
