@@ -1,4 +1,4 @@
-import { ElectronicInvoiceCR, TableItem, TenantInfo } from '../types';
+import { ElectronicInvoiceCR, ElectronicInvoiceItem, TenantInfo } from '../types';
 import { resolveRestaurantCabys, isValidCabys } from './cabysService';
 import { getStoredTenantId, getTenantItem } from './tenantStorage';
 
@@ -242,7 +242,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   let totServGrav = 0, totServExe = 0, totMercGrav = 0, totMercExe = 0, totImp = 0;
   const desglose: Record<string, number> = {};
 
-  const linesXml = invoice.items.map((item: TableItem, index: number) => {
+  const linesXml = invoice.items.map((item: ElectronicInvoiceItem, index: number) => {
     // Garantizar código CABYS 100% válido y activo de restaurante
     let cabys = String(item.cabysCode || '').replace(/\D/g, '');
     if (cabys.length !== 13 || /^0+$/.test(cabys)) {

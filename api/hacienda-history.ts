@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
+import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
@@ -35,7 +36,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       documentType: row.document_type,
       status: row.hacienda_status,
       total: Number(row.total || 0),
-      invoiceData: row.invoice_data || {},
+      invoiceData: sanitizeFiscalInvoiceData(row.invoice_data),
       xmlContent: row.xml_content || undefined,
       signedXmlContent: row.signed_xml_content || undefined,
       errorMessage: row.error_message || undefined,

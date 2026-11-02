@@ -1,4 +1,5 @@
 import { ElectronicInvoiceCR, HaciendaConfig, TenantInfo } from '../types';
+import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
 import { 
   formatHaciendaDate, 
   validateInvoiceForHacienda, 
@@ -25,6 +26,7 @@ class HaciendaService {
       try {
         this.invoices = saved.map((inv: any) => ({
           ...inv,
+          items: toFiscalInvoiceItems(Array.isArray(inv.items) ? inv.items : []),
           fechaEmision: new Date(inv.fechaEmision)
         }));
       } catch (e) {
@@ -112,7 +114,7 @@ class HaciendaService {
           fechaEmision: source.fechaEmision || row.createdAt,
           moneda: source.moneda || 'CRC',
           tipoCambio: Number(source.tipoCambio || 1),
-          items: Array.isArray(source.items) ? source.items : [],
+          items: toFiscalInvoiceItems(Array.isArray(source.items) ? source.items : []),
           subtotal: Number(source.subtotal || row.total || 0),
           iva13: Number(source.iva13 || 0),
           iva4: Number(source.iva4 || 0),
@@ -184,10 +186,12 @@ class HaciendaService {
     overrideConfig?: HaciendaConfig
   ) {
     const activeConfig = overrideConfig || this.getConfig();
+    const fiscalItems = toFiscalInvoiceItems(invoice.items);
 
     // Save invoice as processing initially
     const newInvoice: ElectronicInvoiceCR = {
       ...invoice,
+      items: fiscalItems,
       estadoHacienda: 'PROCESANDO',
       errorMensaje: undefined
     };
@@ -235,7 +239,7 @@ class HaciendaService {
         moneda: invoice.moneda,
         tipoCambio: invoice.tipoCambio,
         pagos: invoice.pagos,
-        items: invoice.items,
+        items: fiscalItems,
         subtotal: invoice.subtotal,
         iva13: invoice.iva13,
         iva4: invoice.iva4,

@@ -29,6 +29,7 @@ const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ def
 const LegalPage = lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 import { cashShiftService } from './services/cashShiftService';
 import { printerService } from './services/printerService';
+import { sanitizeFiscalInvoiceData } from './utils/fiscalInvoiceItems';
 import { nyzaUIAgent } from './services/nyzaUIAgent';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
@@ -1453,7 +1454,7 @@ export function App() {
       consecutivo: sale.invoice.consecutivo,
       documentType: sale.invoice.tipoDocumento || 'TE',
       total: sale.invoice.totalComprobante,
-      invoiceData: sale.invoice,
+      invoiceData: sanitizeFiscalInvoiceData(sale.invoice),
       xmlContent: sale.invoice.xmlContent
     };
     const paymentPayload = {

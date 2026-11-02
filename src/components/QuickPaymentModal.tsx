@@ -22,7 +22,7 @@ import { getTenantItem } from '../services/tenantStorage';
 import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService } from '../services/employeeCreditService';
 import { localDB } from '../services/db';
 import { PosNotification } from './NotificationToast';
-import { formatDinerNames, getDinerNames, getDisplayableDinerName } from '../utils/orderDiners';
+import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
 
 interface QuickPaymentModalProps {
   isOpen: boolean;
@@ -82,21 +82,6 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const items: TableItem[] = subAccountId === 'ALL'
     ? rawItems
     : rawItems.filter(i => (i.subAccountId || 1) === subAccountId);
-
-  const accountNamesById = new Map<number, string>(
-    (table?.activeOrder?.subAccounts || []).map(account => [account.id, account.name] as const)
-  );
-  const receiptItems = items.map(item => ({
-    ...item,
-    dinerName: getDisplayableDinerName(accountNamesById.get(item.subAccountId || 1))
-      || getDisplayableDinerName(item.dinerName)
-  }));
-  const receiptFallbackName = subAccountId === 'ALL'
-    ? undefined
-    : dinerName || accountNamesById.get(subAccountId);
-  const receiptDinerNames = getDinerNames(receiptItems, receiptFallbackName);
-  const dinerNamesLabel = formatDinerNames(receiptItems, receiptFallbackName);
-  const showItemDinerNames = subAccountId === 'ALL' && receiptDinerNames.length > 1;
 
   const isSimplified = tenant.taxRegime === 'SIMPLIFIED';
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -344,7 +329,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       ],
       moneda: 'CRC',
       tipoCambio: 1.0,
-      items,
+      items: toFiscalInvoiceItems(items),
       subtotal,
       iva13,
       iva4: 0,
@@ -572,7 +557,6 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                 <div>Consecutivo: {consecutivo}</div>
                 <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
                 <div>Mesa: {table.name}</div>
-                {dinerNamesLabel && <div className="font-bold">{dinerNamesLabel}</div>}
                 <div>Cliente: Cliente General Contado</div>
               </div>
 
@@ -582,7 +566,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                   <span>Cant / Descrip</span>
                   <span>Total</span>
                 </div>
-                {receiptItems.map((it, idx) => (
+                {items.map((it, idx) => (
                   <div key={idx} className="flex flex-col">
                     <div className="flex justify-between">
                       <span>{it.quantity}x {it.name.substring(0, 20)}</span>
@@ -591,11 +575,6 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     {it.selectedModifiers && it.selectedModifiers.length > 0 && (
                       <div className="text-[8px] text-stone-600 pl-3 leading-tight italic">
                         {it.selectedModifiers.map(m => m.choiceName).join(', ')}
-                      </div>
-                    )}
-                    {showItemDinerNames && it.dinerName && (
-                      <div className="text-[8px] text-stone-600 pl-3 leading-tight italic">
-                        Comensal: {it.dinerName}
                       </div>
                     )}
                   </div>

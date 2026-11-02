@@ -1,6 +1,6 @@
 import { PrinterConfig, PrinterRole, PrintReceiptData, PrintResult } from '../types/printer';
 import { getTenantItem, setTenantItem } from './tenantStorage';
-import { escapeHtmlText, formatDinerNames } from '../utils/orderDiners';
+import { escapeHtmlText, formatDinerNamesForPrinter } from '../utils/orderDiners';
 
 const PRINTERS_STORAGE_KEY = 'printers_config_v2';
 const DEFAULT_PRINT_RELAY_URL = 'http://127.0.0.1:8080/print';
@@ -344,7 +344,7 @@ export class PrinterService {
   public buildReceiptEscPos(data: PrintReceiptData, config: PrinterConfig): Uint8Array {
     const builder = new EscPosBuilder();
     const cols = config.paperWidth === '58mm' ? 32 : 42;
-    const dinerNamesLabel = formatDinerNames(data.items);
+    const dinerNamesLabel = formatDinerNamesForPrinter(data.items, config.role);
 
     builder.init();
 
@@ -752,7 +752,7 @@ export class PrinterService {
   public generateTicketHtml(data: PrintReceiptData, config: PrinterConfig): string {
     const is58 = config.paperWidth === '58mm';
     const widthPx = is58 ? '48mm' : '72mm';
-    const dinerNamesLabel = formatDinerNames(data.items);
+    const dinerNamesLabel = formatDinerNamesForPrinter(data.items, config.role);
 
     const itemsHtml = data.items.map(item => `
       <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
@@ -960,7 +960,7 @@ export class PrinterService {
     tableName: string;
     server: string;
     date?: string;
-    items: Array<{ name: string; quantity: number; notes?: string; modifiers?: string[]; station?: string; category?: string }>;
+    items: Array<{ name: string; quantity: number; dinerName?: string; notes?: string; modifiers?: string[]; station?: string; category?: string }>;
   }): Promise<void> {
     const kitchenItems = order.items.filter(i => i.station === 'Cocina' || i.category === 'Cocina' || (!i.station && i.category !== 'Bar'));
     const barItems = order.items.filter(i => i.station === 'Bar' || i.category === 'Bar');

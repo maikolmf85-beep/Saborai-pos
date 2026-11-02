@@ -1,3 +1,5 @@
+import type { PrinterRole } from '../types/printer';
+
 export interface DinerNameItem {
   dinerName?: string | null;
 }
@@ -30,7 +32,7 @@ export function getDinerNames(
   return [...uniqueNames.values()];
 }
 
-/** Formats the distinct diner names represented by a receipt or kitchen order. */
+/** Formats the distinct diner names represented by an internal order. */
 export function formatDinerNames(
   items: readonly DinerNameItem[],
   fallbackName?: string | null
@@ -39,6 +41,11 @@ export function formatDinerNames(
   if (names.length === 0) return undefined;
 
   return `${names.length === 1 ? 'Comensal' : 'Comensales'}: ${names.join(', ')}`;
+}
+
+/** Customer-facing cash receipts must never show internal diner labels. */
+export function formatDinerNamesForPrinter(items: readonly DinerNameItem[], role: PrinterRole): string | undefined {
+  return role === 'caja' ? undefined : formatDinerNames(items);
 }
 
 /** Escape user-provided text before inserting it into a printer HTML document. */

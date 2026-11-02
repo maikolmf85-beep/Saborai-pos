@@ -414,7 +414,6 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 tipoCambio: 1,
                 items: [
                   {
-                    id: 'sample_1',
                     name: 'Almuerzo Ejecutivo Restaurante',
                     price: 5000,
                     quantity: 1,
