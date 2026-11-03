@@ -16,7 +16,7 @@ Un bono de restaurante puede convertir un regalo de temporada en una visita futu
 
 Antes de diseñar la tarjeta, decide si el producto será un bono de valor abierto, un menú para dos personas, una experiencia concreta o una combinación cerrada. Esa decisión cambia la forma de comunicarlo y de registrar la redención. Un bono de valor abierto suele ofrecer flexibilidad; uno de experiencia puede facilitar la planificación de cocina, pero necesita describir con precisión qué incluye. En ambos casos, el mensaje debe hablar de prepago y regalo, no disfrazar una promoción como si fuera saldo adquirido.
 
-Como contexto, MEREGALA presenta tarjetas digitales para regalos en Costa Rica [1] y Chili's Costa Rica mantiene una sección pública de Giftcards [2]. Son ejemplos de presencia comercial del formato, no reglas que debas copiar ni evidencia de que sus condiciones sean aplicables a tu local.
+Como contexto, MEREGALA presenta tarjetas digitales para regalos en Costa Rica [1](https://www.meregala.com/) y Chili's Costa Rica mantiene una sección pública de Giftcards [2](https://chiliscr.com/giftcards.php). Son ejemplos de presencia comercial del formato, no reglas que debas copiar ni evidencia de que sus condiciones sean aplicables a tu local.
 
 ## Escribe las condiciones antes de cobrar
 
@@ -35,7 +35,7 @@ La tarjeta, página de compra o comprobante debe permitir que una persona razona
 
 No escondas restricciones en letra ilegible ni anuncies “úsalo cuando quieras” si existen fechas excluidas. Tampoco afirmes que el bono se cambia por efectivo, que nunca vence o que puede combinarse con cualquier otra condición sin haberlo revisado. En Costa Rica, el tratamiento de vencimiento, devolución, saldo y otras condiciones de consumo debe analizarse según el caso. Antes de publicar, pide revisión a un abogado o asesor de protección al consumidor.
 
-La venta tampoco resuelve por sí sola el tratamiento tributario. Hacienda describe los comprobantes electrónicos y la versión 4.4, obligatoria desde el 1 de septiembre de 2025 [3], pero ese material no determina por sí solo cuándo se documenta o devenga cada operación de una tarjeta regalo. Lleva el flujo a un contador público autorizado.
+La venta tampoco resuelve por sí sola el tratamiento tributario. Hacienda describe los comprobantes electrónicos y la versión 4.4, obligatoria desde el 1 de septiembre de 2025 [3](https://www.hacienda.go.cr/docs/ComprobantesElectronicos-GeneralidadesyVersion4.4.marzo2025.pdf), pero ese material no determina por sí solo cuándo se documenta o devenga cada operación de una tarjeta regalo. Lleva el flujo a un contador público autorizado.
 
 ## Escoge un soporte que puedas controlar
 
@@ -43,7 +43,7 @@ El bono puede ser físico, digital o híbrido. El soporte importa menos que la t
 
 Crea una bitácora mínima con estos campos: identificador, comprador, destinatario si es distinto, monto cargado, saldo, fecha de venta, fecha de cada redención, monto aplicado, cancelaciones, devolución autorizada y persona responsable. Si recopilas nombre, correo, teléfono o dedicatoria, define para qué necesitas cada dato y quién podrá verlo. No conviertas una compra de regalo en una base de marketing permanente sin informar la finalidad y obtener el consentimiento que corresponda.
 
-La guía de Q'aproveche sobre tarjetas para restaurantes [4] sirve como referencia de funciones que un proveedor puede ofrecer, como venta en línea o local, código, saldo parcial, cancelación y reportes. Trátala como ejemplo de producto, no como norma costarricense ni como garantía de que tu sistema actual tenga esas funciones. Pregunta a tu proveedor qué puede hacer, qué queda registrado y cómo exportar la información.
+La guía de Q'aproveche sobre tarjetas para restaurantes [4](https://qaproveche.com/en/blog/tarjetas-regalo-restaurante) sirve como referencia de funciones que un proveedor puede ofrecer, como venta en línea o local, código, saldo parcial, cancelación y reportes. Trátala como ejemplo de producto, no como norma costarricense ni como garantía de que tu sistema actual tenga esas funciones. Pregunta a tu proveedor qué puede hacer, qué queda registrado y cómo exportar la información.
 
 ## Diseña la redención para el turno más ocupado
 
@@ -59,7 +59,7 @@ Trabaja hacia atrás desde la fecha en que quieres entregar el regalo. En una pr
 
 Evita mezclar tres mensajes distintos: “compra saldo para regalar”, “obtén un descuento hoy” y “acumula beneficios por volver”. El primero es el bono; los otros pertenecen a promociones o fidelización. Separarlos facilita la contabilidad, reduce confusión y permite medir cuántos bonos se vendieron, no solo cuánto alcance tuvo la campaña.
 
-No prometas liquidez, gasto adicional o nuevos clientes como resultados garantizados. FoodTec describe las gift cards como prepago, ingreso inmediato y negocio futuro [5], pero sus cifras y referencias se concentran principalmente en Estados Unidos. Úsalo como contexto sectorial, no como dato de Costa Rica.
+No prometas liquidez, gasto adicional o nuevos clientes como resultados garantizados. FoodTec describe las gift cards como prepago, ingreso inmediato y negocio futuro [5](https://foodtecsolutions.com/blog/2026/01/04/how-gift-cards-can-help-restaurants-cope-with-inflation/), pero sus cifras y referencias se concentran principalmente en Estados Unidos. Úsalo como contexto sectorial, no como dato de Costa Rica.
 
 ## Checklist de lanzamiento
 
@@ -85,10 +85,10 @@ El bono debe dejar una experiencia clara tanto para quien regala como para quien
 
 La mejor siguiente acción es pequeña: redacta una versión piloto, simula tres redenciones y pide al contador y al asesor legal que revisen los puntos que no puedes resolver solo. Luego publica únicamente lo que el negocio pueda cumplir.
 
-## Fuentes
+## Fuentes consultadas
 
-[1]: https://www.meregala.com/ "Gift Cards | Tarjetas de Regalo – MEREGALA"
-[2]: https://chiliscr.com/giftcards.php "Chili's Fresh Tex Grill & Bar - Giftcards"
-[3]: https://www.hacienda.go.cr/docs/ComprobantesElectronicos-GeneralidadesyVersion4.4.marzo2025.pdf "Comprobantes Electrónicos y Versión 4.4"
-[4]: https://qaproveche.com/en/blog/tarjetas-regalo-restaurante "Gift cards for your restaurant, online and in-house"
-[5]: https://foodtecsolutions.com/blog/2026/01/04/how-gift-cards-can-help-restaurants-cope-with-inflation/ "How Gift Cards Can Help Restaurants Cope with Inflation"
+- [1] [Gift Cards | Tarjetas de Regalo – MEREGALA](https://www.meregala.com/)
+- [2] [Giftcards de Chili's Costa Rica](https://chiliscr.com/giftcards.php)
+- [3] [Comprobantes electrónicos y versión 4.4 — Ministerio de Hacienda](https://www.hacienda.go.cr/docs/ComprobantesElectronicos-GeneralidadesyVersion4.4.marzo2025.pdf)
+- [4] [Gift cards for your restaurant, online and in-house — Q'aproveche](https://qaproveche.com/en/blog/tarjetas-regalo-restaurante)
+- [5] [How Gift Cards Can Help Restaurants Cope with Inflation — FoodTec](https://foodtecsolutions.com/blog/2026/01/04/how-gift-cards-can-help-restaurants-cope-with-inflation/)
