@@ -21,11 +21,13 @@ import {
   History,
   Calculator,
   Menu,
+  LifeBuoy,
   X,
 } from 'lucide-react';
 import { TenantInfo, UserProfile } from '../types';
 
 export type ActiveTab = 'pos' | 'kds' | 'billing' | 'landing' | 'menu' | 'reports';
+const SUPPORT_EMAIL = 'maikolr85@outlook.es';
 
 interface NavbarProps {
   activeTab: ActiveTab;
@@ -470,7 +472,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="text-[10px] font-bold tracking-tight mt-0.5">Caja</span>
           </button>
 
-          {/* 4. Menú Desplegable (Más módulos) */}
+          {/* Contacto de soporte por correo */}
+          <a
+            id="nav-support-email-mobile"
+            href={`mailto:${SUPPORT_EMAIL}`}
+            aria-label={`Contactar soporte por correo electrónico: ${SUPPORT_EMAIL}`}
+            title={`Soporte: ${SUPPORT_EMAIL}`}
+            className="relative flex flex-col items-center justify-center flex-1 h-full py-1 text-stone-400 hover:text-stone-200 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a9b994]/70"
+          >
+            <div className="p-1 transition-transform duration-200">
+              <LifeBuoy className="w-5 h-5" />
+            </div>
+            <span className="text-[10px] font-bold tracking-tight mt-0.5">Soporte</span>
+          </a>
+
+          {/* 5. Menú Desplegable (Más módulos) */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -800,6 +816,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               sublabel="Impresoras, cajas y Hacienda DGT"
             />
           )}
+
+          {/* Enlace de soporte: abre el cliente de correo sin enviar automáticamente */}
+          <div className="relative flex items-center justify-center sm:justify-start w-auto sm:w-full my-0 sm:my-0.5 px-0 sm:px-2">
+            <a
+              id="nav-support-email"
+              href={`mailto:${SUPPORT_EMAIL}`}
+              aria-label={`Contactar soporte por correo electrónico: ${SUPPORT_EMAIL}`}
+              title={`Soporte: ${SUPPORT_EMAIL}`}
+              className={`group/nav-item relative w-12 h-12 sm:min-h-11 sm:w-full sm:min-w-0 rounded-lg flex items-center justify-center ${isSidebarCollapsed ? 'sm:px-0 sm:justify-center' : 'sm:px-2.5 sm:justify-start'} transition-[background-color,color,transform] duration-200 ease-out sm:hover:translate-x-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black motion-reduce:transition-none cursor-pointer text-[#fcfeff]/70 hover:text-white hover:bg-white/[0.045]`}
+            >
+              <div className="relative flex items-center justify-center shrink-0 w-6 h-6">
+                <LifeBuoy className="w-5 h-5" />
+              </div>
+              <div className={`hidden sm:flex min-w-0 flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity,transform] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none ${isSidebarCollapsed ? 'ml-0 opacity-0 w-0 translate-x-1' : 'ml-3 opacity-100 w-44 translate-x-0'}`}>
+                <span className="text-sm font-bold">Soporte</span>
+                <span className="text-[10px] text-stone-400 mt-0.5 block truncate w-full text-left">{SUPPORT_EMAIL}</span>
+              </div>
+            </a>
+          </div>
 
           {/* Logout Button */}
           <NavVerticalItem
