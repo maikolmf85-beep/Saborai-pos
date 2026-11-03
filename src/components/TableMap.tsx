@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { hasActiveShiftForZone, shouldOpenOrderOnTableSelect } from './tableMapOrderFlow';
+import { TableLayoutDragDraft } from '../services/tableLayoutDrag';
 import { Table, TableStatus, UserProfile } from '../types';
 import { WaiterPinModal } from './WaiterPinModal';
 import { TableReservationsModal } from './TableReservationsModal';
@@ -68,10 +69,12 @@ export const TableMap: React.FC<TableMapProps> = ({
   const tenantZones = tenant.zones || [];
   
   const [tables, setTables] = useState<Table[]>(() => initialTablesList);
+  const tableDragDraftRef = useRef(new TableLayoutDragDraft(initialTablesList));
 
   useEffect(() => {
     // The parent state is hydrated from the central floor-plan record. Do not
     // prefer component-local coordinates over a newer synchronized layout.
+    tableDragDraftRef.current.reset(initialTablesList);
     setTables(initialTablesList);
     setSelectedTable(prev => {
       if (!prev) return null;
@@ -276,7 +279,7 @@ export const TableMap: React.FC<TableMapProps> = ({
     const percentX = Math.round(((clampedX) / rect.width) * 100);
     const percentY = Math.round(((clampedY) / rect.height) * 100);
 
-    setTables(prev => prev.map(t => t.id === draggingId ? { ...t, x: percentX, y: percentY } : t));
+    setTables(tableDragDraftRef.current.move(draggingId, percentX, percentY));
   };
 
   // Pointer drag end
@@ -288,7 +291,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         // ignore
       }
       // Persist the completed drag through the parent, which saves it centrally.
-      onUpdateTables?.(tables);
+      tableDragDraftRef.current.commit(onUpdateTables);
       setDraggingId(null);
     }
   };
