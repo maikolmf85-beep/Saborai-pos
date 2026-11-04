@@ -1,10 +1,14 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { hasActiveShiftForZone, shouldOpenOrderOnTableSelect } from './tableMapOrderFlow';
 import { TableLayoutDragDraft } from '../services/tableLayoutDrag';
 import { Table, TableStatus, UserProfile } from '../types';
 import { WaiterPinModal } from './WaiterPinModal';
 import { TableReservationsModal } from './TableReservationsModal';
 import { ConfirmDialog } from './ConfirmDialog';
+import { hasPendingTableReservationSync, loadTableReservations, subscribeToTableReservations, updateTableReservation } from '../services/tableReservationService';
+import { getUpcomingReservationForTable } from '../services/tableReservationLogic';
+import type { TableReservation } from '../types/tableReservation';
+import type { PosNotification } from './NotificationToast';
 import { 
   Plus, 
   UtensilsCrossed, 
@@ -51,6 +55,7 @@ interface TableMapProps {
   onOpenCashShift?: (zone: string) => void;
   currentUser?: UserProfile | null;
   onAuthenticateStaff: (staff: UserProfile, pin: string) => Promise<UserProfile>;
+  onNotify?: (notification: PosNotification) => void;
 }
 
 export const TableMap: React.FC<TableMapProps> = ({
@@ -72,12 +77,43 @@ export const TableMap: React.FC<TableMapProps> = ({
   hasActiveShift = false,
   onOpenCashShift,
   currentUser,
-  onAuthenticateStaff
+  onAuthenticateStaff,
+  onNotify
 }) => {
   const tenantZones = tenant.zones || [];
   
   const [tables, setTables] = useState<Table[]>(() => initialTablesList);
+  const [reservations, setReservations] = useState<TableReservation[]>([]);
+  const [reservationClock, setReservationClock] = useState(() => Date.now());
+  const [reservationAlert, setReservationAlert] = useState<TableReservation | null>(null);
+  const [reservationToEdit, setReservationToEdit] = useState<TableReservation | null>(null);
+  const onNotifyRef = useRef(onNotify);
   const tableDragDraftRef = useRef(new TableLayoutDragDraft(initialTablesList));
+
+  useEffect(() => {
+    onNotifyRef.current = onNotify;
+  }, [onNotify]);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const loaded = await loadTableReservations(tenant.id);
+        if (active) setReservations(loaded);
+      } catch {
+        // The reservation panel and existing local cache remain available offline.
+      }
+    };
+    void refresh();
+    const unsubscribe = subscribeToTableReservations(tenant.id, () => { void refresh(); });
+    const handleOnline = () => { void refresh(); };
+    window.addEventListener('online', handleOnline);
+    return () => {
+      active = false;
+      unsubscribe();
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [tenant.id]);
 
   useEffect(() => {
     // The parent state is hydrated from the central floor-plan record. Do not
@@ -259,11 +295,86 @@ export const TableMap: React.FC<TableMapProps> = ({
   const availableCount = zoneTables.filter(t => t.status === 'AVAILABLE').length;
   const totalSalesInProgress = tables.reduce((acc, t) => acc + calculateTableTotal(t), 0);
 
+  const reservationByTable = useMemo(() => {
+    const result = new Map<string, TableReservation>();
+    for (const table of tables) {
+      const upcoming = getUpcomingReservationForTable(table.id, reservations, reservationClock);
+      if (upcoming) result.set(table.id, upcoming);
+    }
+    return result;
+  }, [reservations, reservationClock, tables]);
+
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === 'visible') setReservationClock(Date.now());
+    };
+    const interval = window.setInterval(tick, 15_000);
+    const handleResume = () => tick();
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+    };
+  }, []);
+
+  const markReservationArrived = async (reservation: TableReservation) => {
+    if (reservation.status !== 'CONFIRMED') return;
+    try {
+      const saved = await updateTableReservation(tenant.id, { ...reservation, status: 'ARRIVED', arrivedAt: new Date().toISOString() });
+      setReservations(previous => previous.map(item => item.id === saved.id ? saved : item));
+      setReservationAlert(saved);
+      onNotifyRef.current?.({
+        id: `reservation-arrived-${saved.id}-${Date.now()}`,
+        type: 'TABLE_UPDATE',
+        title: 'Llegada registrada',
+        message: hasPendingTableReservationSync(tenant.id) ? 'Guardada en este dispositivo; pendiente de sincronización.' : 'La llegada quedó sincronizada.',
+        timestamp: new Date()
+      });
+    } catch {
+      onNotifyRef.current?.({ id: `reservation-arrival-error-${Date.now()}`, type: 'TABLE_UPDATE', title: 'No se pudo registrar la llegada', message: 'Inténtalo de nuevo cuando la reserva esté disponible.', timestamp: new Date() });
+    }
+  };
+
+  const requestReservationCancellation = (reservation: TableReservation) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Cancelar reserva',
+      message: `¿Cancelar la reserva de ${reservation.customerName}? La mesa quedará disponible para otra reserva.`,
+      confirmLabel: 'Sí, cancelar',
+      cancelLabel: 'Volver',
+      type: 'danger',
+      onConfirm: () => {
+        setConfirmConfig(previous => ({ ...previous, isOpen: false }));
+        void updateTableReservation(tenant.id, { ...reservation, status: 'CANCELLED' }).then(saved => {
+          setReservations(previous => previous.map(item => item.id === saved.id ? saved : item));
+          setReservationAlert(null);
+          onNotifyRef.current?.({
+            id: `reservation-cancelled-${saved.id}-${Date.now()}`,
+            type: 'TABLE_UPDATE',
+            title: 'Reserva cancelada',
+            message: hasPendingTableReservationSync(tenant.id) ? 'Guardada en este dispositivo; pendiente de sincronización.' : 'La cancelación quedó sincronizada.',
+            timestamp: new Date()
+          });
+        }).catch(() => {
+          onNotifyRef.current?.({ id: `reservation-cancel-error-${Date.now()}`, type: 'TABLE_UPDATE', title: 'No se pudo cancelar la reserva', message: 'Inténtalo de nuevo.', timestamp: new Date() });
+        });
+      }
+    });
+  };
+
   // Pointer drag start
   const handlePointerDown = (e: React.PointerEvent, table: Table) => {
     if (!isEditMode) {
       setSelectedTable(table);
       onSelectTable(table);
+      const upcomingReservation = reservationByTable.get(table.id);
+      if (upcomingReservation) {
+        setReservationAlert(upcomingReservation);
+        setShowDetailsDrawer(true);
+        return;
+      }
       if (shouldOpenOrderOnTableSelect(table.zone, isEditMode, shiftState)) {
         handleOpenTableOrder(table);
       }
@@ -1055,15 +1166,19 @@ export const TableMap: React.FC<TableMapProps> = ({
               const isPreCheck = table.status === 'PRE_CHECK';
               const isAvailable = table.status === 'AVAILABLE';
               const isReserved = table.status === 'RESERVED';
+              const upcomingReservation = reservationByTable.get(table.id);
+              const hasUpcomingReservation = Boolean(upcomingReservation);
               const isDragging = draggingId === table.id;
               const total = calculateTableTotal(table);
 
               // Circular Table Colors
               const tableBgClass = isOccupied
-                ? 'bg-[#e7eee2] text-[#3b3733] border-[#588157] ring-2 ring-[#a9b994]/50'
+                ? hasUpcomingReservation
+                  ? 'bg-[#e7eee2] text-[#3b3733] border-purple-500 ring-2 ring-purple-400/80'
+                  : 'bg-[#e7eee2] text-[#3b3733] border-[#588157] ring-2 ring-[#a9b994]/50'
                 : isPreCheck
                 ? 'bg-blue-100 text-blue-900 border-blue-400 ring-2 ring-blue-300/50'
-                : isReserved
+                : isReserved || hasUpcomingReservation
                 ? 'bg-purple-100 text-purple-900 border-purple-400'
                 : 'bg-white text-stone-800 border-stone-300 hover:border-[#588157]';
 
@@ -1120,6 +1235,11 @@ export const TableMap: React.FC<TableMapProps> = ({
                     {isOccupied && total > 0 && (
                       <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#3b3733] text-white text-[8px] font-black px-1.5 py-0.2 rounded-full shadow-xs pointer-events-none whitespace-nowrap">
                         ₡{(total / 1000).toFixed(0)}k
+                      </div>
+                    )}
+                    {upcomingReservation && (
+                      <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-purple-200 bg-white px-1.5 py-0.5 text-[8px] font-black text-purple-800 shadow-xs pointer-events-none whitespace-nowrap">
+                        Reserva {new Date(upcomingReservation.reservedAt).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     )}
                   </div>
@@ -1482,11 +1602,13 @@ export const TableMap: React.FC<TableMapProps> = ({
       />
 
       <TableReservationsModal
+        key={reservationToEdit?.id || 'reservation-agenda'}
         isOpen={isReservationsOpen}
-        onClose={() => setIsReservationsOpen(false)}
+        onClose={() => { setIsReservationsOpen(false); setReservationToEdit(null); }}
         tenant={tenant}
         tables={tables}
         currentUser={currentUser}
+        initialReservationToEdit={reservationToEdit}
         canOpenTable={(table) => {
           if (table.status !== 'AVAILABLE') {
             setConfirmConfig({
@@ -1517,6 +1639,29 @@ export const TableMap: React.FC<TableMapProps> = ({
       />
 
       {/* Ventana de confirmación elegante */}
+      {reservationAlert && (
+        <div className="fixed inset-0 z-[9500] flex items-center justify-center bg-stone-950/65 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="upcoming-reservation-title" onClick={event => { if (event.target === event.currentTarget) setReservationAlert(null); }}>
+          <div className="w-full max-w-md rounded-2xl border border-purple-200 bg-white p-5 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-800"><CalendarDays className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                <h2 id="upcoming-reservation-title" className="font-black text-stone-900">Mesa reservada</h2>
+                <p className="mt-1 text-sm text-stone-700">{reservationAlert.tableName} · {new Date(reservationAlert.reservedAt).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</p>
+                <p className="mt-1 text-xs text-stone-500">{reservationAlert.customerName} · {reservationAlert.partySize} personas · {reservationAlert.customerPhone}</p>
+              </div>
+            </div>
+            {tables.some(table => table.id === reservationAlert.tableId && table.status === 'OCCUPIED') && (
+              <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-900">Esta mesa está ocupada; pronto llegará la reserva. Puedes cambiarla ahora para evitar inconvenientes con el salón.</div>
+            )}
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {reservationAlert.status === 'CONFIRMED' && <button type="button" onClick={() => void markReservationArrived(reservationAlert)} className="rounded-xl bg-[#588157] px-3 py-2.5 text-xs font-black text-white hover:bg-[#476946]">Ya llegó</button>}
+              {(reservationAlert.status === 'CONFIRMED' || reservationAlert.status === 'ARRIVED') && <button type="button" onClick={() => { setReservationToEdit(reservationAlert); setReservationAlert(null); setIsReservationsOpen(true); }} className="rounded-xl border border-purple-200 bg-purple-50 px-3 py-2.5 text-xs font-black text-purple-900 hover:bg-purple-100">Cambiar mesa</button>}
+              {(reservationAlert.status === 'CONFIRMED' || reservationAlert.status === 'ARRIVED') && <button type="button" onClick={() => requestReservationCancellation(reservationAlert)} className="rounded-xl border border-rose-200 px-3 py-2.5 text-xs font-bold text-rose-700 hover:bg-rose-50">Cancelar (si fue un error)</button>}
+              <button type="button" onClick={() => setReservationAlert(null)} className="rounded-xl border border-stone-200 px-3 py-2.5 text-xs font-bold text-stone-600 hover:bg-stone-50">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
       <ConfirmDialog
         isOpen={confirmConfig.isOpen}
         title={confirmConfig.title}

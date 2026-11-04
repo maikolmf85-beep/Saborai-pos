@@ -50,6 +50,8 @@ import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
 import { restoreTablePositionsFromSnapshot } from './services/tableLayoutPersistence';
 import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
+import { isReservationReminderDue } from './services/tableReservationLogic';
+import { loadTableReservations, subscribeToTableReservations } from './services/tableReservationService';
 import { supabaseClient } from './lib/supabaseClient';
 import { WifiOff, Lock, Eye, ChefHat } from 'lucide-react';
 
@@ -229,12 +231,80 @@ export function App() {
   }, [isLoadingAuth, currentUser?.id, currentUser?.role, tenant.id, tenant.onboardingCompleted]);
 
   const [notifications, setNotifications] = useState<PosNotification[]>([]);
-  const addNotification = (notif: PosNotification) => {
+  const addNotification = useCallback((notif: PosNotification) => {
     setNotifications(prev => [notif, ...prev.slice(0, 4)]);
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== notif.id));
     }, 7000);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (isLoadingAuth || !currentUser?.id) return;
+    let active = true;
+    let reservationSnapshot: Awaited<ReturnType<typeof loadTableReservations>> = [];
+    const cacheKey = `saborai_reservation_reminders_v1:${tenant.id}`;
+    const notified = new Set<string>();
+    try {
+      const stored = window.sessionStorage.getItem(cacheKey);
+      const parsed: unknown = stored ? JSON.parse(stored) : [];
+      if (Array.isArray(parsed)) {
+        for (const value of parsed) if (typeof value === 'string') notified.add(value);
+      }
+    } catch {
+      // The in-memory set still prevents duplicates while this session remains mounted.
+    }
+
+    const refresh = async () => {
+      try {
+        const loaded = await loadTableReservations(tenant.id);
+        if (active) reservationSnapshot = loaded;
+      } catch {
+        // The service keeps locally cached reservations available while offline.
+      }
+    };
+    const remindDueReservations = () => {
+      if (!active || document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      for (const reservation of reservationSnapshot) {
+        if (!isReservationReminderDue(reservation, now)) continue;
+        const key = `${reservation.id}:${reservation.reservedAt}`;
+        if (notified.has(key)) continue;
+        notified.add(key);
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify([...notified]));
+        } catch {
+          // The in-memory set still prevents repeated reminders in this active session.
+        }
+        const reservationTime = new Date(reservation.reservedAt).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' });
+        addNotification({
+          id: `reservation-reminder-${tenant.id}-${key}`,
+          type: 'RESERVATION_REMINDER',
+          title: 'Reserva próxima',
+          message: `${reservation.customerName} llega a las ${reservationTime} · ${reservation.tableName}.`,
+          timestamp: new Date(now)
+        });
+      }
+    };
+    const refreshAndRemind = async () => {
+      await refresh();
+      remindDueReservations();
+    };
+    void refreshAndRemind();
+    const unsubscribe = subscribeToTableReservations(tenant.id, () => { void refreshAndRemind(); });
+    const interval = window.setInterval(remindDueReservations, 15_000);
+    const handleResume = () => { void refreshAndRemind(); };
+    document.addEventListener('visibilitychange', handleResume);
+    window.addEventListener('focus', handleResume);
+    window.addEventListener('online', handleResume);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      unsubscribe();
+      document.removeEventListener('visibilitychange', handleResume);
+      window.removeEventListener('focus', handleResume);
+      window.removeEventListener('online', handleResume);
+    };
+  }, [addNotification, currentUser?.id, isLoadingAuth, tenant.id]);
 
   // Mantener tenant.haciendaConfig reactivo cuando se actualiza desde HaciendaSettings
   useEffect(() => {
@@ -2048,6 +2118,7 @@ export function App() {
                   activeShiftZones={cashShiftService.getActiveShift()?.linkedZones}
                   hasActiveShift={Boolean(cashShiftService.getActiveShift())}
                   onOpenCashShift={(zone) => handleOpenCashShift('status', zone)}
+                  onNotify={addNotification}
                 />
               )
             )}
