@@ -1,4 +1,5 @@
 import type { ElectronicInvoiceCR, Table } from '../types';
+import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems';
 
 export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
 
@@ -94,7 +95,7 @@ class PosCloudService {
       consecutivo: sale.invoice.consecutivo,
       documentType: sale.invoice.tipoDocumento || 'TE',
       total: sale.invoice.totalComprobante,
-      invoiceData: sale.invoice,
+      invoiceData: sanitizeFiscalInvoiceData(sale.invoice),
       xmlContent: sale.invoice.xmlContent
     }, tenantId, `${operationPrefix}:invoice`);
   }

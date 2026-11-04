@@ -25,6 +25,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount, UserProfile } from '../types';
+import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
@@ -368,7 +369,7 @@ Medio de Pago: ${paymentMethod}
     }],
     moneda: 'CRC',
     tipoCambio: 1.0,
-    items: activeItems,
+    items: toFiscalInvoiceItems(activeItems),
     subtotal,
     iva13,
     iva4: 0,
@@ -1276,10 +1277,10 @@ Medio de Pago: ${paymentMethod}
             <div className="py-2.5 border-b border-dashed border-black space-y-0.5 text-[10px]">
               <div className="font-bold text-center uppercase">
                 {isSimplified
-                  ? (selectedSubAccount === 'ALL' ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO' : `COMPROBANTE RÉGIMEN SIMPLIFICADO - CUENTA ${selectedSubAccount}`)
+                  ? 'COMPROBANTE RÉGIMEN SIMPLIFICADO'
                   : isFacturaElectronica
-                    ? (selectedSubAccount === 'ALL' ? 'FACTURA ELECTRÓNICA v4.4' : `FACTURA ELECTRÓNICA - CUENTA ${selectedSubAccount}`)
-                    : (selectedSubAccount === 'ALL' ? 'TIQUETE ELECTRÓNICO v4.4' : `TIQUETE ELECTRÓNICO - CUENTA ${selectedSubAccount}`)}
+                    ? 'FACTURA ELECTRÓNICA v4.4'
+                    : 'TIQUETE ELECTRÓNICO v4.4'}
               </div>
               <div>Consecutivo: {consecutivo}</div>
               <div>Fecha: {new Date().toLocaleDateString('es-CR')} {new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -1303,7 +1304,7 @@ Medio de Pago: ${paymentMethod}
                     <span>₡{(item.price * item.quantity).toLocaleString()}</span>
                   </div>
                   <div className="text-[8px] text-stone-600">
-                    CABYS: {item.cabysCode} (Cuenta {item.subAccountId || 1})
+                    CABYS: {item.cabysCode}
                   </div>
                 </div>
               ))}

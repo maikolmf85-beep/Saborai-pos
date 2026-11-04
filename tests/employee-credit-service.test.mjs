@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { employeeCreditService, getSelectableEmployees } from '../src/services/employeeCreditService.ts';
+import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService, getSelectableEmployees } from '../src/services/employeeCreditService.ts';
+import { getCostaRicaDateInputValue, getEmployeeCreditPeriodRange } from '../src/services/employeeCreditPeriod.ts';
 
 const memory = new Map();
 globalThis.window = {};
@@ -29,6 +30,23 @@ test('el selector devuelve colaboradores activos solo con id y nombre, sin puest
 
   assert.deepEqual(employees, [{ id: 'ana', name: 'Ana Rojas', active: true }]);
   assert.equal('role' in employees[0], false);
+});
+
+test('el cargo del pago rápido comparte una clave idempotente entre caché local y sincronización', () => {
+  const registration = buildQuickPaymentEmployeeCreditCharge({
+    tenantId: 'tenant-a',
+    employeeId: 'ana',
+    employeeName: 'Ana Rojas',
+    amount: 1200.129,
+    orderNumber: 'EMP-1002',
+    invoiceClave: 'clave-unica-1'
+  });
+
+  assert.equal(registration.localCharge.amount, 1200.13);
+  assert.equal(registration.localCharge.idempotencyKey, registration.syncPayload.idempotencyKey);
+  assert.equal(registration.syncPayload.employeeId, 'ana');
+  assert.equal(registration.syncPayload.employeeName, 'Ana Rojas');
+  assert.match(registration.syncPayload.idempotencyKey, /clave-unica-1/);
 });
 
 test('los cargos locales se guardan por tenant, son pendientes y se deduplican por clave', () => {
@@ -101,6 +119,51 @@ test('el refresco conserva cargos locales pendientes además del saldo cloud', a
   const ledger = await employeeCreditService.refreshLedger('tenant-a');
   assert.equal(ledger.accounts.find(account => account.employeeId === 'ana').balance, 1050);
   assert.equal(ledger.transactions.filter(transaction => transaction.pending).length, 1);
+});
+
+test('el informe del periodo incluye cargos offline pendientes y no duplica los confirmados', async () => {
+  resetStorage();
+  const charge = employeeCreditService.recordCharge({
+    tenantId: 'tenant-a', employeeId: 'ana', employeeName: 'Ana Rojas', amount: 50,
+    orderNumber: 'EMP-1003', idempotencyKey: 'credit:quick:tenant-a:clave-3'
+  });
+  const range = getEmployeeCreditPeriodRange('year', getCostaRicaDateInputValue());
+  let reportTransactions = [];
+  let serverChargeTotal = 0;
+  let serverTransactionCount = 0;
+  globalThis.fetch = async () => response({
+    success: true,
+    tenantId: 'tenant-a',
+    periodReport: {
+      from: range.from,
+      to: range.to,
+      chargeTotal: serverChargeTotal,
+      paymentTotal: 0,
+      netTotal: serverChargeTotal,
+      transactionCount: serverTransactionCount,
+      employeeSummaries: serverTransactionCount ? [{ employeeId: 'ana', employeeName: 'Ana Rojas', chargeTotal: 50, paymentTotal: 0, netTotal: 50, transactionCount: 1 }] : [],
+      transactions: reportTransactions,
+      hasMoreTransactions: false
+    }
+  });
+
+  const pendingReport = await employeeCreditService.getPeriodReport('tenant-a', range);
+  assert.equal(pendingReport.chargeTotal, 50);
+  assert.equal(pendingReport.transactionCount, 1);
+  assert.equal(pendingReport.transactions[0].pending, true);
+
+  reportTransactions = [{
+    id: 'cloud-charge-1', employeeId: 'ana', employeeName: 'Ana Rojas', type: 'CHARGE', amount: 50,
+    balanceAfter: 50, orderNumber: 'EMP-1003', reference: 'EMP-1003', idempotencyKey: charge.idempotencyKey,
+    createdAt: charge.createdAt
+  }];
+  serverChargeTotal = 50;
+  serverTransactionCount = 1;
+  const confirmedReport = await employeeCreditService.getPeriodReport('tenant-a', range);
+  assert.equal(confirmedReport.chargeTotal, 50);
+  assert.equal(confirmedReport.transactionCount, 1);
+  assert.equal(confirmedReport.transactions.length, 1);
+  assert.equal(confirmedReport.transactions[0].pending, false);
 });
 
 test('los abonos se envían al servidor y actualizan la caché con el saldo confirmado', async () => {

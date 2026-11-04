@@ -3,8 +3,11 @@ import { supabaseAdmin } from './supabase.js';
 import { handleOptions, requireAuth, requireRole, setCorsHeaders } from './security.js';
 import { ROLE_PERMISSIONS } from './rolePermissions.js';
 import { recordEmployeeCreditTransaction } from './employeeCredit.js';
+import { EmployeeCreditPeriodReportAccumulator } from './employeeCreditReport.js';
 
 const READ_ROLES = ['ADMIN', 'CAJERO', 'SALONERO_CAJA'] as const;
+const PERIOD_REPORT_PAGE_SIZE = 1000;
+const MAX_PERIOD_REPORT_TRANSACTIONS = 50000;
 
 function safeAmount(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 999999999999.99) return 0;
@@ -13,6 +16,22 @@ function safeAmount(value: unknown): number {
 
 function transactionType(value: unknown): 'CHARGE' | 'PAYMENT' | 'ADJUSTMENT' | 'VOID' {
   return value === 'PAYMENT' || value === 'ADJUSTMENT' || value === 'VOID' ? value : 'CHARGE';
+}
+
+function readPeriodRange(query: VercelRequest['query']): { from: string; to: string } | null {
+  const from = typeof query.from === 'string' ? query.from : '';
+  const to = typeof query.to === 'string' ? query.to : '';
+  if (!from && !to) return null;
+  if (!from || !to) throw new Error('El informe requiere fecha inicial y final.');
+
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  const rangeLength = toDate.getTime() - fromDate.getTime();
+  if (!Number.isFinite(fromDate.getTime()) || !Number.isFinite(toDate.getTime())
+    || rangeLength <= 0 || rangeLength > 367 * 24 * 60 * 60 * 1000) {
+    throw new Error('El rango de fechas del informe no es válido.');
+  }
+  return { from: fromDate.toISOString(), to: toDate.toISOString() };
 }
 
 export async function handleEmployeeCreditRequest(req: VercelRequest, res: VercelResponse) {
@@ -30,6 +49,14 @@ export async function handleEmployeeCreditRequest(req: VercelRequest, res: Verce
     if (queryTenant && queryTenant !== auth.tenantId) {
       return res.status(403).json({ error: 'El tenant solicitado no coincide con la sesión.' });
     }
+    let periodRange: { from: string; to: string } | null;
+    try {
+      periodRange = readPeriodRange(req.query);
+    } catch (error) {
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'El rango de fechas no es válido.' });
+    }
+    const periodEmployeeId = typeof req.query.employeeId === 'string' ? req.query.employeeId.trim() : '';
+    if (periodEmployeeId.length > 120) return res.status(400).json({ error: 'El colaborador del informe no es válido.' });
 
     const [employeesResult, accountsResult, transactionsResult] = await Promise.all([
       supabaseAdmin
@@ -88,7 +115,43 @@ export async function handleEmployeeCreditRequest(req: VercelRequest, res: Verce
       createdAt: String(row.created_at || '')
     }));
 
-    return res.status(200).json({ success: true, tenantId: auth.tenantId, accounts, employees, transactions, hasMoreTransactions: transactions.length === 500 });
+    let periodReport;
+    if (periodRange) {
+      const periodEmployeeNames = new Map(employeeNames);
+      accounts.forEach(account => {
+        if (!periodEmployeeNames.has(account.employeeId)) periodEmployeeNames.set(account.employeeId, account.employeeName);
+      });
+      const report = new EmployeeCreditPeriodReportAccumulator(periodRange.from, periodRange.to, periodEmployeeNames);
+      let offset = 0;
+      while (true) {
+        let reportQuery = supabaseAdmin
+          .from('pos_employee_credit_transactions')
+          .select('id, account_id, employee_id, transaction_type, amount, balance_after, order_id, reference, notes, idempotency_key, created_by, created_at')
+          .eq('tenant_id', auth.tenantId)
+          .gte('created_at', periodRange.from)
+          .lt('created_at', periodRange.to)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + PERIOD_REPORT_PAGE_SIZE - 1);
+        if (periodEmployeeId) reportQuery = reportQuery.eq('employee_id', periodEmployeeId);
+
+        const reportPage = await reportQuery;
+        if (reportPage.error) {
+          console.error('[Employee Credit] No se pudo cargar el informe por periodo.');
+          return res.status(503).json({ error: 'No se pudo cargar el informe de consumo del periodo.' });
+        }
+        const rows = reportPage.data || [];
+        report.add(rows);
+        const currentReport = report.toReport();
+        if (currentReport.transactionCount > MAX_PERIOD_REPORT_TRANSACTIONS) {
+          return res.status(413).json({ error: 'El periodo supera el máximo de movimientos para un informe. Selecciona un rango más corto.' });
+        }
+        if (rows.length < PERIOD_REPORT_PAGE_SIZE) break;
+        offset += PERIOD_REPORT_PAGE_SIZE;
+      }
+      periodReport = report.toReport();
+    }
+
+    return res.status(200).json({ success: true, tenantId: auth.tenantId, accounts, employees, transactions, hasMoreTransactions: transactions.length === 500, periodReport });
   }
 
   if (!requireRole(auth, res, ROLE_PERMISSIONS.offlineSync.PAYMENT)) return;

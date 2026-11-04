@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
+import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
 
 const require = createRequire(import.meta.url);
 
@@ -386,7 +387,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     }
 
-    const invoiceData = {
+    const invoiceData = sanitizeFiscalInvoiceData({
       emisor,
       receptor: receptor || null,
       documentType: String(documentType || 'TE').slice(0, 2),
@@ -407,7 +408,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       servicio10: Number(servicio10 || 0),
       clave,
       consecutivo: String(consecutivo || clave).slice(0, 20)
-    };
+    });
 
     // 4. Enviar a Recepción de Hacienda
     const recepcionRes = await fetch(endpoints.api, {

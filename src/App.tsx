@@ -29,6 +29,7 @@ const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ def
 const LegalPage = lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 import { cashShiftService } from './services/cashShiftService';
 import { printerService } from './services/printerService';
+import { sanitizeFiscalInvoiceData } from './utils/fiscalInvoiceItems';
 import { nyzaUIAgent } from './services/nyzaUIAgent';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
@@ -47,6 +48,7 @@ import { runTenantBoundToolSequence } from './services/nyzaToolSequence';
 import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
+import { restoreTablePositionsFromSnapshot } from './services/tableLayoutPersistence';
 import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
 import { supabaseClient } from './lib/supabaseClient';
@@ -75,16 +77,6 @@ function normalizeTablePositions(tables: Table[]): Table[] {
     x: Number.isFinite(table.x) ? Math.max(0, Math.min(100, table.x)) : (columns === 1 ? 50 : 15 + (index % columns) * (70 / (columns - 1))),
     y: Number.isFinite(table.y) ? Math.max(0, Math.min(100, table.y)) : 20 + (Math.floor(index / columns) % 4) * 18
   }));
-}
-
-function tablesWithoutLocalLayout(tables: Table[]): Table[] {
-  return tables.map(table => {
-    const cached = { ...table } as Partial<Table>;
-    delete cached.x;
-    delete cached.y;
-    delete cached.rotation;
-    return cached as Table;
-  });
 }
 
 function migrateLegacyTablePositions(tables: Table[], tenantId: string): Table[] {
@@ -490,6 +482,8 @@ export function App() {
     } catch {}
     return normalizeTablePositions(initialTables);
   });
+  const [localDbReady, setLocalDbReady] = useState(false);
+  const [hydratedSnapshotTenantId, setHydratedSnapshotTenantId] = useState<string | null>(null);
   const tablesRef = useRef<Table[]>(tables);
   useEffect(() => {
     tablesRef.current = tables;
@@ -503,8 +497,10 @@ export function App() {
   }>({ tenantId: '', ready: false, signature: '', remoteUpdatedAt: null, remoteLayout: null });
   const offlineSnapshotBaseRef = useRef<{ tenantId: string; layout: TableLayoutItem[] } | null>(null);
   const layoutWriteTimerRef = useRef<number | null>(null);
+  const layoutReadRetryTimerRef = useRef<number | null>(null);
   const pendingLayoutSignatureRef = useRef<string | null>(null);
   const layoutRetryAttemptsRef = useRef(0);
+  const layoutReadRetryAttemptsRef = useRef(0);
 
   const handleUpdateTables = (updatedTables: Table[], skipBroadcast = false) => {
     let nextTables = updatedTables;
@@ -539,8 +535,8 @@ export function App() {
     setTables(nextTables);
     if (!skipBroadcast) broadcastTables(nextTables);
     try {
-      const useCentralLayout = Boolean(supabaseClient && isCloudTenantUuid(tenant.id));
-      setTenantItem('tables', useCentralLayout ? tablesWithoutLocalLayout(nextTables) : nextTables, tenant.id);
+      // Keep the newest geometry synchronously available for a reload while the cloud write debounces.
+      setTenantItem('tables', nextTables, tenant.id);
     } catch {}
   };
 
@@ -627,6 +623,9 @@ export function App() {
     offlineSnapshotBaseRef.current = null;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
     layoutWriteTimerRef.current = null;
+    if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
+    layoutReadRetryTimerRef.current = null;
+    layoutReadRetryAttemptsRef.current = 0;
     pendingLayoutSignatureRef.current = null;
     layoutRetryAttemptsRef.current = 0;
 
@@ -658,6 +657,9 @@ export function App() {
       syncState.remoteUpdatedAt = record.updatedAt || syncState.remoteUpdatedAt;
       syncState.remoteLayout = record.layout;
       clearLegacyTablePositions(tenantId);
+      if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
+      layoutReadRetryTimerRef.current = null;
+      layoutReadRetryAttemptsRef.current = 0;
       const next = mergeCloudLayoutIntoTables(tablesRef.current, resolvedLayout);
       const signature = tableLayoutSignature(projectTableLayout(next));
       // La firma remota sirve como base para que el efecto de escritura vuelva
@@ -672,6 +674,7 @@ export function App() {
         tablesRef.current = next;
         setTables(next);
       }
+      try { setTenantItem('tables', next, tenantId); } catch {}
     };
 
     if (!isCloudTenantUuid(tenantId)) {
@@ -682,49 +685,91 @@ export function App() {
       return () => { cancelled = true; };
     }
 
-    const unsubscribe = subscribeToTableLayout(tenantId, applyRemoteLayout);
-    void (async () => {
-      const initial = await readTableLayout(tenantId);
-      if (cancelled || tableLayoutSyncRef.current !== syncState) return;
-      if (!initial.available) {
-        // Supabase is optional, offline, or the migration is not installed.
-        syncState.ready = true;
-        syncState.signature = tableLayoutSignature(projectTableLayout(tablesRef.current));
-        return;
-      }
-      if (initial.exists && initial.record) {
-        const incomingTime = initial.record.updatedAt ? Date.parse(initial.record.updatedAt) : 0;
-        const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
-        if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(initial.record);
-        else syncState.ready = true;
-        return;
-      }
+    const cloudClient = supabaseClient;
+    if (!cloudClient) {
+      syncState.ready = true;
+      syncState.signature = tableLayoutSignature(projectTableLayout(tablesRef.current));
+      return () => { cancelled = true; };
+    }
 
-      // Re-check/insert-on-conflict ensures a concurrent device's plan wins;
-      // use the latest local snapshot only when the tenant has no cloud row.
-      const seeded = await seedTableLayoutIfMissing(
-        tenantId,
-        projectTableLayout(tablesRef.current)
-      );
-      if (cancelled || tableLayoutSyncRef.current !== syncState) return;
-      if (seeded.available && seeded.exists && seeded.record) {
-        const incomingTime = seeded.record.updatedAt ? Date.parse(seeded.record.updatedAt) : 0;
-        const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
-        if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(seeded.record);
-        else syncState.ready = true;
-      } else {
-        syncState.ready = true;
-        syncState.signature = tableLayoutSignature(projectTableLayout(tablesRef.current));
+    // Wait until both the app session and offline snapshot have hydrated. Otherwise
+    // a transient auth read can make the default grid look like a confirmed layout.
+    if (isLoadingAuth || hydratedSnapshotTenantId !== tenantId) {
+      return () => { cancelled = true; };
+    }
+
+    const unsubscribe = subscribeToTableLayout(tenantId, applyRemoteLayout);
+    let readInFlight = false;
+    const scheduleInitialReadRetry = () => {
+      if (cancelled || tableLayoutSyncRef.current !== syncState || syncState.ready) return;
+      layoutReadRetryAttemptsRef.current += 1;
+      const exponent = Math.min(layoutReadRetryAttemptsRef.current - 1, 6);
+      const retryDelay = Math.min(1_000 * 2 ** exponent, 60_000);
+      layoutReadRetryTimerRef.current = window.setTimeout(() => {
+        layoutReadRetryTimerRef.current = null;
+        void loadInitialLayout();
+      }, retryDelay);
+    };
+    const loadInitialLayout = async () => {
+      if (cancelled || readInFlight || syncState.ready) return;
+      readInFlight = true;
+      try {
+        await cloudClient.auth.getSession();
+        const initial = await readTableLayout(tenantId);
+        if (cancelled || tableLayoutSyncRef.current !== syncState) return;
+        if (!initial.available) {
+          // A failed read is not evidence that the row is absent: keep local positions and retry.
+          scheduleInitialReadRetry();
+          return;
+        }
+        if (initial.exists && initial.record) {
+          const incomingTime = initial.record.updatedAt ? Date.parse(initial.record.updatedAt) : 0;
+          const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
+          if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(initial.record);
+          else syncState.ready = true;
+          return;
+        }
+
+        // Seed only after an available read confirms no row, and only after the
+        // synchronous cache and IndexedDB snapshot have had a chance to hydrate.
+        const seeded = await seedTableLayoutIfMissing(
+          tenantId,
+          projectTableLayout(tablesRef.current)
+        );
+        if (cancelled || tableLayoutSyncRef.current !== syncState) return;
+        if (seeded.available && seeded.exists && seeded.record) {
+          const incomingTime = seeded.record.updatedAt ? Date.parse(seeded.record.updatedAt) : 0;
+          const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
+          if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(seeded.record);
+          else syncState.ready = true;
+        } else {
+          scheduleInitialReadRetry();
+        }
+      } catch {
+        scheduleInitialReadRetry();
+      } finally {
+        readInFlight = false;
       }
-    })();
+    };
+    const handleOnline = () => {
+      if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
+      layoutReadRetryTimerRef.current = null;
+      layoutReadRetryAttemptsRef.current = 0;
+      void loadInitialLayout();
+    };
+    window.addEventListener('online', handleOnline);
+    void loadInitialLayout();
     return () => {
       cancelled = true;
       unsubscribe?.();
+      window.removeEventListener('online', handleOnline);
       if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
       layoutWriteTimerRef.current = null;
+      if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
+      layoutReadRetryTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
     };
-  }, [tenant.id]);
+  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId]);
 
   // Persist only geometry changes; frequent order/status updates project to the
   // same signature and therefore do not generate cloud writes.
@@ -769,8 +814,7 @@ export function App() {
               tablesRef.current = reconciled;
               setTables(reconciled);
               try {
-                const useCentralLayout = Boolean(supabaseClient && isCloudTenantUuid(tenant.id));
-                setTenantItem('tables', useCentralLayout ? tablesWithoutLocalLayout(reconciled) : reconciled, tenant.id);
+                setTenantItem('tables', reconciled, tenant.id);
               } catch {}
             }
           } else if (!pendingSignature && tableLayoutSignature(projectTableLayout(tablesRef.current)) !== savedSignature) {
@@ -794,16 +838,6 @@ export function App() {
       void persist();
     }, 450);
   }, [tables, tenant.id]);
-
-  // Remove legacy geometry from the localStorage operational cache. The cloud
-  // row is canonical online; IndexedDB remains the offline layout snapshot.
-  useEffect(() => {
-    if (!supabaseClient || !isCloudTenantUuid(tenant.id)) return;
-    const cached = getTenantItem<Table[]>('tables', tenant.id);
-    if (Array.isArray(cached)) {
-      setTenantItem('tables', tablesWithoutLocalLayout(cached), tenant.id);
-    }
-  }, [tenant.id]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -984,8 +1018,6 @@ export function App() {
   // Network & Sync state
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
-  const [localDbReady, setLocalDbReady] = useState(false);
-  const [hydratedSnapshotTenantId, setHydratedSnapshotTenantId] = useState<string | null>(null);
 
   // Sound & Notifications state
   const [isMuted, setIsMuted] = useState<boolean>(() => soundService.isMuted());
@@ -1064,7 +1096,10 @@ export function App() {
       }
       const snapshotTableList = readTableSnapshot(snapshot.tables);
       if (snapshotTableList) {
-        const snapshotTables = normalizeTablePositions(snapshotTableList as Table[]);
+        const snapshotTables = restoreTablePositionsFromSnapshot(
+          normalizeTablePositions(snapshotTableList as Table[]),
+          getTenantItem<Table[]>('tables', tenant.id)
+        );
         const syncState = tableLayoutSyncRef.current;
         const snapshotBase = validateTableLayout(snapshot.tableLayoutBase);
         let restoredTables = snapshotTables;
@@ -1078,8 +1113,7 @@ export function App() {
         }
         tablesRef.current = restoredTables;
         setTables(restoredTables);
-        const useCentralLayout = Boolean(supabaseClient && isCloudTenantUuid(tenant.id));
-        setTenantItem('tables', useCentralLayout ? tablesWithoutLocalLayout(restoredTables) : restoredTables, tenant.id);
+        setTenantItem('tables', restoredTables, tenant.id);
       }
       if (!hasTenantItem('staff', tenant.id) && snapshot.staff.length > 0) {
         setStaffList(snapshot.staff as UserProfile[]);
@@ -1453,7 +1487,7 @@ export function App() {
       consecutivo: sale.invoice.consecutivo,
       documentType: sale.invoice.tipoDocumento || 'TE',
       total: sale.invoice.totalComprobante,
-      invoiceData: sale.invoice,
+      invoiceData: sanitizeFiscalInvoiceData(sale.invoice),
       xmlContent: sale.invoice.xmlContent
     };
     const paymentPayload = {
@@ -1534,6 +1568,7 @@ export function App() {
             id: i.id, 
             name: i.name, 
             quantity: i.quantity, 
+            dinerName: i.dinerName,
             notes: i.notes, 
             modifiers: i.selectedModifiers?.map(m => m.choiceName),
             completed: false 
@@ -1561,6 +1596,7 @@ export function App() {
             id: i.id, 
             name: i.name, 
             quantity: i.quantity, 
+            dinerName: i.dinerName,
             notes: i.notes, 
             modifiers: i.selectedModifiers?.map(m => m.choiceName),
             completed: false 

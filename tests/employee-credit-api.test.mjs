@@ -21,12 +21,19 @@ const validInput = {
 
 const vercelConfig = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url), 'utf8'));
 const syncHandler = await readFile(new URL('../api/offline/sync.ts', import.meta.url), 'utf8');
+const quickPaymentSource = await readFile(new URL('../src/components/QuickPaymentModal.tsx', import.meta.url), 'utf8');
 
 test('la ruta de crédito se consolida en sync y no agrega una función Vercel', () => {
   const rewrite = vercelConfig.rewrites.find(route => route.source === '/api/employee-credit');
   assert.equal(rewrite?.destination, '/api/offline/sync?action=employee-credit');
   assert.match(syncHandler, /req\.query\.action\s*===\s*'employee-credit'/);
   assert.equal(existsSync(new URL('../api/employee-credit.ts', import.meta.url)), false);
+});
+
+test('el pago rápido registra el consumo local y transmite la identidad del colaborador a sync', () => {
+  assert.match(quickPaymentSource, /employeeCreditService\.recordCharge\(employeeCreditCharge\.localCharge\)/);
+  assert.match(quickPaymentSource, /employeeCredit:\s*employeeCreditCharge\?\.syncPayload/);
+  assert.match(quickPaymentSource, /buildQuickPaymentEmployeeCreditCharge/);
 });
 
 test('normaliza montos a céntimos y rechaza valores inválidos', () => {

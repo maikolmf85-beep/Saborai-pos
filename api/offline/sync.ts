@@ -5,6 +5,7 @@ import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
+import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
 
@@ -382,7 +383,7 @@ async function syncInvoice(tenantId: string, userId: string, employeeId: string 
     document_type: payload.documentType,
     hacienda_status: 'PENDING',
     total: Math.max(0, safeNumber(payload.total, 0)),
-    invoice_data: payload.invoiceData && typeof payload.invoiceData === 'object' ? payload.invoiceData : {},
+    invoice_data: sanitizeFiscalInvoiceData(payload.invoiceData),
     xml_content: typeof payload.xmlContent === 'string' ? payload.xmlContent : null
   }).select('id, hacienda_status').single();
   if (invoice.error || !invoice.data) {

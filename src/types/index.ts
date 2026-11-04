@@ -96,6 +96,17 @@ export interface TableItem {
   kdsOrderId?: string;
 }
 
+export interface ElectronicInvoiceItem {
+  name: string;
+  price: number;
+  quantity: number;
+  cabysCode: string;
+  taxRate: number;
+  category: string;
+  unidadMedida?: string;
+  unit?: string;
+}
+
 export interface ActiveOrder {
   orderNumber: string;
   server: string;
@@ -152,6 +163,7 @@ export interface KDSOrder {
     id?: string;
     name: string;
     quantity: number;
+    dinerName?: string;
     notes?: string;
     modifiers?: string[]; // Modificadores elegidos
     completed?: boolean;
@@ -204,7 +216,7 @@ export interface ElectronicInvoiceCR {
   medioPago: string;
   moneda: 'CRC' | 'USD';
   tipoCambio: number;
-  items: TableItem[];
+  items: ElectronicInvoiceItem[];
   subtotal: number;
   iva13: number;
   iva4: number;

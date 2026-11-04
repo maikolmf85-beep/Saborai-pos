@@ -1,5 +1,6 @@
 import { getTenantItem, setTenantItem } from './tenantStorage.ts';
 import type { UserProfile } from '../types';
+import type { EmployeeCreditPeriodRange } from './employeeCreditPeriod.ts';
 
 export type EmployeeCreditTransactionType = 'CHARGE' | 'PAYMENT' | 'ADJUSTMENT' | 'VOID';
 
@@ -44,6 +45,44 @@ export interface EmployeeCreditLedger {
   hasMoreTransactions?: boolean;
 }
 
+export interface EmployeeCreditPeriodEmployeeSummary {
+  employeeId: string;
+  employeeName: string;
+  chargeTotal: number;
+  paymentTotal: number;
+  netTotal: number;
+  transactionCount: number;
+}
+
+export interface EmployeeCreditPeriodReport {
+  from: string;
+  to: string;
+  chargeTotal: number;
+  paymentTotal: number;
+  netTotal: number;
+  transactionCount: number;
+  employeeSummaries: EmployeeCreditPeriodEmployeeSummary[];
+  transactions: EmployeeCreditTransaction[];
+  hasMoreTransactions: boolean;
+}
+
+export interface EmployeeCreditChargeRegistration {
+  localCharge: {
+    tenantId: string;
+    employeeId: string;
+    employeeName: string;
+    amount: number;
+    orderNumber?: string;
+    invoiceClave?: string;
+    idempotencyKey: string;
+  };
+  syncPayload: {
+    employeeId: string;
+    employeeName: string;
+    idempotencyKey: string;
+  };
+}
+
 const LEDGER_STORAGE_KEY = 'employee_credit_ledger';
 const LEGACY_TRANSACTIONS_KEY = 'employee_credit_transactions';
 
@@ -54,6 +93,38 @@ function emptyLedger(): EmployeeCreditLedger {
 function finiteAmount(value: unknown): number {
   const amount = Number(value);
   return Number.isFinite(amount) && amount > 0 ? Math.round((amount + Number.EPSILON) * 100) / 100 : 0;
+}
+
+export function buildQuickPaymentEmployeeCreditCharge(params: {
+  tenantId: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  orderNumber?: string;
+  invoiceClave?: string;
+}): EmployeeCreditChargeRegistration {
+  const amount = finiteAmount(params.amount);
+  const referenceKey = params.invoiceClave || params.orderNumber || '';
+  const idempotencyKey = `credit:quick:${params.tenantId}:${referenceKey}`;
+  if (!params.tenantId || !params.employeeId || !params.employeeName.trim() || !referenceKey || !amount || idempotencyKey.length > 200) {
+    throw new Error('No se pudo preparar el consumo del colaborador.');
+  }
+  return {
+    localCharge: {
+      tenantId: params.tenantId,
+      employeeId: params.employeeId,
+      employeeName: params.employeeName.trim(),
+      amount,
+      orderNumber: params.orderNumber,
+      invoiceClave: params.invoiceClave,
+      idempotencyKey
+    },
+    syncPayload: {
+      employeeId: params.employeeId,
+      employeeName: params.employeeName.trim(),
+      idempotencyKey
+    }
+  };
 }
 
 function mapTransaction(raw: any, tenantId: string, fallbackPending = false): EmployeeCreditTransaction | null {
@@ -262,6 +333,81 @@ class EmployeeCreditService {
       hasMoreTransactions: data.hasMoreTransactions === true
     };
     this.saveLedger(tenantId, result);
+    return result;
+  }
+
+  async getPeriodReport(tenantId: string, range: EmployeeCreditPeriodRange, employeeId?: string): Promise<EmployeeCreditPeriodReport> {
+    const token = currentToken();
+    if (!token) throw new Error('Conecta el dispositivo para consultar el informe de consumo.');
+    const query = new URLSearchParams({ tenantId, from: range.from, to: range.to });
+    if (employeeId) query.set('employeeId', employeeId);
+    const response = await fetch(`/api/employee-credit?${query.toString()}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await responseData(response);
+    const report = data.periodReport;
+    if (data.tenantId !== tenantId || !report || report.from !== range.from || report.to !== range.to
+      || !Array.isArray(report.employeeSummaries) || !Array.isArray(report.transactions)) {
+      throw new Error('El servidor devolvió un informe de consumo incompleto o de otro tenant.');
+    }
+    const result: EmployeeCreditPeriodReport = {
+      from: report.from,
+      to: report.to,
+      chargeTotal: Number.isFinite(Number(report.chargeTotal)) ? Number(report.chargeTotal) : 0,
+      paymentTotal: Number.isFinite(Number(report.paymentTotal)) ? Number(report.paymentTotal) : 0,
+      netTotal: Number.isFinite(Number(report.netTotal)) ? Number(report.netTotal) : 0,
+      transactionCount: Number.isFinite(Number(report.transactionCount)) ? Number(report.transactionCount) : 0,
+      employeeSummaries: report.employeeSummaries
+        .filter((row: any) => row && typeof row.employeeId === 'string')
+        .map((row: any) => ({
+          employeeId: row.employeeId,
+          employeeName: typeof row.employeeName === 'string' ? row.employeeName : 'Colaborador',
+          chargeTotal: Number.isFinite(Number(row.chargeTotal)) ? Number(row.chargeTotal) : 0,
+          paymentTotal: Number.isFinite(Number(row.paymentTotal)) ? Number(row.paymentTotal) : 0,
+          netTotal: Number.isFinite(Number(row.netTotal)) ? Number(row.netTotal) : 0,
+          transactionCount: Number.isFinite(Number(row.transactionCount)) ? Number(row.transactionCount) : 0
+        })),
+      transactions: report.transactions
+        .map((row: any) => mapTransaction(row, tenantId, false))
+        .filter(Boolean) as EmployeeCreditTransaction[],
+      hasMoreTransactions: report.hasMoreTransactions === true
+    };
+
+    const serverKeys = new Set(result.transactions.map(transaction => transaction.idempotencyKey).filter(Boolean));
+    const fromTime = new Date(range.from).getTime();
+    const toTime = new Date(range.to).getTime();
+    const pending = this.getLedger(tenantId).transactions.filter(transaction => {
+      const createdAt = new Date(transaction.createdAt).getTime();
+      return transaction.pending === true
+        && (!employeeId || transaction.employeeId === employeeId)
+        && createdAt >= fromTime && createdAt < toTime
+        && (!transaction.idempotencyKey || !serverKeys.has(transaction.idempotencyKey));
+    });
+    const summaries = new Map(result.employeeSummaries.map(summary => [summary.employeeId, { ...summary }]));
+    for (const transaction of pending) {
+      const summary = summaries.get(transaction.employeeId) || {
+        employeeId: transaction.employeeId,
+        employeeName: transaction.employeeName,
+        chargeTotal: 0,
+        paymentTotal: 0,
+        netTotal: 0,
+        transactionCount: 0
+      };
+      summary.transactionCount += 1;
+      if (transaction.type === 'CHARGE') summary.chargeTotal = Math.round((summary.chargeTotal + transaction.amount) * 100) / 100;
+      if (transaction.type === 'PAYMENT') summary.paymentTotal = Math.round((summary.paymentTotal + transaction.amount) * 100) / 100;
+      summary.netTotal = Math.round((summary.chargeTotal - summary.paymentTotal) * 100) / 100;
+      summaries.set(transaction.employeeId, summary);
+      result.transactionCount += 1;
+      if (transaction.type === 'CHARGE') result.chargeTotal = Math.round((result.chargeTotal + transaction.amount) * 100) / 100;
+      if (transaction.type === 'PAYMENT') result.paymentTotal = Math.round((result.paymentTotal + transaction.amount) * 100) / 100;
+    }
+    result.netTotal = Math.round((result.chargeTotal - result.paymentTotal) * 100) / 100;
+    result.employeeSummaries = [...summaries.values()].sort((left, right) => left.employeeName.localeCompare(right.employeeName, 'es'));
+    const mergedTransactions = [...result.transactions, ...pending].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    result.transactions = mergedTransactions.slice(0, 500);
+    result.hasMoreTransactions = result.hasMoreTransactions || mergedTransactions.length > result.transactions.length;
     return result;
   }
 

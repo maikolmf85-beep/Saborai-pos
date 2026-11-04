@@ -19,8 +19,10 @@ import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
 import { getTenantItem } from '../services/tenantStorage';
+import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService } from '../services/employeeCreditService';
 import { localDB } from '../services/db';
 import { PosNotification } from './NotificationToast';
+import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
 
 interface QuickPaymentModalProps {
   isOpen: boolean;
@@ -259,6 +261,18 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     
     // Si NO es crédito de funcionario, afecta la caja
     const isCreditoFuncionario = paymentMode === 'single' && singleMethod === 'Crédito Funcionario';
+    const selectedEmployee = staffList.find(staff => staff.id === selectedEmployeeId);
+    const employeeCreditCharge = isCreditoFuncionario
+      ? buildQuickPaymentEmployeeCreditCharge({
+          tenantId: tenant.id,
+          employeeId: selectedEmployeeId,
+          employeeName: selectedEmployee?.name || 'Colaborador',
+          amount: total,
+          orderNumber: table.activeOrder?.orderNumber,
+          invoiceClave: generatedClave
+        })
+      : null;
+    if (employeeCreditCharge) employeeCreditService.recordCharge(employeeCreditCharge.localCharge);
     
     if (!isCreditoFuncionario) {
       if (paymentMode === 'single') {
@@ -315,7 +329,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       ],
       moneda: 'CRC',
       tipoCambio: 1.0,
-      items,
+      items: toFiscalInvoiceItems(items),
       subtotal,
       iva13,
       iva4: 0,
@@ -359,6 +373,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         orderNumber: table.activeOrder?.orderNumber,
         tableNumber: table.number,
         payments: paymentRows,
+        employeeCredit: employeeCreditCharge?.syncPayload,
         total,
         currency: 'CRC',
         occurredAt: emissionDate.toISOString()
