@@ -97,6 +97,29 @@ test('rechaza una fila si la mesa elegida se solapa o no tiene capacidad', () =>
   if ('error' in result) assert.match(result.error, /No hay una mesa libre/);
 });
 
+test('asigna automáticamente una mesa con capacidad dentro del salón seleccionado', () => {
+  const principalTable = { ...makeTable('principal-1', 1, 4), zone: 'Salón Principal' };
+  const patioSmallTable = { ...makeTable('patio-2', 2, 2), zone: 'Patio' };
+  const patioLargeTable = { ...makeTable('patio-4', 4, 4), zone: 'Patio' };
+  const result = prepareBulkTableReservationInputs([
+    { customerName: 'Ana', customerPhone: '8888-0001', time: '18:00', partySize: '3', tableId: '' }
+  ], '2026-11-05', [principalTable, patioSmallTable, patioLargeTable], [], 90, 'Patio');
+
+  assert.equal('error' in result, false);
+  assert.equal(result.inputs[0].tableId, 'patio-4');
+  assert.equal(result.inputs[0].zone, 'Patio');
+});
+
+test('rechaza una mesa manual que pertenece a otro salón', () => {
+  const table = { ...makeTable('patio-2', 2, 4), zone: 'Patio' };
+  const result = prepareBulkTableReservationInputs([
+    { customerName: 'Ana', customerPhone: '8888-0001', time: '18:00', partySize: '2', tableId: 'patio-2' }
+  ], '2026-11-05', [table], [], 90, 'Salón Principal');
+
+  assert.equal('error' in result, true);
+  if ('error' in result) assert.match(result.error, /no pertenece al salón Salón Principal/);
+});
+
 test('no crea el lote cuando faltan datos obligatorios', () => {
   const result = prepareBulkTableReservationInputs([
     { customerName: 'Ana', customerPhone: '', time: '18:00', partySize: '2', tableId: '' }

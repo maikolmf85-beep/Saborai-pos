@@ -164,6 +164,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
   const [isFormOpen, setIsFormOpen] = useState(() => Boolean(initialReservationToEdit));
   const [isBulkMode, setIsBulkMode] = useState(false);
   const [bulkDate, setBulkDate] = useState(localDateKey(new Date()));
+  const [bulkZone, setBulkZone] = useState('');
   const [bulkRows, setBulkRows] = useState<BulkReservationDraft[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -217,6 +218,11 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
     return [...new Set(candidates)];
   }, [tenant.zones, tables]);
 
+  const bulkZoneTables = useMemo(
+    () => tables.filter(table => !bulkZone || table.zone === bulkZone),
+    [tables, bulkZone]
+  );
+
   const zoneTables = useMemo(
     () => tables.filter(table => !form.zone || table.zone === form.zone),
     [tables, form.zone]
@@ -251,6 +257,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
     setIsFormOpen(false);
     setEditing(null);
     setIsBulkMode(false);
+    setBulkZone('');
     setBulkRows([]);
     setForm(makeBlankForm());
     setConfirmCapacity(false);
@@ -269,6 +276,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
   const startBulk = () => {
     setEditing(null);
     setIsBulkMode(true);
+    setBulkZone('');
     setBulkDate(selectedDate);
     setBulkRows([{ customerName: '', customerPhone: '', time: '', partySize: '2', tableId: '' }]);
     setMessage('');
@@ -362,7 +370,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
   };
 
   const saveBulkReservations = async () => {
-    const prepared = prepareBulkTableReservationInputs(bulkRows, bulkDate, tables, reservations);
+    const prepared = prepareBulkTableReservationInputs(bulkRows, bulkDate, tables, reservations, 90, bulkZone);
     if ('error' in prepared) {
       setMessage(prepared.error);
       return;
@@ -602,7 +610,21 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
                   <label className="block text-xs font-bold text-stone-600">Día de las reservas *
                     <input type="date" value={bulkDate} onChange={event => setBulkDate(event.target.value)} required className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]" />
                   </label>
-                  <p className="rounded-lg bg-[#f1f5ed] px-3 py-2 text-[11px] leading-relaxed text-[#476946]">La mesa se asigna según capacidad y horario; puedes escoger otra mesa en cada fila.</p>
+                  <label className="block text-xs font-bold text-stone-600">Salón
+                    <select value={bulkZone} onChange={event => {
+                      const nextZone = event.target.value;
+                      setBulkZone(nextZone);
+                      setBulkRows(previous => previous.map(row => {
+                        if (!nextZone || !row.tableId) return row;
+                        const selected = tables.find(table => table.id === row.tableId);
+                        return selected?.zone === nextZone ? row : { ...row, tableId: '' };
+                      }));
+                    }} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]">
+                      <option value="">Todos los salones</option>
+                      {zones.map(zone => <option key={zone} value={zone}>{zone}</option>)}
+                    </select>
+                  </label>
+                  <p className="rounded-lg bg-[#f1f5ed] px-3 py-2 text-[11px] leading-relaxed text-[#476946]">Si eliges un salón, la asignación automática buscará solo en sus mesas y considerará capacidad y horario; con «Todos los salones» buscará en todos. Puedes escoger otra mesa en cada fila.</p>
                   <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
                     {bulkRows.map((row, index) => (
                       <article key={index} className="space-y-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
@@ -628,7 +650,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
                           <label className="block text-[11px] font-bold text-stone-600">Mesa
                             <select value={row.tableId} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, tableId: event.target.value } : item))} className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-900 outline-none focus:border-[#7d9b75]">
                               <option value="">Automática</option>
-                              {tables.map(table => <option key={table.id} value={table.id}>{table.name || `Mesa ${table.number}`} · {table.seats} puestos</option>)}
+                              {bulkZoneTables.map(table => <option key={table.id} value={table.id}>{table.name || `Mesa ${table.number}`} · {table.seats} puestos · {table.zone || 'General'}</option>)}
                             </select>
                           </label>
                         </div>
