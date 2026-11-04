@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { Navbar, ActiveTab } from './components/Navbar';
+import { NyzaSetupGuide } from './components/NyzaSetupGuide';
 import { TableMap } from './components/TableMap';
 import { OrderTaking } from './components/OrderTaking';
 import { KDSView } from './components/KDSView';
@@ -19,13 +20,11 @@ const HaciendaHistoryModal = lazy(() => import('./components/HaciendaHistoryModa
 const AICopilotChat = lazy(() => import('./components/AICopilotChat').then(m => ({ default: m.AICopilotChat })));
 const NyzaLearningHub = lazy(() => import('./components/NyzaLearningHub').then(m => ({ default: m.NyzaLearningHub })));
 const AuthScreen = lazy(() => import('./components/AuthScreen').then(m => ({ default: m.AuthScreen })));
-const NysaOnboarding = lazy(() => import('./components/NysaOnboarding').then(m => ({ default: m.NysaOnboarding })));
 const SuperAdminBackoffice = lazy(() => import('./components/SuperAdminBackoffice').then(m => ({ default: m.SuperAdminBackoffice })));
 const MenuEditor = lazy(() => import('./components/MenuEditor').then(m => ({ default: m.MenuEditor })));
 const ReportsDashboard = lazy(() => import('./components/ReportsDashboard').then(m => ({ default: m.ReportsDashboard })));
 const WelcomeGate = lazy(() => import('./components/WelcomeGate').then(m => ({ default: m.WelcomeGate })));
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then(m => ({ default: m.ResetPasswordScreen })));
-const GuidedTour = lazy(() => import('./components/GuidedTour').then(m => ({ default: m.GuidedTour })));
 const LegalPage = lazy(() => import('./components/LegalPage').then(m => ({ default: m.LegalPage })));
 import { cashShiftService } from './services/cashShiftService';
 import { printerService } from './services/printerService';
@@ -210,7 +209,25 @@ export function App() {
       return initialTenant;
     }
   });
+  const [isNyzaSetupGuideOpen, setIsNyzaSetupGuideOpen] = useState(false);
   const activeTenantIdRef = useRef(tenant.id);
+
+  useEffect(() => {
+    if (isLoadingAuth || currentUser?.role !== 'ADMIN' || tenant.onboardingCompleted) {
+      setIsNyzaSetupGuideOpen(false);
+      return;
+    }
+
+    let isPaused = false;
+    try {
+      const saved = localStorage.getItem(`saborai_setup_guide_v1:${tenant.id}`);
+      isPaused = saved ? JSON.parse(saved)?.paused === true : false;
+    } catch {
+      isPaused = false;
+    }
+    setIsNyzaSetupGuideOpen(!isPaused);
+  }, [isLoadingAuth, currentUser?.id, currentUser?.role, tenant.id, tenant.onboardingCompleted]);
+
   const [notifications, setNotifications] = useState<PosNotification[]>([]);
   const addNotification = (notif: PosNotification) => {
     setNotifications(prev => [notif, ...prev.slice(0, 4)]);
@@ -273,6 +290,30 @@ export function App() {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
     } catch {}
+  };
+
+  const finishNyzaSetupGuide = async () => {
+    handleUpdateTenant({ ...tenant, onboardingCompleted: true });
+    setIsNyzaSetupGuideOpen(false);
+
+    try {
+      const token = localStorage.getItem('saborai_token');
+      if (!token) return;
+      const response = await fetch('/api/tenant/onboarding', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      console.error('No se pudo confirmar la guía de inicio en el servidor:', error);
+      addNotification({
+        id: `setup_guide_sync_error_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'Guía completada en este dispositivo',
+        message: 'No se pudo confirmar el cierre en el servidor. Si vuelves a entrar desde otro dispositivo, la guía podría aparecer de nuevo.',
+        timestamp: new Date()
+      });
+    }
   };
 
   const persistSubscription = (value: SaboraiSubscription | null, tenantId = tenant.id) => {
@@ -844,6 +885,10 @@ export function App() {
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isNyzaHubOpen, setIsNyzaHubOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<'regime' | 'hacienda'>('regime');
+  const [guideOpenZonesRequest, setGuideOpenZonesRequest] = useState(0);
+  const [guideOpenTableRequest, setGuideOpenTableRequest] = useState(0);
+  const [guideOpenMenuImportRequest, setGuideOpenMenuImportRequest] = useState(0);
   const [isOfflineModalOpen, setIsOfflineModalOpen] = useState(false);
   const [isNotionModalOpen, setIsNotionModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
@@ -1799,47 +1844,39 @@ export function App() {
     );
   }
 
-  if (!tenant.onboardingCompleted) {
-    return (
-      <Suspense fallback={
-        <div className="min-h-screen bg-stone-950 flex items-center justify-center text-white">
-          <div className="w-8 h-8 border-4 border-[#a9b994]/30 border-t-[#a9b994] rounded-full animate-spin"></div>
-        </div>
-      }>
-        <NysaOnboarding
-          tenant={tenant}
-          currentUser={currentUser}
-          onComplete={async (updatedTenant, newStaff, newMenu) => {
-            handleUpdateTenant(updatedTenant);
-            if (newStaff.length > 0) {
-              newStaff.forEach(handleAddStaffMember);
-            }
-            if (newMenu.length > 0) {
-              handleUpdateMenu(newMenu);
-            }
-            
-            // Guardar en el backend para que no vuelva a salir
-            try {
-              const token = localStorage.getItem('saborai_token');
-              if (token) {
-                await fetch('/api/tenant/onboarding', {
-                  method: 'POST',
-                  headers: { Authorization: `Bearer ${token}` }
-                });
-              }
-            } catch (e) {
-              console.error('Error guardando onboarding', e);
-            }
-          }}
-        />
-      </Suspense>
-    );
-  }
-
   return (
     <div data-pos-theme={activeTab === 'landing' ? 'light' : posTheme} className="pos-theme-root h-screen w-screen overflow-hidden flex flex-col sm:flex-row font-sans selection:bg-[#a9b994]/30">
-      
-      <GuidedTour />
+
+      {currentUser.role === 'ADMIN' && (
+        <NyzaSetupGuide
+          key={tenant.id}
+          isOpen={isNyzaSetupGuideOpen}
+          tenant={tenant}
+          currentUser={currentUser}
+          onPause={() => setIsNyzaSetupGuideOpen(false)}
+          onComplete={() => { void finishNyzaSetupGuide(); }}
+          onOpenStaff={() => setIsStaffModalOpen(true)}
+          onOpenZones={() => {
+            setSelectedTableForOrder(null);
+            setActiveTab('pos');
+            setGuideOpenZonesRequest(request => request + 1);
+          }}
+          onOpenTableCreator={() => {
+            setSelectedTableForOrder(null);
+            setActiveTab('pos');
+            setGuideOpenTableRequest(request => request + 1);
+          }}
+          onOpenMenuImporter={() => {
+            setSelectedTableForOrder(null);
+            setActiveTab('menu');
+            setGuideOpenMenuImportRequest(request => request + 1);
+          }}
+          onOpenHacienda={() => {
+            setSettingsInitialSection('hacienda');
+            setIsSettingsOpen(true);
+          }}
+        />
+      )}
       
       {/* Navbar: Bottom on mobile, Vertical on Desktop */}
       <Navbar
@@ -1861,7 +1898,12 @@ export function App() {
         onToggleMute={handleToggleMute}
         onOpenCopilot={() => setIsCopilotOpen(true)}
         onOpenNyzaHub={() => setIsNyzaHubOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsInitialSection('regime');
+          setIsSettingsOpen(true);
+        }}
+        onOpenSetupGuide={() => setIsNyzaSetupGuideOpen(true)}
+        showSetupGuide={!tenant.onboardingCompleted}
         onOpenOfflineModal={() => setIsOfflineModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}
         onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}
@@ -1998,6 +2040,10 @@ export function App() {
                   onUpdateTenant={handleUpdateTenant}
                   onUpdateTables={handleUpdateTables}
                   onQuickTakeaway={handleQuickTakeaway}
+                  openZoneManagerRequest={guideOpenZonesRequest}
+                  onZoneManagerRequestHandled={() => setGuideOpenZonesRequest(0)}
+                  openCreateTableRequest={guideOpenTableRequest}
+                  onCreateTableRequestHandled={() => setGuideOpenTableRequest(0)}
                   activeShiftZone={cashShiftService.getActiveShift()?.linkedZone}
                   activeShiftZones={cashShiftService.getActiveShift()?.linkedZones}
                   hasActiveShift={Boolean(cashShiftService.getActiveShift())}
@@ -2047,6 +2093,8 @@ export function App() {
                 plan={tenant.plan}
                 tenant={tenant}
                 onUpdateTenant={handleUpdateTenant}
+                openAiImportRequest={guideOpenMenuImportRequest}
+                onAiImportRequestHandled={() => setGuideOpenMenuImportRequest(0)}
               />
             )}
 
@@ -2089,6 +2137,7 @@ export function App() {
         <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
+        initialSection={settingsInitialSection}
         tenant={tenant}
         theme={posTheme}
         onThemeChange={handlePosThemeChange}

@@ -41,6 +41,10 @@ interface TableMapProps {
   onUpdateTenant: (tenant: import('../types').TenantInfo) => void;
   onUpdateTables?: (tables: Table[]) => void;
   onQuickTakeaway?: () => void;
+  openZoneManagerRequest?: number;
+  onZoneManagerRequestHandled?: () => void;
+  openCreateTableRequest?: number;
+  onCreateTableRequestHandled?: () => void;
   activeShiftZone?: string;
   activeShiftZones?: string[];
   hasActiveShift?: boolean;
@@ -59,6 +63,10 @@ export const TableMap: React.FC<TableMapProps> = ({
   tenant,
   onUpdateTenant,
   onUpdateTables,
+  openZoneManagerRequest = 0,
+  onZoneManagerRequestHandled,
+  openCreateTableRequest = 0,
+  onCreateTableRequestHandled,
   activeShiftZone,
   activeShiftZones,
   hasActiveShift = false,
@@ -209,6 +217,21 @@ export const TableMap: React.FC<TableMapProps> = ({
   // Zone management state
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [newZoneName, setNewZoneName] = useState('');
+
+  useEffect(() => {
+    if (openZoneManagerRequest > 0) {
+      setIsZoneModalOpen(true);
+      onZoneManagerRequestHandled?.();
+    }
+  }, [openZoneManagerRequest, onZoneManagerRequestHandled]);
+
+  useEffect(() => {
+    if (openCreateTableRequest > 0) {
+      setNewTableZone(selectedZone !== 'Todas' ? selectedZone : (tenantZones[0] || ''));
+      setShowAddModal(true);
+      onCreateTableRequestHandled?.();
+    }
+  }, [openCreateTableRequest, onCreateTableRequestHandled, selectedZone, tenantZones]);
 
   // Dragging state (PointerEvents for mouse + touch support)
   const canvasRef = useRef<HTMLDivElement>(null);

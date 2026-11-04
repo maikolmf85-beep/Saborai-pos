@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   X, 
   Printer, 
@@ -43,6 +43,7 @@ interface SettingsModalProps {
   onNavigateToLanding: () => void;
   onOpenNotion?: () => void;
   onOpenStaffModal?: () => void;
+  initialSection?: 'regime' | 'hacienda';
   currentUser?: any;
 }
 
@@ -60,9 +61,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onNavigateToLanding,
   onOpenNotion,
   onOpenStaffModal,
+  initialSection = 'regime',
   currentUser
 }) => {
   const [activeSection, setActiveSection] = useState<SettingsSection>('regime');
+
+  useEffect(() => {
+    if (isOpen) setActiveSection(initialSection);
+  }, [isOpen, initialSection]);
   
   // Local form state for business profile & tax regime
   const [selectedRegime, setSelectedRegime] = useState<TaxRegime>(tenant.taxRegime || 'TRADITIONAL');

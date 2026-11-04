@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { TenantInfo, MenuItem, TaxRegime, SubscriptionPlan } from '../types';
 import { Sparkles, Plus, Edit2, Trash2, Search, UtensilsCrossed, ShieldAlert, ArrowLeft, ChevronDown, CheckCircle2, Settings2, UploadCloud, X, ListPlus, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { soundService } from '../services/soundEffects';
@@ -13,9 +13,11 @@ interface MenuEditorProps {
   plan: SubscriptionPlan;
   tenant: TenantInfo;
   onUpdateTenant: (tenant: TenantInfo) => void;
+  openAiImportRequest?: number;
+  onAiImportRequestHandled?: () => void;
 }
 
-export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime, plan, tenant, onUpdateTenant }) => {
+export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu, taxRegime, plan, tenant, onUpdateTenant, openAiImportRequest = 0, onAiImportRequestHandled }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('Todas');
   const [isEditing, setIsEditing] = useState<boolean>(false);
@@ -27,6 +29,13 @@ export const MenuEditor: React.FC<MenuEditorProps> = ({ menuItems, onUpdateMenu,
   
   // AI Menu Upload state
   const [isAiUploadOpen, setIsAiUploadOpen] = useState(false);
+
+  useEffect(() => {
+    if (openAiImportRequest > 0) {
+      setIsAiUploadOpen(true);
+      onAiImportRequestHandled?.();
+    }
+  }, [openAiImportRequest, onAiImportRequestHandled]);
   
   // Confirmation Dialog state
   const [confirmConfig, setConfirmConfig] = useState<{

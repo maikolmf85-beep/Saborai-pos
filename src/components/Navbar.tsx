@@ -44,6 +44,8 @@ interface NavbarProps {
   onOpenCopilot: () => void;
   onOpenNyzaHub?: () => void;
   onOpenSettings: () => void;
+  onOpenSetupGuide?: () => void;
+  showSetupGuide?: boolean;
   onOpenOfflineModal: () => void;
   onOpenStaffModal?: () => void;
   onOpenQuickSwitch?: () => void;
@@ -140,6 +142,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCopilot,
   onOpenNyzaHub,
   onOpenSettings,
+  onOpenSetupGuide,
+  showSetupGuide = false,
   onOpenOfflineModal,
   onOpenStaffModal,
   onOpenQuickSwitch,
@@ -369,6 +373,22 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
             </div>
+
+            {showSetupGuide && user?.role === 'ADMIN' && onOpenSetupGuide && (
+              <button
+                type="button"
+                onClick={() => { onOpenSetupGuide(); setMobileMenuOpen(false); }}
+                className="w-full rounded-xl border border-[#a9b994]/35 bg-[#a9b994]/10 p-3 text-left text-[#d9e5cf] transition-colors hover:bg-[#a9b994]/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a9b994]"
+              >
+                <span className="flex items-center gap-3">
+                  <Sparkles className="h-4 w-4 shrink-0 text-[#a9b994]" aria-hidden="true" />
+                  <span>
+                    <span className="block text-xs font-bold">Guía de inicio Nyza</span>
+                    <span className="mt-0.5 block text-[10px] text-stone-400">Retomar configuración</span>
+                  </span>
+                </span>
+              </button>
+            )}
 
             {/* Accesos de Sistema, Ajustes y Copilot */}
             <div className="pt-2 border-t border-stone-800/80 space-y-2">
@@ -705,6 +725,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 icon={<Users className="w-5 h-5 text-stone-400" />}
                 label="Equipo y Personal"
                 sublabel="Gestionar colaboradores y roles"
+              />
+            )}
+
+            {showSetupGuide && user?.role === 'ADMIN' && onOpenSetupGuide && (
+              <NavVerticalItem
+                collapsed={isSidebarCollapsed}
+                id="nav-setup-guide"
+                onClick={onOpenSetupGuide}
+                icon={<Sparkles className="h-5 w-5 text-[#a9b994]" />}
+                label="Guía de inicio Nyza"
+                sublabel="Retomar configuración"
+                variant="accent"
               />
             )}
           </div>
