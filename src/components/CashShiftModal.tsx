@@ -412,7 +412,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       message: `Estás a punto de cerrar el turno de ${currentRegisterObj?.name || 'la caja'} y generar el Reporte Z oficial. Se registrará un total en efectivo contado de ₡${countedCashTotal.toLocaleString()} y datáfonos de ₡${totalDataphonesCounted.toLocaleString()}. ¿Deseas proceder?`,
       confirmLabel: 'Sí, cerrar turno',
       type: 'warning',
-      onConfirm: () => {
+      onConfirm: async () => {
         try {
           const { closedShift, zReport } = cashShiftService.closeShift(
             countedCashTotal,
@@ -424,6 +424,16 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             selectedRegisterId,
             dataphones
           );
+
+          try {
+            await cashShiftService.flushCloudSync();
+          } catch (syncError: any) {
+            refreshData(selectedRegisterId);
+            setCloseError(`El cierre quedó aplicado en este dispositivo, pero no se confirmó en la nube: ${syncError?.message || 'error de sincronización'}. Verifica la conexión antes de continuar.`);
+            soundService.playErrorBuzz();
+            setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+            return;
+          }
 
           soundService.playSuccessChime();
           setActiveShift(null);
@@ -482,7 +492,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     refreshData(selectedRegisterId);
   };
 
-  const handleCreateQuickRegister = (e: React.FormEvent) => {
+  const handleCreateQuickRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setNewRegisterError(null);
     const trimmed = newRegisterName.trim();
@@ -494,16 +504,19 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     const cleanCode = newRegisterTerminalCode.replace(/[^0-9]/g, '') || String(nextNum);
     const paddedCode = cleanCode.padStart(5, '0').slice(-5);
 
+    let createdLocally = false;
     try {
       cashShiftService.createCashRegister({
         name: trimmed,
         terminalCode: paddedCode,
-        branchCode: '001',
+        branchCode: currentRegisterObj?.branchCode || registers[0]?.branchCode || '001',
         allowsBilling: true,
         allowsOrdering: true,
         linkedZone: newRegisterZones.length === 1 ? newRegisterZones[0] : undefined,
         linkedZones: newRegisterZones.length > 0 ? newRegisterZones : undefined
       });
+      createdLocally = true;
+      await cashShiftService.flushCloudSync();
       soundService.playSuccessChime();
       setNewRegisterName('');
       setNewRegisterTerminalCode('');
@@ -511,7 +524,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       setShowAddRegister(false);
       refreshData(selectedRegisterId);
     } catch (err: any) {
-      setNewRegisterError(err.message || 'Error al crear la terminal');
+      setRegisters(cashShiftService.getCashRegisters());
+      refreshData(selectedRegisterId);
+      setNewRegisterError(createdLocally
+        ? `No se confirmó la terminal en la nube: ${err.message || 'error de sincronización'}`
+        : `No se pudo crear la terminal: ${err.message || 'revisa el nombre y el código DGT'}`);
     }
   };
 

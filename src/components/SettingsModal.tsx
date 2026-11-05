@@ -102,7 +102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isCreatingReg, setIsCreatingReg] = useState(false);
   const [newRegName, setNewRegName] = useState('');
   const [newRegTerminalCode, setNewRegTerminalCode] = useState('');
-  const [newRegBranchCode, setNewRegBranchCode] = useState('001');
+  const [newRegBranchCode, setNewRegBranchCode] = useState(cashShiftService.getCurrentRegister().branchCode || '001');
   const [newRegAllowsBilling, setNewRegAllowsBilling] = useState(true);
   const [newRegAllowsOrdering, setNewRegAllowsOrdering] = useState(true);
   const [cloudMigrationPreview, setCloudMigrationPreview] = useState<CashControlMigrationPreview | null>(null);
@@ -154,24 +154,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTimeout(() => setSavedRegFeedback(null), 3000);
   };
 
-  const handleCreateRegisterSubmit = (e: React.FormEvent) => {
+  const handleCreateRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newRegName.trim() || !newRegTerminalCode.trim()) return;
 
-    cashShiftService.createCashRegister({
-      name: newRegName,
-      terminalCode: newRegTerminalCode,
-      branchCode: newRegBranchCode,
-      allowsBilling: newRegAllowsBilling,
-      allowsOrdering: newRegAllowsOrdering
-    });
-
-    setRegistersList(cashShiftService.getCashRegisters());
-    setIsCreatingReg(false);
-    setNewRegName('');
-    setNewRegTerminalCode('');
-    setSavedRegFeedback('✓ Nueva caja registrada con éxito');
-    setTimeout(() => setSavedRegFeedback(null), 3000);
+    let createdLocally = false;
+    try {
+      cashShiftService.createCashRegister({
+        name: newRegName,
+        terminalCode: newRegTerminalCode,
+        branchCode: newRegBranchCode,
+        allowsBilling: newRegAllowsBilling,
+        allowsOrdering: newRegAllowsOrdering
+      });
+      createdLocally = true;
+      await cashShiftService.flushCloudSync();
+      setRegistersList(cashShiftService.getCashRegisters());
+      setCurrentRegister(cashShiftService.getCurrentRegister());
+      setIsCreatingReg(false);
+      setNewRegName('');
+      setNewRegTerminalCode('');
+      setSavedRegFeedback(cashControlCloudService.isAvailable()
+        ? '✓ Nueva caja registrada y confirmada en la nube'
+        : '✓ Nueva caja registrada en este dispositivo; nube no configurada');
+    } catch (error: any) {
+      setRegistersList(cashShiftService.getCashRegisters());
+      setSavedRegFeedback(createdLocally
+        ? `⚠ No se confirmó la caja en la nube: ${error?.message || 'error de sincronización'}`
+        : `⚠ No se pudo crear la caja: ${error?.message || 'revisa el nombre y el código DGT'}`);
+    }
+    setTimeout(() => setSavedRegFeedback(null), 6000);
   };
 
   const handleDeleteRegister = async (id: string) => {
@@ -878,7 +890,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
 
                   {savedRegFeedback && (
-                    <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-xl animate-in fade-in">
+                    <span className={`text-xs font-bold border px-3 py-1 rounded-xl animate-in fade-in ${savedRegFeedback.startsWith('⚠') ? 'text-rose-800 bg-rose-100 border-rose-300' : 'text-emerald-800 bg-emerald-100 border-emerald-300'}`}>
                       {savedRegFeedback}
                     </span>
                   )}
@@ -935,7 +947,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   
                   <button
                     type="button"
-                    onClick={() => setIsCreatingReg(true)}
+                    onClick={() => {
+                      setNewRegBranchCode(currentRegister.branchCode || '001');
+                      setIsCreatingReg(true);
+                    }}
                     className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
                   >
                     <span>+ Nueva Caja / Terminal</span>

@@ -2,6 +2,7 @@ import type { CashRegister, CashShift } from '../types/cashShift';
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
+import { isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
@@ -325,7 +326,8 @@ class CashControlCloudService {
   }
 
   async importLocalConfiguration(tenantId: string, options: { deviceName?: string; overwriteExisting?: boolean } = {}): Promise<CashControlMigrationResult> {
-    if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
+    const client = supabaseClient;
+    if (!client) throw new Error('Supabase no está configurado en este dispositivo.');
     const preview = await this.previewLocalMigration(tenantId);
     const deviceKey = preview.deviceKey;
     const cloud = await this.getCloudSnapshot(tenantId);
@@ -336,14 +338,19 @@ class CashControlCloudService {
 
     for (const local of preview.localRegisters) {
       const branchResult = await this.resolveBranch(tenantId, local.branchCode, cloud.branches);
-      const existing = cloud.registers.find(remote => remote.legacy_id === local.id)
-        || cloud.registers.find(remote => remote.branch_id === branchResult.id && remote.terminal_code === local.terminalCode);
+      const legacyMatch = cloud.registers.find(remote => remote.legacy_id === local.id);
+      const codeMatch = cloud.registers.find(remote => remote.branch_id === branchResult.id && remote.terminal_code === local.terminalCode);
+      if (isUnrelatedRegisterCodeMatch(local.id, legacyMatch?.id, codeMatch?.id)) {
+        conflicts.push(`No se importó la caja "${local.name}": el código DGT ${local.terminalCode} ya pertenece a "${codeMatch?.name || 'otra caja'}" en la sucursal ${local.branchCode}.`);
+        continue;
+      }
+      const existing = legacyMatch || codeMatch;
 
       if (existing && !options.overwriteExisting) {
         importedRegisterIds.set(local.id, existing);
         skippedExisting += 1;
         if (!existing.legacy_id) {
-          await supabaseClient.from('pos_cash_registers').update({ legacy_id: local.id, source_device_key: deviceKey }).eq('id', existing.id);
+          await client.from('pos_cash_registers').update({ legacy_id: local.id, source_device_key: deviceKey }).eq('id', existing.id);
         }
         continue;
       }
@@ -364,8 +371,8 @@ class CashControlCloudService {
       };
 
       const result = existing
-        ? await supabaseClient.from('pos_cash_registers').update(payload).eq('id', existing.id).select('*').single()
-        : await supabaseClient.from('pos_cash_registers').insert(payload).select('*').single();
+        ? await client.from('pos_cash_registers').update(payload).eq('id', existing.id).select('*').single()
+        : await client.from('pos_cash_registers').insert(payload).select('*').single();
       if (result.error || !result.data) {
         conflicts.push(`No se pudo importar la caja "${local.name}": ${result.error?.message || 'respuesta vacía'}`);
         continue;
@@ -386,9 +393,30 @@ class CashControlCloudService {
         continue;
       }
       const status = shift.status === 'OPEN' ? 'OPEN' : shift.status === 'CLOSING' ? 'CLOSED' : shift.status;
-      const existing = cloud.shifts.find(remote => remote.legacy_id === shift.id);
+      const existing = cloud.shifts.find(remote => remote.legacy_id === shift.id || remote.id === shift.id);
       if (existing) {
-        skippedExisting += 1;
+        if (status === 'CLOSED' && existing.status === 'OPEN') {
+          try {
+            const updated = await updateClosedShiftIfNeeded(existing.status, existing.id, shift, async (id, payload) => {
+              const result = await client
+                .from('pos_cash_shifts')
+                .update(payload)
+                .eq('tenant_id', tenantId)
+                .eq('id', id)
+                .eq('status', 'OPEN')
+                .select('id')
+                .maybeSingle();
+              return { data: result.data, error: result.error };
+            });
+            if (updated) importedShifts += 1;
+            else skippedExisting += 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            conflicts.push(`No se pudo guardar el cierre del turno ${shift.shiftNumber}: ${message}`);
+          }
+        } else {
+          skippedExisting += 1;
+        }
         continue;
       }
       if (status === 'OPEN' && cloud.shifts.some(remote => remote.cash_register_id === register.id && remote.status === 'OPEN')) {
@@ -396,7 +424,7 @@ class CashControlCloudService {
         continue;
       }
 
-      const result = await supabaseClient.from('pos_cash_shifts').insert({
+      const result = await client.from('pos_cash_shifts').insert({
         tenant_id: tenantId,
         branch_id: register.branch_id,
         cash_register_id: register.id,
@@ -431,7 +459,7 @@ class CashControlCloudService {
     const currentRegister = importedRegisterIds.get(currentLocalId || '') || importedRegisterIds.values().next().value;
     let assignedTerminal = false;
     if (currentRegister) {
-      const terminalResult = await supabaseClient.from('pos_terminals').upsert({
+      const terminalResult = await client.from('pos_terminals').upsert({
         tenant_id: tenantId,
         branch_id: currentRegister.branch_id,
         cash_register_id: currentRegister.id,
@@ -455,8 +483,9 @@ class CashControlCloudService {
     if (exact) return exact;
     if (branches.length === 1) return branches[0];
 
-    if (branches.length === 0 && supabaseClient) {
-      const created = await supabaseClient
+    const client = supabaseClient;
+    if (branches.length === 0 && client) {
+      const created = await client
         .from('pos_branches')
         .insert({
           tenant_id: tenantId,

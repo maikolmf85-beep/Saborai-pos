@@ -15,7 +15,9 @@ import { UserProfile, TenantInfo } from '../types';
 import { clearLegacyCashControlData, getTenantItem, removeTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
+import type { CashControlMigrationResult } from './cashControlCloudService';
 import { deleteCashRegisterFromState } from './cashRegisterDeletion';
+import { shouldApplyCloudSnapshot } from './cashControlSync';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -43,8 +45,10 @@ class CashShiftService {
   private shiftsHistory: CashShift[] = [];
   private tenantId: string | null = null;
   private cloudSyncTimer: ReturnType<typeof setTimeout> | null = null;
-  private cloudSyncInFlight = false;
+  private cloudSyncPromise: Promise<CashControlMigrationResult> | null = null;
+  private cloudSyncRequested = false;
   private cloudHydrating = false;
+  private localMutationRevision = 0;
   private cloudRealtimeUnsubscribe: (() => void) | null = null;
 
   constructor() {
@@ -58,6 +62,8 @@ class CashShiftService {
       clearTimeout(this.cloudSyncTimer);
       this.cloudSyncTimer = null;
     }
+    this.cloudSyncRequested = false;
+    this.localMutationRevision = 0;
     if (cashControlCloudService.isAvailable()) {
       // Supabase es la fuente de verdad. No reutilizar catálogos/turnos antiguos
       // que puedan volver a insertarse después de un Ctrl+Shift+R.
@@ -126,7 +132,10 @@ class CashShiftService {
       setTenantItem(TENANT_KEY_CURRENT_TERMINAL_ID, this.currentTerminalId, this.tenantId);
       setTenantItem(TENANT_KEY_ACTIVE_SHIFTS_MAP, this.activeShiftsMap, this.tenantId);
       setTenantItem(TENANT_KEY_SHIFTS_HISTORY, this.shiftsHistory, this.tenantId);
-      if (syncCloud) this.queueCloudSync();
+      if (syncCloud) {
+        this.localMutationRevision += 1;
+        this.queueCloudSync();
+      }
     } catch (e) {
       console.warn('Error saving shifts to storage:', e);
     }
@@ -177,6 +186,12 @@ class CashShiftService {
     // Format terminal code to 5 digits
     const paddedTerminal = data.terminalCode.replace(/[^0-9]/g, '').padStart(5, '0').slice(-5) || '00001';
     const paddedBranch = (data.branchCode || '001').replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
+    const duplicate = this.registers.find(register =>
+      register.branchCode === paddedBranch && register.terminalCode === paddedTerminal
+    );
+    if (duplicate) {
+      throw new Error(`El código DGT ${paddedTerminal} ya está registrado en la sucursal ${paddedBranch} (${duplicate.name}).`);
+    }
 
     const zones = data.linkedZones && data.linkedZones.length > 0 
       ? data.linkedZones.filter(Boolean)
@@ -214,6 +229,15 @@ class CashShiftService {
     }
     if (updates.branchCode) {
       updates.branchCode = updates.branchCode.replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
+    }
+
+    const nextBranchCode = updates.branchCode || this.registers[index].branchCode;
+    const nextTerminalCode = updates.terminalCode || this.registers[index].terminalCode;
+    const duplicate = this.registers.find(register =>
+      register.id !== id && register.branchCode === nextBranchCode && register.terminalCode === nextTerminalCode
+    );
+    if (duplicate) {
+      throw new Error(`El código DGT ${nextTerminalCode} ya está registrado en la sucursal ${nextBranchCode} (${duplicate.name}).`);
     }
 
     if (updates.name && updates.name.trim()) {
@@ -493,26 +517,64 @@ class CashShiftService {
 
   private queueCloudSync(): void {
     if (this.cloudHydrating || !this.tenantId || !cashControlCloudService.isAvailable()) return;
-    if (this.cloudSyncTimer) clearTimeout(this.cloudSyncTimer);
-    this.cloudSyncTimer = setTimeout(() => {
-      void this.syncToCloud();
-    }, 800);
+    this.cloudSyncRequested = true;
+    this.scheduleCloudSync(800);
   }
 
-  private async syncToCloud(): Promise<void> {
-    if (this.cloudSyncInFlight || !this.tenantId || !cashControlCloudService.isAvailable()) return;
-    this.cloudSyncInFlight = true;
-    try {
-      const result = await cashControlCloudService.importLocalConfiguration(this.tenantId, {
+  private scheduleCloudSync(delay: number): void {
+    if (!this.tenantId || !cashControlCloudService.isAvailable()) return;
+    if (this.cloudSyncTimer) clearTimeout(this.cloudSyncTimer);
+    this.cloudSyncTimer = setTimeout(() => {
+      this.cloudSyncTimer = null;
+      void this.syncToCloud().catch(error => {
+        console.warn('[CashControl] No se pudo sincronizar con Supabase; se conserva la caché local:', error);
+      });
+    }, delay);
+  }
+
+  async flushCloudSync(): Promise<CashControlMigrationResult | null> {
+    if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
+
+    let result: CashControlMigrationResult | null = null;
+    do {
+      this.cloudSyncRequested = true;
+      if (this.cloudSyncTimer) {
+        clearTimeout(this.cloudSyncTimer);
+        this.cloudSyncTimer = null;
+      }
+      result = await this.syncToCloud();
+    } while (this.cloudSyncRequested);
+
+    if (result?.conflicts.length) {
+      throw new Error(result.conflicts.join(' '));
+    }
+    await this.refreshFromCloud();
+    return result;
+  }
+
+  private async syncToCloud(): Promise<CashControlMigrationResult | null> {
+    if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
+    if (this.cloudSyncPromise) {
+      this.cloudSyncRequested = true;
+      return this.cloudSyncPromise;
+    }
+
+    const syncTenantId = this.tenantId;
+    this.cloudSyncRequested = false;
+    const syncPromise = (async () => {
+      const result = await cashControlCloudService.importLocalConfiguration(syncTenantId, {
         deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
       });
-      // Si PostgreSQL rechazó una operación por concurrencia (por ejemplo, dos
-      // dispositivos abriendo la misma caja), el estado confirmado prevalece.
-      if (result.conflicts.length > 0) await this.refreshFromCloud();
-    } catch (error) {
-      console.warn('[CashControl] No se pudo sincronizar con Supabase; se conserva la caché local:', error);
+      // Si PostgreSQL rechazó una operación por concurrencia, la fuente cloud prevalece.
+      if (result.conflicts.length > 0 && this.tenantId === syncTenantId) await this.refreshFromCloud();
+      return result;
+    })();
+    this.cloudSyncPromise = syncPromise;
+    try {
+      return await syncPromise;
     } finally {
-      this.cloudSyncInFlight = false;
+      if (this.cloudSyncPromise === syncPromise) this.cloudSyncPromise = null;
+      if (this.cloudSyncRequested && !this.cloudSyncTimer) this.scheduleCloudSync(0);
     }
   }
 
@@ -529,9 +591,17 @@ class CashShiftService {
   }
 
   private async refreshFromCloud(): Promise<void> {
-    if (!this.tenantId || !cashControlCloudService.isAvailable()) return;
+    const refreshTenantId = this.tenantId;
+    if (!refreshTenantId || !cashControlCloudService.isAvailable()) return;
+    const startingRevision = this.localMutationRevision;
     try {
-      const snapshot = await cashControlCloudService.getCloudSnapshot(this.tenantId);
+      const snapshot = await cashControlCloudService.getCloudSnapshot(refreshTenantId);
+      if (this.tenantId !== refreshTenantId) return;
+      if (!shouldApplyCloudSnapshot(startingRevision, this.localMutationRevision)) {
+        // No descartar una alta/cierre local que ocurrió mientras llegaba este snapshot.
+        this.queueCloudSync();
+        return;
+      }
       const state = cashControlCloudService.toLocalState(snapshot);
       this.cloudHydrating = true;
       this.registers = state.registers;
