@@ -1,6 +1,21 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+
+const { version: appVersion } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+
+function getBuildId(): string {
+  const commitSha = process.env.VERCEL_GIT_COMMIT_SHA || process.env.GITHUB_SHA;
+  if (commitSha && /^[\da-f]{7,40}$/i.test(commitSha)) return commitSha.slice(0, 7);
+
+  try {
+    return execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return 'local';
+  }
+}
 
 function apiDevPlugin(): Plugin {
   return {
@@ -90,6 +105,10 @@ function apiDevPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_APP_BUILD': JSON.stringify(getBuildId()),
+  },
   plugins: [
     react(),
     apiDevPlugin(),

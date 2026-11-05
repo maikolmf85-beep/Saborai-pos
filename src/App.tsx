@@ -2256,7 +2256,8 @@ export function App() {
         </main>
 
         <footer className="shrink-0 border-t border-stone-200/80 bg-white/80 px-4 py-2 text-center text-[10px] font-medium text-stone-400 backdrop-blur-sm">
-          Sistema diseñado por Maikol Matamoros
+          Sistema diseñado por Maikol Matamoros <span className="mx-1.5" aria-hidden="true">·</span>
+          <span>v{import.meta.env.VITE_APP_VERSION} · build <code className="font-mono">{import.meta.env.VITE_APP_BUILD}</code></span>
         </footer>
       </div>
 
