@@ -606,6 +606,7 @@ export function App() {
   });
   const [localDbReady, setLocalDbReady] = useState(false);
   const [hydratedSnapshotTenantId, setHydratedSnapshotTenantId] = useState<string | null>(null);
+  const tablesHydrated = !isLoadingAuth && localDbReady && hydratedSnapshotTenantId === tenant.id;
   const tablesRef = useRef<Table[]>(tables);
   useEffect(() => {
     tablesRef.current = tables;
@@ -706,6 +707,7 @@ export function App() {
   // Realtime Sync Hook
   const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts, broadcastTenant, broadcastStaff } = useRealtimeSync(
     tenant.id,
+    tablesHydrated,
     handleUpdateTables,
     handleUpdateKdsOrdersRealtime,
     handleUpdateMenu,
@@ -719,6 +721,7 @@ export function App() {
       menuItems,
       tenant,
       staff: staffList,
+      tablesHydrated,
       hasLocalData: hasTenantItem('menu', tenant.id) || hasTenantItem('tables', tenant.id) || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0 || hasTenantItem('tenant_profile', tenant.id)
     })
   );

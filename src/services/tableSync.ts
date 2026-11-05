@@ -25,3 +25,22 @@ export function resolveRealtimeTables<T extends TableWithId>(
   }
   return [...merged.values()];
 }
+
+export function canRespondToRealtimeSync(state: {
+  tablesHydrated?: unknown;
+  hasLocalData?: unknown;
+} | null | undefined): boolean {
+  return state?.tablesHydrated === true && state?.hasLocalData === true;
+}
+
+/** A legacy untagged snapshot is merged as a delta to avoid stale empty snapshots deleting tables. */
+export function resolveRealtimeTablePayload<T extends TableWithId>(
+  currentTables: readonly T[],
+  payload: unknown,
+  tablesHydrated: boolean
+): T[] | null {
+  if (!tablesHydrated || !payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const candidate = payload as { tables?: unknown; snapshot?: unknown; tablesHydrated?: unknown };
+  const isAuthoritativeSnapshot = candidate.snapshot === true && candidate.tablesHydrated === true;
+  return resolveRealtimeTables(currentTables, candidate.tables, isAuthoritativeSnapshot);
+}

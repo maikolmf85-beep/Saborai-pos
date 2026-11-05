@@ -1,11 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { supabaseClient } from '../lib/supabaseClient';
 import { Table, KDSOrder, MenuItem } from '../types';
-import { resolveRealtimeTables } from '../services/tableSync';
+import { canRespondToRealtimeSync, resolveRealtimeTablePayload } from '../services/tableSync';
 import { resolveRealtimeTenantZones } from '../services/tenantZones';
+
+function sendSyncRequest(channel: any) {
+  void channel.send({ type: 'broadcast', event: 'request-sync', payload: {} });
+}
 
 export function useRealtimeSync(
   tenantId: string | undefined,
+  tablesHydrated: boolean,
   onUpdateTables: (tables: Table[], skipBroadcast: boolean) => void,
   onUpdateKdsOrders: (orders: KDSOrder[], skipBroadcast: boolean) => void,
   onUpdateMenuItems: (items: MenuItem[], skipBroadcast: boolean) => void,
@@ -18,9 +23,13 @@ export function useRealtimeSync(
 
   // Keep references to the latest callbacks so we don't re-subscribe on every render
   const callbacksRef = useRef({ onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState });
+  const tablesHydratedRef = useRef(tablesHydrated);
   useEffect(() => {
     callbacksRef.current = { onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState };
   }, [onUpdateTables, onUpdateKdsOrders, onUpdateMenuItems, onUpdateShifts, onUpdateTenant, onUpdateStaff, getCurrentState]);
+  useEffect(() => {
+    tablesHydratedRef.current = tablesHydrated;
+  }, [tablesHydrated]);
 
   useEffect(() => {
     const client = supabaseClient;
@@ -36,7 +45,7 @@ export function useRealtimeSync(
         const currentState = callbacksRef.current.getCurrentState();
         if (String(currentState.tenant?.id) !== String(tenantId)) return;
         const localTables = currentState.tables || [];
-        const resolved = resolveRealtimeTables(localTables, payload?.tables, payload?.snapshot === true);
+        const resolved = resolveRealtimeTablePayload(localTables, payload, currentState.tablesHydrated === true);
         if (resolved) callbacksRef.current.onUpdateTables(resolved as Table[], true);
       })
       .on('broadcast', { event: 'sync-kds' }, ({ payload }) => {
@@ -118,7 +127,7 @@ export function useRealtimeSync(
       })
       .on('broadcast', { event: 'request-sync' }, () => {
         const state = callbacksRef.current.getCurrentState();
-        if (state && state.hasLocalData) {
+        if (canRespondToRealtimeSync(state)) {
           // Prevent broadcasting if this is a fresh/demo instance with no real data
           const isFreshDemo = state.tenant?.id?.startsWith('tenant_demo_') && (!state.staff || state.staff.length === 0) && (!state.tables || state.tables.length === 0) && (!state.menuItems || state.menuItems.length === 0);
           if (isFreshDemo) {
@@ -127,7 +136,7 @@ export function useRealtimeSync(
           }
 
           channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
-          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables, snapshot: true } });
+          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables, snapshot: true, tablesHydrated: true } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
           channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
           channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant, snapshot: true } });
@@ -141,7 +150,7 @@ export function useRealtimeSync(
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log(`Connected to realtime channel: ${channelName}`);
-          channel.send({ type: 'broadcast', event: 'request-sync', payload: {} });
+          if (tablesHydratedRef.current) sendSyncRequest(channel);
         }
       });
 
@@ -152,13 +161,21 @@ export function useRealtimeSync(
     };
   }, [tenantId]); // Only re-subscribe if tenantId changes
 
+  // If the channel connected before IndexedDB/auth hydration finished, request
+  // another exchange now that this client can safely apply table snapshots.
+  useEffect(() => {
+    if (!tenantId || !tablesHydrated) return;
+    const channel = channelRef.current;
+    if (channel) sendSyncRequest(channel);
+  }, [tenantId, tablesHydrated]);
+
   // Expose broadcast functions
   const broadcastTables = (newTables: Table[]) => {
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-tables',
-        payload: { tables: newTables, snapshot: true },
+        payload: { tables: newTables, snapshot: true, tablesHydrated },
       });
     }
   };

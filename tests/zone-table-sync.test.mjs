@@ -7,7 +7,7 @@ import {
   resolveRealtimeTenantZones,
   resolveTenantZones
 } from '../src/services/tenantZones.ts';
-import { readTableSnapshot, resolveRealtimeTables } from '../src/services/tableSync.ts';
+import { canRespondToRealtimeSync, readTableSnapshot, resolveRealtimeTablePayload, resolveRealtimeTables } from '../src/services/tableSync.ts';
 import { validateTableLayout } from '../src/services/tableLayoutValidation.ts';
 import { mergeConcurrentTableLayouts, persistTableLayoutWithClient } from '../src/services/tableLayoutConcurrency.ts';
 import { cleanTenantZones, updateTenantZonesInSupabase } from '../api/_utils/tenantZones.ts';
@@ -157,6 +157,24 @@ test('snapshots de mesas reemplazan IDs y aceptan arreglos vacíos; payloads del
     { id: 'b', name: 'B' }
   ]);
   assert.equal(resolveRealtimeTables(oldTables, [{ name: 'malformada' }], true), null);
+});
+
+test('Realtime no anuncia ni aplica tablas vacías hasta hidratarse; snapshots legacy vacíos no borran mesas', () => {
+  const localTables = [{ id: 'mesa-1', name: 'Mesa 1' }, { id: 'mesa-2', name: 'Mesa 2' }];
+
+  assert.equal(canRespondToRealtimeSync({ hasLocalData: true, tablesHydrated: false }), false);
+  assert.equal(canRespondToRealtimeSync({ hasLocalData: true, tablesHydrated: true }), true);
+  assert.equal(canRespondToRealtimeSync({ hasLocalData: false, tablesHydrated: true }), false);
+
+  assert.equal(resolveRealtimeTablePayload(localTables, { tables: [], snapshot: true, tablesHydrated: true }, false), null);
+  assert.deepEqual(
+    resolveRealtimeTablePayload(localTables, { tables: [], snapshot: true }, true),
+    localTables
+  );
+  assert.deepEqual(
+    resolveRealtimeTablePayload(localTables, { tables: [], snapshot: true, tablesHydrated: true }, true),
+    []
+  );
 });
 
 test('snapshot IndexedDB vacío conserva borrados locales con su base y no borra altas remotas posteriores', () => {
