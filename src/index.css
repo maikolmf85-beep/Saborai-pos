@@ -631,3 +631,19 @@
     display: none !important;
   }
 }
+
+
+@keyframes saborai-update-progress {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(360%); }
+}
+
+.saborai-update-progress {
+  animation: saborai-update-progress 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saborai-update-progress {
+    animation-duration: 3s;
+  }
+}
