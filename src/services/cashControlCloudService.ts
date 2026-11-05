@@ -3,6 +3,7 @@ import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
 import { isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
+import { posCloudService } from './posCloudService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
@@ -398,15 +399,8 @@ class CashControlCloudService {
         if (status === 'CLOSED' && existing.status === 'OPEN') {
           try {
             const updated = await updateClosedShiftIfNeeded(existing.status, existing.id, shift, async (id, payload) => {
-              const result = await client
-                .from('pos_cash_shifts')
-                .update(payload)
-                .eq('tenant_id', tenantId)
-                .eq('id', id)
-                .eq('status', 'OPEN')
-                .select('id')
-                .maybeSingle();
-              return { data: result.data, error: result.error };
+              await posCloudService.syncOperation('CLOSE_CASH_SHIFT', { shiftId: id, closure: payload }, tenantId, `cash-close:${tenantId}:${id}`);
+              return { data: { id }, error: null };
             });
             if (updated) importedShifts += 1;
             else skippedExisting += 1;
@@ -424,52 +418,36 @@ class CashControlCloudService {
         continue;
       }
 
-      const result = await client.from('pos_cash_shifts').insert({
-        tenant_id: tenantId,
-        branch_id: register.branch_id,
-        cash_register_id: register.id,
-        opened_by: null,
-        closed_by: null,
-        status,
-        opening_float: shift.initialCashFloat || 0,
-        expected_cash: shift.systemSummary?.expectedCashInDrawer || 0,
-        counted_cash: shift.countedCash ?? null,
-        difference: shift.cashDifference ?? null,
-        opened_at: shift.openedAt,
-        closed_at: shift.closedAt || null,
-        notes: shift.notes || null,
-        shift_number: shift.shiftNumber,
-        participants: shift.participants || [],
-        movements: shift.movements || [],
-        system_summary: shift.systemSummary || {},
-        cash_breakdown: shift.cashBreakdown || null,
-        counted_cards: shift.countedCards ?? null,
-        dataphones_breakdown: shift.dataphonesBreakdown || null,
-        counted_sinpe: shift.countedSinpe ?? null,
-        difference_reason: shift.differenceReason || null,
-        z_report_generated: Boolean(shift.zReportGenerated),
-        legacy_id: shift.id,
-        source_device_key: deviceKey
-      }).select('id').single();
-      if (result.error) conflicts.push(`No se pudo importar el turno ${shift.shiftNumber}: ${result.error.message}`);
-      else importedShifts += 1;
+      try {
+        const result = await posCloudService.syncOperation<{ alreadyExists: boolean }>(
+          'IMPORT_CASH_SHIFT',
+          { shift, cashRegisterId: register.id, deviceKey },
+          tenantId
+        );
+        if (result.alreadyExists) skippedExisting += 1;
+        else importedShifts += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        conflicts.push(`No se pudo importar el turno ${shift.shiftNumber}: ${message}`);
+      }
     }
 
     const currentLocalId = getTenantItem<string>('current_terminal_id', tenantId);
     const currentRegister = importedRegisterIds.get(currentLocalId || '') || importedRegisterIds.values().next().value;
     let assignedTerminal = false;
     if (currentRegister) {
-      const terminalResult = await client.from('pos_terminals').upsert({
-        tenant_id: tenantId,
-        branch_id: currentRegister.branch_id,
-        cash_register_id: currentRegister.id,
-        device_key: deviceKey,
-        device_name: options.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'),
-        last_seen_at: new Date().toISOString(),
-        is_active: true
-      }, { onConflict: 'tenant_id,device_key' }).select('id').single();
-      if (terminalResult.error) conflicts.push(`No se pudo asignar este dispositivo a la caja: ${terminalResult.error.message}`);
-      else assignedTerminal = true;
+      const deviceName = options.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS');
+      try {
+        await posCloudService.syncOperation('ASSIGN_CASH_TERMINAL', {
+          registerId: currentRegister.id,
+          deviceKey,
+          deviceName
+        }, tenantId);
+        assignedTerminal = true;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        conflicts.push(`No se pudo asignar este dispositivo a la caja: ${message}`);
+      }
     }
 
     const marker = new Date().toISOString();

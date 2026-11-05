@@ -8,8 +8,9 @@ import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
+import { assignCashTerminal, closeCashShift, importCashShift } from '../_utils/cashControlSync.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -527,19 +528,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (existingAudit.data) return res.status(200).json({ success: true, alreadyApplied: true, result: existingAudit.data.metadata });
 
   try {
-    const result = action === 'PAYMENT'
-      ? await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-      : action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY'
-        ? await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-        : action === 'SAVE_INVENTORY_CONFIG'
-          ? await syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-          : action === 'LOAD_INVENTORY_CONFIG'
-            ? await getInventoryConfig(tenantId, body.payload)
-            : action === 'ADJUST_INVENTORY'
-              ? await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-              : action === 'EMIT_INVOICE'
-                ? await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-                : await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    let result: unknown;
+    if (action === 'PAYMENT') result = await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY') result = await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'SAVE_INVENTORY_CONFIG') result = await syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'LOAD_INVENTORY_CONFIG') result = await getInventoryConfig(tenantId, body.payload);
+    else if (action === 'ADJUST_INVENTORY') result = await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'EMIT_INVOICE') result = await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'CLOSE_CASH_SHIFT') result = await closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
+    else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
+    else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
+    else result = await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+
+    if (action === 'CLOSE_CASH_SHIFT' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
+      const details = result as Record<string, unknown>;
+      const entityId = typeof details.terminalId === 'string' ? details.terminalId : details.shiftId;
+      const audit = await supabaseAdmin.from('pos_audit_events').insert({
+        tenant_id: tenantId,
+        actor_user_id: auth.userId,
+        action: 'OFFLINE_SYNC',
+        actor_employee_id: auth.employeeId || null,
+        entity_type: action === 'ASSIGN_CASH_TERMINAL' ? 'CASH_TERMINAL' : 'CASH_SHIFT',
+        entity_id: entityId || null,
+        request_id: operationId,
+        metadata: { action, ...details }
+      });
+      if (audit.error) console.error('[Offline Sync] Cash control audit failed:', audit.error);
+    }
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
