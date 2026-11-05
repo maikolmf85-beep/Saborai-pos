@@ -469,8 +469,8 @@ Medio de Pago: ${paymentMethod}
     });
 
     // Deducción automática de insumos e ingredientes del inventario (escandallo)
-    const itemsToDeduct = activeItems.map(it => ({ name: it.name, quantity: it.quantity }));
-    const deductionResult = inventoryService.deductItemsStock(itemsToDeduct, 'SALE_DEDUCTION');
+    const itemsToDeduct = activeItems.filter(it => !it.inventoryDeductedAtDispatch).map(it => ({ menuItemId: it.menuItemId, name: it.name, quantity: it.quantity }));
+    const deductionResult = inventoryService.deductItemsStock(itemsToDeduct, 'SALE_DEDUCTION', undefined, undefined, tenant.id);
     if (deductionResult.depletedItems.length > 0 && onNotify) {
       onNotify({
         id: `depleted_${Date.now()}`,
@@ -607,7 +607,8 @@ Medio de Pago: ${paymentMethod}
       items: activeItems.map(item => ({
         name: item.name,
         quantity: item.quantity,
-        menuItemId: item.id
+        menuItemId: item.menuItemId,
+        inventoryDeductedAtDispatch: item.inventoryDeductedAtDispatch
       }))
     });
 

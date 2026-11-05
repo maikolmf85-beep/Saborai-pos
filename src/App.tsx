@@ -36,6 +36,8 @@ import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
+import { inventoryService } from './services/inventoryService';
+import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
 import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
@@ -325,6 +327,7 @@ export function App() {
   const broadcastTenantRef = useRef<((t: TenantInfo) => void) | null>(null);
   const broadcastStaffRef = useRef<((s: UserProfile[]) => void) | null>(null);
   const broadcastKdsOrdersRef = useRef<((orders: KDSOrder[]) => void) | null>(null);
+  const broadcastMenuItemsRef = useRef<((items: MenuItem[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
     const shouldPersistZones = !skipBroadcast
@@ -567,24 +570,32 @@ export function App() {
   });
 
   const handleUpdateMenu = (updatedMenu: MenuItem[], skipBroadcast = false) => {
-    setMenuItems(updatedMenu);
-    if (!skipBroadcast) broadcastMenuItems(updatedMenu);
+    const reconciledMenu = inventoryService.reconcileMenuCatalog(updatedMenu, tenant.id);
+    setMenuItems(reconciledMenu);
+    if (!skipBroadcast) broadcastMenuItems(reconciledMenu);
     try {
-      setTenantItem('menu', updatedMenu, tenant.id);
+      setTenantItem('menu', reconciledMenu, tenant.id);
     } catch {}
+    window.dispatchEvent(new CustomEvent('saborai_menu_updated', { detail: { tenantId: tenant.id, menu: reconciledMenu } }));
   };
 
   // Keep menuItems reactively synchronized with inventory stock deductions
   useEffect(() => {
-    const handleInventoryChange = () => {
+    const handleInventoryChange = (event: Event) => {
       try {
+        const eventTenantId = (event as CustomEvent<{ tenantId?: string }>).detail?.tenantId;
+        if (eventTenantId && eventTenantId !== tenant.id) return;
         const saved = getTenantItem<MenuItem[]>('menu', tenant.id);
-        if (saved) setMenuItems(saved);
+        if (saved) {
+          const reconciled = inventoryService.reconcileMenuCatalog(saved, tenant.id);
+          setMenuItems(reconciled);
+          broadcastMenuItemsRef.current?.(reconciled);
+        }
       } catch {}
     };
     window.addEventListener('saborai_inventory_updated', handleInventoryChange);
     return () => window.removeEventListener('saborai_inventory_updated', handleInventoryChange);
-  }, []);
+  }, [tenant.id]);
 
   const [tables, setTables] = useState<Table[]>(() => {
     try {
@@ -716,7 +727,8 @@ export function App() {
     broadcastTenantRef.current = broadcastTenant;
     broadcastStaffRef.current = broadcastStaff;
     broadcastKdsOrdersRef.current = broadcastKdsOrders;
-  }, [broadcastTenant, broadcastStaff, broadcastKdsOrders]);
+    broadcastMenuItemsRef.current = broadcastMenuItems;
+  }, [broadcastTenant, broadcastStaff, broadcastKdsOrders, broadcastMenuItems]);
 
   // The layout row is the cloud authority when present. Operational state
   // (status/activeOrder) is always kept from the current device's tables.
@@ -1617,7 +1629,7 @@ export function App() {
     };
     const inventoryPayload = {
       orderNumber: sale.table.activeOrder?.orderNumber,
-      items: sale.items
+      items: getUndispatchedItems(sale.items)
     };
 
     if (sale.paymentMethod === '04-Credito' && executiveEmployeeId) {
@@ -1639,24 +1651,27 @@ export function App() {
       }).catch(async error => {
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
         await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
+        if (inventoryPayload.items.length > 0) await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
         await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id);
       });
       return;
     }
 
     void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
+    if (inventoryPayload.items.length > 0) void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
     void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id);
   };
 
   const handleSaveOrder = (updatedTable: Table) => {
     if (!updatedTable) return;
+    const dispatchItemIds = new Set<string>();
 
     // 1. Process new items for KDS
     if (updatedTable.activeOrder && Array.isArray(updatedTable.activeOrder.items)) {
       const newKitchenItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && (i.category === 'Cocina' || !i.category));
       const newBarItems = updatedTable.activeOrder.items.filter(i => !i.kdsStatus && i.category === 'Bar');
+      const dispatchItems = [...newKitchenItems, ...newBarItems];
+      dispatchItems.forEach(item => dispatchItemIds.add(item.id));
 
       const timestamp = new Date();
       const serverName = updatedTable.activeOrder.server || 'Mesero';
@@ -1665,7 +1680,7 @@ export function App() {
 
       if (newKitchenItems.length > 0) {
         const orderId = `kds_c_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        newKitchenItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        newKitchenItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; i.inventoryDeductedAtDispatch = true; });
         const maxPrepTime = Math.max(0, ...newKitchenItems.map(i => {
           const menuIt = menuItems.find(m => m.name === i.name);
           return menuIt?.prepTime || 0;
@@ -1693,7 +1708,7 @@ export function App() {
 
       if (newBarItems.length > 0) {
         const orderId = `kds_b_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-        newBarItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; });
+        newBarItems.forEach(i => { i.kdsStatus = 'PENDING'; i.kdsOrderId = orderId; i.inventoryDeductedAtDispatch = true; });
         const maxPrepTime = Math.max(0, ...newBarItems.map(i => {
           const menuIt = menuItems.find(m => m.name === i.name);
           return menuIt?.prepTime || 0;
@@ -1754,6 +1769,49 @@ export function App() {
     localDB.saveItem('tables', updatedTable);
 
     const orderDescription = `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${updatedTable.activeOrder?.orderNumber || 'pedido'})`;
+    const dispatchItems = updatedTable.activeOrder?.items?.filter(item => dispatchItemIds.has(item.id)) || [];
+    if (dispatchItems.length > 0) {
+      const orderNumber = updatedTable.activeOrder?.orderNumber || '';
+      dispatchItems.forEach(item => {
+        inventoryService.deductItemsStock(
+          [{ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity }],
+          'DISPATCH_DEDUCTION',
+          undefined,
+          createDispatchOperationId(tenant.id, orderNumber, item.id),
+          tenant.id
+        );
+      });
+      const syncDispatch = async () => {
+        let tableSynced = false;
+        if (localDB.isOnline()) {
+          try {
+            await posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id);
+            tableSynced = true;
+          } catch {
+            await localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id);
+          }
+        } else {
+          await localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id);
+        }
+
+        for (const item of dispatchItems) {
+          const operationId = createDispatchOperationId(tenant.id, orderNumber, item.id);
+          const payload = { orderNumber, items: [toInventoryDispatchItem(item)] };
+          if (tableSynced && localDB.isOnline()) {
+            try {
+              await posCloudService.syncOperation('DISPATCH_INVENTORY', payload, tenant.id, operationId);
+              continue;
+            } catch {
+              // Reuse the same idempotency key when the outbox retries.
+            }
+          }
+          await localDB.enqueueOfflineAction('DISPATCH_INVENTORY', payload, `Descuento pendiente para ${item.name}`, tenant.id, operationId);
+        }
+      };
+      void syncDispatch();
+      return;
+    }
+
     if (localDB.isOnline()) {
       void posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id)
         .catch(() => localDB.enqueueOfflineAction('UPDATE_TABLE', updatedTable, orderDescription, tenant.id));

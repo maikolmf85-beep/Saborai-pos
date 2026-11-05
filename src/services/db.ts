@@ -17,7 +17,7 @@ export interface TenantOfflineSnapshot {
 
 export interface OfflineSyncQueueItem {
   id: string;
-  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'PAYMENT';
+  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'PAYMENT';
   payload: any;
   timestamp: string;
   tenantId?: string;
@@ -187,12 +187,12 @@ export class SaboraiLocalDB {
     });
   }
 
-  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string): Promise<void> {
-    const operationId = `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
+  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string, operationId?: string): Promise<void> {
+    const stableOperationId = operationId || `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
     const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const item: OfflineSyncQueueItem = {
-      id: operationId,
+      id: stableOperationId,
       action,
       payload,
       timestamp: new Date().toISOString(),

@@ -215,6 +215,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
       const extraPrice = modifiers.reduce((sum, mod) => sum + (mod.extraPrice || 0), 0);
       const newItem: TableItem = {
         id: `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        menuItemId: product.id,
         name: product.name,
         price: product.price + extraPrice,
         quantity: 1,

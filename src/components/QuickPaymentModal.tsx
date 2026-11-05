@@ -355,8 +355,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         ].filter(payment => payment.amount > 0);
 
     const shouldQueueInvoice = isOffline || isSimplified || !emitToHacienda;
-    const inventoryItems = items.map(item => ({
-      menuItemId: item.id,
+    const inventoryItems = items.filter(item => !item.inventoryDeductedAtDispatch).map(item => ({
+      menuItemId: item.menuItemId,
       name: item.name,
       quantity: item.quantity
     }));
@@ -380,7 +380,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       },
       `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
       tenant.id
-    )).then(() => localDB.enqueueOfflineAction(
+    )).then(() => inventoryItems.length > 0 ? localDB.enqueueOfflineAction(
       'DEDUCT_INVENTORY',
       {
         orderNumber: table.activeOrder?.orderNumber,
@@ -389,7 +389,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       },
       `Inventario pendiente de descuento para ${table.name || 'Mesa'}`,
       tenant.id
-    )).then(() => shouldQueueInvoice
+    ) : Promise.resolve()).then(() => shouldQueueInvoice
       ? localDB.enqueueOfflineAction(
           'EMIT_INVOICE',
           {
@@ -440,8 +440,11 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     // Deduct ingredients from inventory
     try {
       inventoryService.deductItemsStock(
-        items.map(it => ({ name: it.name, quantity: it.quantity })),
-        `VENTA-${generatedConsecutivo || 'POS'}`
+        items.filter(it => !it.inventoryDeductedAtDispatch).map(it => ({ menuItemId: it.menuItemId, name: it.name, quantity: it.quantity })),
+        `VENTA-${generatedConsecutivo || 'POS'}`,
+        undefined,
+        undefined,
+        tenant.id
       );
     } catch (e) {
       console.warn('Error al descontar inventario en pago rápido:', e);

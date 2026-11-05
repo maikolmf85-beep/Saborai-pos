@@ -6,8 +6,10 @@ import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
+import { cloudMenuItemId } from '../_utils/inventoryIds.js';
+import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'EMIT_INVOICE']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -164,10 +166,26 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
     }
     const items = Array.isArray(activeOrder.items) ? activeOrder.items : [];
     if (items.length > 0) {
+      const candidateMenuIds = [...new Set(
+        items
+          .filter((item: any) => typeof item.menuItemId === 'string' && item.menuItemId.trim())
+          .map((item: any) => cloudMenuItemId(tenantId, branch.id, item.menuItemId.trim().slice(0, 200)))
+      )];
+      const existingMenuIds = new Set<string>();
+      if (candidateMenuIds.length > 0) {
+        const menuResult = await supabaseAdmin.from('pos_menu_items').select('id')
+          .eq('tenant_id', tenantId).eq('branch_id', branch.id).in('id', candidateMenuIds);
+        if (menuResult.error) throw new Error('No se pudo verificar el catálogo de productos de la orden.');
+        for (const row of menuResult.data || []) existingMenuIds.add(row.id);
+      }
       const itemRows = items.map((item: any) => ({
         tenant_id: tenantId,
         order_id: orderId,
-        menu_item_id: isUuid(item.id) ? item.id : null,
+        menu_item_id: typeof item.menuItemId === 'string' && item.menuItemId.trim()
+          ? (existingMenuIds.has(cloudMenuItemId(tenantId, branch.id, item.menuItemId.trim().slice(0, 200)))
+            ? cloudMenuItemId(tenantId, branch.id, item.menuItemId.trim().slice(0, 200))
+            : null)
+          : (isUuid(item.id) ? item.id : null),
         name_snapshot: String(item.name || 'Producto').slice(0, 200),
         quantity: Math.max(0.001, safeNumber(item.quantity, 1)),
         unit_price: Math.max(0, safeNumber(item.price, 0)),
@@ -306,12 +324,12 @@ async function findOrder(tenantId: string, orderNumber: unknown) {
   if (!normalizedOrderNumber) throw new Error('La operación no contiene un número de orden válido.');
   const result = await supabaseAdmin
     .from('pos_orders')
-    .select('id')
+    .select('id, branch_id')
     .eq('tenant_id', tenantId)
     .eq('idempotency_key', `order:${tenantId}:${normalizedOrderNumber}`)
     .maybeSingle();
   if (result.error || !result.data) throw new Error('La orden aún no existe en la nube; se reintentará después de sincronizar la comanda.');
-  return { id: result.data.id, orderNumber: normalizedOrderNumber };
+  return { id: result.data.id, branchId: result.data.branch_id, orderNumber: normalizedOrderNumber };
 }
 
 async function syncInventory(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
@@ -323,7 +341,9 @@ async function syncInventory(tenantId: string, userId: string, employeeId: strin
       .map((item: any) => ({
         name: item.name.slice(0, 200),
         quantity: safeNumber(item.quantity, 0),
-        menuItemId: isUuid(item.menuItemId) ? item.menuItemId : null
+        menuItemId: typeof item.menuItemId === 'string' && item.menuItemId.trim()
+          ? cloudMenuItemId(tenantId, order.branchId, item.menuItemId.trim().slice(0, 200))
+          : null
       }))
     : [];
   if (items.length === 0) throw new Error('La operación de inventario no contiene artículos válidos.');
@@ -349,6 +369,49 @@ async function syncInventory(tenantId: string, userId: string, employeeId: strin
     metadata: { ...rpc.data, orderNumber: order.orderNumber, source: 'pwa' }
   });
   return { orderId: order.id, ...rpc.data };
+}
+
+async function syncInventoryConfig(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
+  const scope = readOperationalScope(payload);
+  const branch = await findBranch(tenantId, scope.branchId);
+  if (!branch) throw new Error('No existe una sucursal activa para este restaurante.');
+  const result = await saveInventoryConfig(supabaseAdmin, tenantId, branch.id, payload);
+  await supabaseAdmin.from('pos_audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: userId,
+    action: 'INVENTORY_CONFIG_SYNC',
+    actor_employee_id: employeeId || null,
+    entity_type: 'INVENTORY',
+    entity_id: branch.id,
+    request_id: operationId,
+    metadata: { ...result, branchId: branch.id }
+  });
+  return { ...result, branchId: branch.id };
+}
+
+async function getInventoryConfig(tenantId: string, payload: any) {
+  const scope = readOperationalScope(payload);
+  const branch = await findBranch(tenantId, scope.branchId);
+  if (!branch) throw new Error('No existe una sucursal activa para este restaurante.');
+  return { ...(await loadInventoryConfig(supabaseAdmin, tenantId, branch.id, payload)), branchId: branch.id };
+}
+
+async function syncInventoryAdjustment(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
+  const scope = readOperationalScope(payload);
+  const branch = await findBranch(tenantId, scope.branchId);
+  if (!branch) throw new Error('No existe una sucursal activa para este restaurante.');
+  const result = await adjustInventoryStock(supabaseAdmin, tenantId, branch.id, userId, operationId, payload);
+  await supabaseAdmin.from('pos_audit_events').insert({
+    tenant_id: tenantId,
+    actor_user_id: userId,
+    action: 'INVENTORY_ADJUSTMENT',
+    actor_employee_id: employeeId || null,
+    entity_type: 'INVENTORY',
+    entity_id: branch.id,
+    request_id: operationId,
+    metadata: { ...result, branchId: branch.id }
+  });
+  return { ...result, branchId: branch.id };
 }
 
 async function syncInvoice(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
@@ -466,11 +529,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const result = action === 'PAYMENT'
       ? await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-      : action === 'DEDUCT_INVENTORY'
+      : action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY'
         ? await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-        : action === 'EMIT_INVOICE'
-          ? await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
-          : await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+        : action === 'SAVE_INVENTORY_CONFIG'
+          ? await syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+          : action === 'LOAD_INVENTORY_CONFIG'
+            ? await getInventoryConfig(tenantId, body.payload)
+            : action === 'ADJUST_INVENTORY'
+              ? await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+              : action === 'EMIT_INVOICE'
+                ? await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload)
+                : await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);

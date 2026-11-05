@@ -1,7 +1,8 @@
 import type { ElectronicInvoiceCR, Table } from '../types';
 import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems';
+import { getUndispatchedItems } from './inventoryDispatch';
 
-export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'EMIT_INVOICE';
+export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE';
 
 export interface SaleCloudPayload {
   table: Table;
@@ -9,7 +10,7 @@ export interface SaleCloudPayload {
   paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
   total: number;
   closeOrder: boolean;
-  items: Array<{ name: string; quantity: number; menuItemId?: string }>;
+  items: Array<{ name: string; quantity: number; menuItemId?: string; inventoryDeductedAtDispatch?: boolean }>;
 }
 
 export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
@@ -85,10 +86,13 @@ class PosCloudService {
         : undefined,
       closeOrder: sale.closeOrder
     }, tenantId, paymentOperationId);
-    await this.syncOperation('DEDUCT_INVENTORY', {
-      orderNumber,
-      items: sale.items
-    }, tenantId, `${operationPrefix}:inventory`);
+    const undispatchedItems = getUndispatchedItems(sale.items);
+    if (undispatchedItems.length > 0) {
+      await this.syncOperation('DEDUCT_INVENTORY', {
+        orderNumber,
+        items: undispatchedItems
+      }, tenantId, `${operationPrefix}:inventory`);
+    }
     await this.syncOperation('EMIT_INVOICE', {
       orderNumber,
       clave: sale.invoice.clave50Digitos,

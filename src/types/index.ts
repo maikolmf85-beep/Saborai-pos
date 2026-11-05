@@ -90,6 +90,8 @@ export interface TableItem {
   taxRate: number; // 0.13, 0.04, 0.02, 0.01, 0
   category: string; // Dynamic custom categories
   subcategory?: string; // Subcategory for further filtering
+  menuItemId?: string;
+  inventoryDeductedAtDispatch?: boolean;
   recipeIngredients?: { ingredient: string; qty: number; unit: string }[];
   selectedModifiers?: { modifierName: string; choiceName: string; extraPrice?: number }[];
   kdsStatus?: 'PENDING' | 'IN_PREPARATION' | 'READY' | 'SERVED';
@@ -144,7 +146,7 @@ export interface MenuItem {
   available: boolean;
   imageIcon: string;
   iconManual?: boolean; // Si es true, respeta el icono elegido aunque sea el genérico
-  ingredients: { name: string; requiredQty: number; unit: string; currentStock: number }[];
+  ingredients: { ingredientId?: string; name: string; requiredQty: number; unit: string; currentStock: number }[];
   aiSuggestedPairing?: string;
   prepTime?: number; // Tiempo estimado de preparación en minutos
   modifiers?: MenuModifier[]; // Opciones/modificadores para el platillo

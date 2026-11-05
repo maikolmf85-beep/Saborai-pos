@@ -1203,7 +1203,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {activeSection === 'inventory' && (
             <div className="bg-white rounded-2xl border border-stone-200 p-2 sm:p-4 shadow-sm">
-              <InventoryRecipes />
+              <InventoryRecipes key={tenant.id} tenantId={tenant.id} />
             </div>
           )}
 
