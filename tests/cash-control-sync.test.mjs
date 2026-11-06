@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildClosedShiftCloudPayload,
+  formatCashTerminalAssignmentConflict,
   isUnrelatedRegisterCodeMatch,
   shouldApplyCloudSnapshot,
   shouldSyncClosedShift,
@@ -26,6 +27,23 @@ const closedShift = {
   dataphonesBreakdown: [{ id: 'df_1', name: 'Datáfono 1', amount: 2000 }],
   systemSummary: { expectedCashInDrawer: 12000 }
 };
+
+test('muestra una sola vez el prefijo de error de asignación y conserva el diagnóstico', () => {
+  const prefix = 'No se pudo asignar este dispositivo a la caja';
+  assert.equal(
+    formatCashTerminalAssignmentConflict(new Error(`${prefix}.`)),
+    `${prefix}.`
+  );
+  assert.equal(
+    formatCashTerminalAssignmentConflict(new Error(prefix.toLowerCase())),
+    prefix.toLowerCase()
+  );
+  assert.equal(
+    formatCashTerminalAssignmentConflict(new Error('La caja seleccionada ya tiene otra terminal activa.')),
+    `${prefix}: La caja seleccionada ya tiene otra terminal activa.`
+  );
+  assert.equal(formatCashTerminalAssignmentConflict(''), prefix);
+});
 
 test('descarta el snapshot que empezó antes de una mutación local', () => {
   assert.equal(shouldApplyCloudSnapshot(4, 5), false);

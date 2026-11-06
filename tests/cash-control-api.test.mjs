@@ -420,6 +420,59 @@ test('asigna el dispositivo solo a una caja activa del tenant y deriva sucursal 
   assert.equal(calls[1].values.device_key, deviceKey);
 });
 
+test('explica la colisión con otra terminal activa sin cambiar la restricción de una terminal por caja', async () => {
+  const { admin } = mockAdmin([
+    { data: { id: registerId, branch_id: branchId, is_active: true }, error: null },
+    {
+      data: null,
+      error: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "pos_one_active_terminal_per_register"'
+      }
+    }
+  ]);
+  await assert.rejects(assignCashTerminal(admin, tenantId, { registerId, deviceKey }), error => {
+    assert.equal(error.code, 'CASH_TERMINAL_ALREADY_ASSIGNED');
+    assert.match(error.message, /otra terminal activa/i);
+    return true;
+  });
+
+  const migration = await readFile(new URL('../supabase/migrations/20261026000000_phase8_central_cash_registers.sql', import.meta.url), 'utf8');
+  assert.match(migration, /create unique index if not exists pos_one_active_terminal_per_register[\s\S]*?where is_active = true/i);
+});
+
+test('distingue permisos y conserva SQLSTATE/restricción cuando falla la escritura de terminal', async () => {
+  const permissionFailure = mockAdmin([
+    { data: { id: registerId, branch_id: branchId, is_active: true }, error: null },
+    { data: null, error: { code: '42501', message: 'permission denied for table pos_terminals' } }
+  ]);
+  await assert.rejects(assignCashTerminal(permissionFailure.admin, tenantId, { registerId, deviceKey }), error => {
+    assert.equal(error.code, 'CASH_TERMINAL_PERMISSION_DENIED');
+    assert.match(error.message, /SQLSTATE 42501/);
+    assert.match(error.message, /RLS/i);
+    return true;
+  });
+
+  const otherFailure = mockAdmin([
+    { data: { id: registerId, branch_id: branchId, is_active: true }, error: null },
+    {
+      data: null,
+      error: {
+        code: '23503',
+        message: 'insert or update violates foreign key constraint "pos_terminals_branch_id_fkey"',
+        details: 'sensitive row detail is not shown to the user'
+      }
+    }
+  ]);
+  await assert.rejects(assignCashTerminal(otherFailure.admin, tenantId, { registerId, deviceKey }), error => {
+    assert.equal(error.code, 'CASH_TERMINAL_ASSIGNMENT_FAILED');
+    assert.match(error.message, /SQLSTATE 23503/);
+    assert.match(error.message, /pos_terminals_branch_id_fkey/);
+    assert.doesNotMatch(error.message, /sensitive row detail/i);
+    return true;
+  });
+});
+
 test('el permiso de caja no se concede a roles sin caja y el handler enruta acciones autenticadas', async () => {
   for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']) {
     assert.equal(hasRolePermission('ADMIN', ROLE_PERMISSIONS.offlineSync[action]), true);

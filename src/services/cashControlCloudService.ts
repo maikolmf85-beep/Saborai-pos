@@ -2,7 +2,7 @@ import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus }
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
-import { isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
+import { formatCashTerminalAssignmentConflict, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
 import { posCloudService } from './posCloudService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
@@ -513,8 +513,7 @@ class CashControlCloudService {
         }, tenantId);
         assignedTerminal = true;
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        conflicts.push(`No se pudo asignar este dispositivo a la caja: ${message}`);
+        conflicts.push(formatCashTerminalAssignmentConflict(error));
       }
     }
 

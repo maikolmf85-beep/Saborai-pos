@@ -7,6 +7,16 @@ export interface ClosedShiftUpdateResult {
   error: { message?: string } | null;
 }
 
+const CASH_TERMINAL_ASSIGNMENT_PREFIX = 'No se pudo asignar este dispositivo a la caja';
+
+export function formatCashTerminalAssignmentConflict(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
+  if (!message) return CASH_TERMINAL_ASSIGNMENT_PREFIX;
+  return message.toLowerCase().startsWith(CASH_TERMINAL_ASSIGNMENT_PREFIX.toLowerCase())
+    ? message
+    : `${CASH_TERMINAL_ASSIGNMENT_PREFIX}: ${message}`;
+}
+
 /** A cloud snapshot is stale if a local mutation happened while it was loading. */
 export function shouldApplyCloudSnapshot(startRevision: number, currentRevision: number): boolean {
   return startRevision === currentRevision;

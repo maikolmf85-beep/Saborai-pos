@@ -458,6 +458,52 @@ export async function importCashShift(
   return { shiftId: inserted.data.id, alreadyExists: false };
 }
 
+class CashTerminalAssignmentError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'CashTerminalAssignmentError';
+    this.code = code;
+  }
+}
+
+function cashTerminalAssignmentFailure(error: unknown): CashTerminalAssignmentError {
+  const databaseError = error && typeof error === 'object' && !Array.isArray(error)
+    ? error as RecordValue
+    : {};
+  const sqlState = typeof databaseError.code === 'string' ? databaseError.code : '';
+  const message = typeof databaseError.message === 'string' ? databaseError.message : '';
+  const rawConstraint = typeof databaseError.constraint === 'string'
+    ? databaseError.constraint
+    : message.match(/constraint ["']([A-Za-z0-9_]+)["']/i)?.[1] || '';
+  const constraint = /^[A-Za-z0-9_]{1,128}$/.test(rawConstraint) ? rawConstraint : '';
+
+  if (sqlState === '23505' && constraint === 'pos_one_active_terminal_per_register') {
+    return new CashTerminalAssignmentError(
+      'La caja seleccionada ya tiene otra terminal activa. Desactive esa asignación o seleccione otra caja.',
+      'CASH_TERMINAL_ALREADY_ASSIGNED'
+    );
+  }
+  if (sqlState === '42501') {
+    return new CashTerminalAssignmentError(
+      'La base de datos rechazó la asignación por permisos (SQLSTATE 42501). Revise los permisos o las políticas RLS de pos_terminals.',
+      'CASH_TERMINAL_PERMISSION_DENIED'
+    );
+  }
+
+  const diagnostics = [
+    sqlState ? `SQLSTATE ${sqlState}` : '',
+    constraint ? `restricción ${constraint}` : ''
+  ].filter(Boolean).join(', ');
+  return new CashTerminalAssignmentError(
+    diagnostics
+      ? `La base de datos rechazó la asignación del dispositivo (${diagnostics}). Indique este diagnóstico al administrador.`
+      : 'La base de datos rechazó la asignación del dispositivo sin un código de error. Intente de nuevo; si persiste, contacte al administrador.',
+    'CASH_TERMINAL_ASSIGNMENT_FAILED'
+  );
+}
+
 export async function assignCashTerminal(
   admin: CashControlAdminClient,
   tenantId: string,
@@ -486,6 +532,7 @@ export async function assignCashTerminal(
     last_seen_at: new Date().toISOString(),
     is_active: true
   }, { onConflict: 'tenant_id,device_key' }).select('id').single();
-  if (terminal.error || !terminal.data) throw new Error('No se pudo asignar este dispositivo a la caja.');
+  if (terminal.error) throw cashTerminalAssignmentFailure(terminal.error);
+  if (!terminal.data) throw cashTerminalAssignmentFailure(null);
   return { terminalId: terminal.data.id, assigned: true };
 }
