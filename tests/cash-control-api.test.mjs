@@ -12,7 +12,8 @@ import {
   getBusinessDateForInstant,
   getDailyCashStatus,
   importCashShift,
-  openDailyCash
+  openDailyCash,
+  reassignCashTerminal
 } from '../api/_utils/cashControlSync.ts';
 import { hasRolePermission, ROLE_PERMISSIONS } from '../api/_utils/rolePermissions.ts';
 
@@ -473,8 +474,77 @@ test('distingue permisos y conserva SQLSTATE/restricción cuando falla la escrit
   });
 });
 
+test('reasigna una terminal solo con confirmación y envía al servidor el tenant y las identidades validadas', async () => {
+  const terminalId = '66666666-6666-4666-8666-666666666666';
+  const { admin, calls } = mockAdmin([], [{
+    data: {
+      terminalId: '77777777-7777-4777-8777-777777777777',
+      deactivatedTerminalId: terminalId,
+      registerId,
+      assigned: true,
+      alreadyAssigned: false
+    },
+    error: null
+  }]);
+  const result = await reassignCashTerminal(admin, tenantId, {
+    previousTerminalId: terminalId,
+    registerId,
+    deviceKey,
+    deviceName: 'POS de caja 2',
+    confirmed: true,
+    tenantId: 'attacker-tenant'
+  });
+  assert.equal(result.assigned, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].rpc, 'pos_reassign_cash_terminal');
+  assert.deepEqual(calls[0].values, {
+    p_tenant_id: tenantId,
+    p_previous_terminal_id: terminalId,
+    p_register_id: registerId,
+    p_device_key: deviceKey,
+    p_device_name: 'POS de caja 2',
+    p_confirmed: true
+  });
+});
+
+test('no permite reasignar sin confirmación y mapea el turno abierto a un bloqueo seguro', async () => {
+  const terminalId = '66666666-6666-4666-8666-666666666666';
+  const notConfirmed = mockAdmin([]);
+  await assert.rejects(reassignCashTerminal(notConfirmed.admin, tenantId, {
+    previousTerminalId: terminalId, registerId, deviceKey, confirmed: false
+  }), error => error.code === 'CASH_TERMINAL_CONFIRMATION_REQUIRED');
+  assert.equal(notConfirmed.calls.length, 0);
+
+  const openShift = mockAdmin([], [{
+    data: null,
+    error: { code: 'P0001', message: 'CASH_TERMINAL_OPEN_SHIFT|La caja tiene un turno abierto.' }
+  }]);
+  await assert.rejects(reassignCashTerminal(openShift.admin, tenantId, {
+    previousTerminalId: terminalId, registerId, deviceKey, confirmed: true
+  }), error => {
+    assert.equal(error.code, 'CASH_TERMINAL_OPEN_SHIFT');
+    assert.match(error.message, /turno abierto/i);
+    return true;
+  });
+});
+
+test('la migración atómica conserva la regla de terminal única y no modifica pagos ni cierres', async () => {
+  const migration = await readFile(new URL('../supabase/migrations/20261106120000_safe_cash_terminal_reassignment.sql', import.meta.url), 'utf8');
+  assert.match(migration, /information_schema\.columns/);
+  assert.match(migration, /pos_one_active_terminal_per_register/);
+  assert.match(migration, /pos_one_open_shift_per_register/);
+  assert.match(migration, /from public\.pos_cash_registers[\s\S]*?for update/i);
+  assert.match(migration, /s\.status = 'OPEN'/);
+  assert.match(migration, /update public\.pos_terminals[\s\S]*?set is_active = false/i);
+  assert.match(migration, /on conflict \(tenant_id, device_key\) do update/i);
+  assert.match(migration, /revoke all on function[\s\S]*?from public, anon, authenticated/i);
+  assert.match(migration, /grant execute on function[\s\S]*?to service_role/i);
+  assert.doesNotMatch(migration, /\b(?:insert\s+into|update|delete\s+from)\s+public\.(?:pos_payments|pos_daily_cash_closures|pos_daily_cash_openings)/i);
+  assert.doesNotMatch(migration, /\b(?:insert\s+into|update|delete\s+from)\s+public\.pos_cash_shifts/i);
+});
+
 test('el permiso de caja no se concede a roles sin caja y el handler enruta acciones autenticadas', async () => {
-  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']) {
+  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']) {
     assert.equal(hasRolePermission('ADMIN', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('CAJERO', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('SALONERO_CAJA', ROLE_PERMISSIONS.offlineSync[action]), true);
@@ -490,6 +560,8 @@ test('el permiso de caja no se concede a roles sin caja y el handler enruta acci
   assert.match(handler, /OPEN_DAILY_CASH/);
   assert.match(handler, /IMPORT_CASH_SHIFT/);
   assert.match(handler, /ASSIGN_CASH_TERMINAL/);
+  assert.match(handler, /REASSIGN_CASH_TERMINAL/);
+  assert.match(handler, /reassignCashTerminal\(supabaseAdmin, tenantId, body\.payload\)/);
 });
 
 test('el cliente envía las escrituras por el endpoint seguro y no escribe directamente en las tablas protegidas', async () => {
@@ -499,6 +571,7 @@ test('el cliente envía las escrituras por el endpoint seguro y no escribe direc
   assert.match(client, /'GET_DAILY_CASH_STATUS'/);
   assert.match(client, /'OPEN_DAILY_CASH'/);
   assert.match(client, /syncOperation\('ASSIGN_CASH_TERMINAL'/);
+  assert.match(client, /syncOperation\('REASSIGN_CASH_TERMINAL'/);
   assert.doesNotMatch(client, /from\(['"]pos_cash_shifts['"]\)\s*\.(?:insert|update|upsert)/);
   assert.doesNotMatch(client, /from\(['"]pos_terminals['"]\)\s*\.(?:insert|update|upsert)/);
   const modal = await readFile(new URL('../src/components/CashShiftModal.tsx', import.meta.url), 'utf8');
@@ -518,4 +591,13 @@ test('el pago rápido verifica apertura diaria antes de registrar ventas y manti
   const service = await readFile(new URL('../src/services/cashControlCloudService.ts', import.meta.url), 'utf8');
   assert.match(service, /cacheDailyCashStatus\(tenantId, registerId, status\)/);
   assert.match(service, /getCachedDailyCashStatus\(tenantId: string, registerId: string\)/);
+});
+
+test('la interfaz exige confirmación de que la terminal anterior está apagada y sus cobros sincronizados', async () => {
+  const settings = await readFile(new URL('../src/components/SettingsModal.tsx', import.meta.url), 'utf8');
+  assert.match(settings, /checked=\{terminalReleaseConfirmed\}/);
+  assert.match(settings, /disabled=\{cloudMigrationBusy \|\| !terminalReleaseConfirmed\}/);
+  assert.match(settings, /terminal anterior está fuera de servicio y que todos sus cobros pendientes ya se sincronizaron/i);
+  assert.match(settings, /no puede revisar la cola de cobros offline del otro dispositivo/i);
+  assert.match(settings, /reassignTerminal\(tenant\.id, cloudTerminalConflict\)/);
 });

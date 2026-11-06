@@ -9,9 +9,8 @@ import { parseFiscalInvoiceIssuedAt } from '../_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
-import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash } from '../_utils/cashControlSync.js';
-
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
+import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -749,9 +748,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     else if (action === 'OPEN_DAILY_CASH') result = await openDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
     else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
     else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
+    else if (action === 'REASSIGN_CASH_TERMINAL') result = await reassignCashTerminal(supabaseAdmin, tenantId, body.payload);
     else result = await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
 
-    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'OPEN_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
+    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'OPEN_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL' || action === 'REASSIGN_CASH_TERMINAL') {
       const details = result as Record<string, unknown>;
       const entityId = typeof details.terminalId === 'string'
         ? details.terminalId
@@ -762,7 +762,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         actor_user_id: auth.userId,
         action: 'OFFLINE_SYNC',
         actor_employee_id: auth.employeeId || null,
-        entity_type: action === 'ASSIGN_CASH_TERMINAL'
+        entity_type: action === 'ASSIGN_CASH_TERMINAL' || action === 'REASSIGN_CASH_TERMINAL'
           ? 'CASH_TERMINAL'
           : action === 'OPEN_DAILY_CASH' ? 'DAILY_CASH_OPENING'
             : action === 'CLOSE_DAILY_CASH' ? 'DAILY_CASH_CLOSURE' : 'CASH_SHIFT',

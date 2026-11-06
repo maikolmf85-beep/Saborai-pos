@@ -79,6 +79,13 @@ export interface CashControlMigrationPreview {
   conflicts: string[];
 }
 
+export interface CashTerminalAssignmentConflict {
+  terminalId: string;
+  registerId: string;
+  registerName: string;
+  deviceName: string | null;
+}
+
 export interface CashControlMigrationResult {
   importedRegisters: number;
   importedShifts: number;
@@ -86,6 +93,7 @@ export interface CashControlMigrationResult {
   skippedExisting: number;
   conflicts: string[];
   migrationMarker: string;
+  terminalAssignmentConflict?: CashTerminalAssignmentConflict;
 }
 
 export interface LocalCashControlState {
@@ -402,6 +410,7 @@ class CashControlCloudService {
     const cloud = await this.getCloudSnapshot(tenantId);
     const importedRegisterIds = new Map<string, CloudRegister>();
     const conflicts: string[] = [];
+    let terminalAssignmentConflict: CashTerminalAssignmentConflict | undefined;
     let importedRegisters = 0;
     let skippedExisting = 0;
 
@@ -514,12 +523,48 @@ class CashControlCloudService {
         assignedTerminal = true;
       } catch (error) {
         conflicts.push(formatCashTerminalAssignmentConflict(error));
+        if ((error as any)?.code === 'CASH_TERMINAL_ALREADY_ASSIGNED') {
+          const existingTerminal = await client.from('pos_terminals')
+            .select('id, device_name')
+            .eq('tenant_id', tenantId)
+            .eq('cash_register_id', currentRegister.id)
+            .eq('is_active', true)
+            .limit(1)
+            .maybeSingle();
+          if (!existingTerminal.error && existingTerminal.data?.id) {
+            terminalAssignmentConflict = {
+              terminalId: existingTerminal.data.id,
+              registerId: currentRegister.id,
+              registerName: currentRegister.name,
+              deviceName: existingTerminal.data.device_name || null
+            };
+          }
+        }
       }
     }
 
     const marker = new Date().toISOString();
     this.setMigrationMarker(tenantId, marker);
-    return { importedRegisters, importedShifts, assignedTerminal, skippedExisting, conflicts, migrationMarker: marker };
+    return {
+      importedRegisters,
+      importedShifts,
+      assignedTerminal,
+      skippedExisting,
+      conflicts,
+      migrationMarker: marker,
+      ...(terminalAssignmentConflict ? { terminalAssignmentConflict } : {})
+    };
+  }
+
+  async reassignTerminal(tenantId: string, conflict: CashTerminalAssignmentConflict): Promise<{ terminalId: string; deactivatedTerminalId: string; registerId: string; assigned: true; alreadyAssigned: boolean }> {
+    const deviceName = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS';
+    return posCloudService.syncOperation('REASSIGN_CASH_TERMINAL', {
+      previousTerminalId: conflict.terminalId,
+      registerId: conflict.registerId,
+      deviceKey: getOrCreateDeviceKey(),
+      deviceName,
+      confirmed: true
+    }, tenantId);
   }
 
   private async resolveBranch(tenantId: string, branchCode: string, branches: CloudBranch[]): Promise<CloudBranch> {

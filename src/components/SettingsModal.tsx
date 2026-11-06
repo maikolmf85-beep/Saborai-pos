@@ -29,7 +29,7 @@ import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
 import { haciendaService } from '../services/haciendaService';
 import { ConfirmDialog } from './ConfirmDialog';
-import { cashControlCloudService, CashControlMigrationPreview } from '../services/cashControlCloudService';
+import { cashControlCloudService, CashControlMigrationPreview, CashTerminalAssignmentConflict } from '../services/cashControlCloudService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -108,6 +108,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [cloudMigrationPreview, setCloudMigrationPreview] = useState<CashControlMigrationPreview | null>(null);
   const [cloudMigrationBusy, setCloudMigrationBusy] = useState(false);
   const [cloudMigrationMessage, setCloudMigrationMessage] = useState<string | null>(null);
+  const [cloudTerminalConflict, setCloudTerminalConflict] = useState<CashTerminalAssignmentConflict | null>(null);
+  const [terminalReleaseConfirmed, setTerminalReleaseConfirmed] = useState(false);
 
   // Edit register state
   const [editingRegister, setEditingRegister] = useState<CashRegister | null>(null);
@@ -216,6 +218,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const result = await cashControlCloudService.importLocalConfiguration(tenant.id, {
         deviceName: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS'
       });
+      setCloudTerminalConflict(result.terminalAssignmentConflict || null);
+      setTerminalReleaseConfirmed(false);
       setCloudMigrationMessage(`Migración completada: ${result.importedRegisters} cajas nuevas, ${result.importedShifts} turnos nuevos y ${result.skippedExisting} registros ya existentes.`);
       if (result.conflicts.length > 0) {
         setCloudMigrationMessage(prev => `${prev} Conflictos omitidos: ${result.conflicts.length}.`);
@@ -223,6 +227,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setCloudMigrationPreview(null);
     } catch (error: any) {
       setCloudMigrationMessage(error?.message || 'No se pudo completar la migración a Supabase.');
+    } finally {
+      setCloudMigrationBusy(false);
+    }
+  };
+
+  const handleReassignCashTerminal = async () => {
+    if (!cloudTerminalConflict || !terminalReleaseConfirmed) return;
+    setCloudMigrationBusy(true);
+    setCloudMigrationMessage(null);
+    try {
+      await cashControlCloudService.reassignTerminal(tenant.id, cloudTerminalConflict);
+      setCloudMigrationMessage(`Terminal anterior desactivada y este dispositivo asignado a "${cloudTerminalConflict.registerName}".`);
+      setCloudTerminalConflict(null);
+      setTerminalReleaseConfirmed(false);
+    } catch (error: any) {
+      setCloudMigrationMessage(`No se liberó la asignación: ${error?.message || 'el servidor no pudo confirmar la operación'}`);
     } finally {
       setCloudMigrationBusy(false);
     }
@@ -868,7 +888,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 )}
 
-                {cloudMigrationMessage && <p className="text-xs font-semibold text-emerald-800 bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2">{cloudMigrationMessage}</p>}
+                {cloudMigrationMessage && <p className={`text-xs font-semibold border rounded-lg px-3 py-2 ${cloudMigrationMessage.startsWith('No se liberó') ? 'text-red-800 bg-red-50 border-red-200' : 'text-emerald-800 bg-emerald-100 border-emerald-200'}`}>{cloudMigrationMessage}</p>}
+                {cloudTerminalConflict && (
+                  <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-3 text-xs text-amber-950">
+                    <div>
+                      <p className="font-bold">La caja "{cloudTerminalConflict.registerName}" ya tiene otra terminal activa.</p>
+                      <p className="mt-1">Asignación actual: {cloudTerminalConflict.deviceName || 'terminal sin nombre'}.</p>
+                      <p className="mt-1">El servidor rechazará la reasignación si la caja tiene un turno abierto. Esta pantalla no puede revisar la cola de cobros offline del otro dispositivo.</p>
+                    </div>
+                    <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-white/70 p-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={terminalReleaseConfirmed}
+                        onChange={event => setTerminalReleaseConfirmed(event.target.checked)}
+                        disabled={cloudMigrationBusy}
+                        className="mt-0.5 rounded text-stone-900"
+                      />
+                      <span>Confirmo que la terminal anterior está fuera de servicio y que todos sus cobros pendientes ya se sincronizaron.</span>
+                    </label>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleReassignCashTerminal}
+                        disabled={cloudMigrationBusy || !terminalReleaseConfirmed}
+                        className="px-3 py-2 rounded-xl bg-amber-800 hover:bg-amber-900 disabled:bg-amber-300 text-white text-xs font-bold transition-colors"
+                      >
+                        {cloudMigrationBusy ? 'Verificando…' : 'Desactivar la anterior y asignar este dispositivo'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Step 1: Active Terminal on THIS device */}

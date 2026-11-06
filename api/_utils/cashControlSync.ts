@@ -536,3 +536,106 @@ export async function assignCashTerminal(
   if (!terminal.data) throw cashTerminalAssignmentFailure(null);
   return { terminalId: terminal.data.id, assigned: true };
 }
+
+export class CashTerminalReassignmentError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = 'CashTerminalReassignmentError';
+    this.code = code;
+  }
+}
+
+function cashTerminalReassignmentFailure(error: unknown): CashTerminalReassignmentError {
+  const databaseError = error && typeof error === 'object' && !Array.isArray(error)
+    ? error as RecordValue
+    : {};
+  const message = typeof databaseError.message === 'string' ? databaseError.message : '';
+  const marker = message.split('|', 1)[0];
+  const knownErrors: Record<string, { code: string; message: string }> = {
+    CASH_TERMINAL_OPEN_SHIFT: {
+      code: 'CASH_TERMINAL_OPEN_SHIFT',
+      message: 'No se puede liberar la terminal mientras la caja tenga un turno abierto. Cierre el turno y asegúrese de sincronizar los cobros pendientes.'
+    },
+    CASH_TERMINAL_CURRENT_DEVICE_ASSIGNED: {
+      code: 'CASH_TERMINAL_CURRENT_DEVICE_ASSIGNED',
+      message: 'Este dispositivo ya está activo en otra caja. Seleccione esa caja o libere su asignación por separado.'
+    },
+    CASH_TERMINAL_ASSIGNMENT_CHANGED: {
+      code: 'CASH_TERMINAL_ASSIGNMENT_CHANGED',
+      message: 'La asignación anterior cambió. Actualice la pantalla antes de continuar.'
+    },
+    CASH_TERMINAL_PREVIOUS_ASSIGNMENT_NOT_FOUND: {
+      code: 'CASH_TERMINAL_PREVIOUS_ASSIGNMENT_NOT_FOUND',
+      message: 'La asignación anterior ya no existe. Actualice la pantalla e intente de nuevo.'
+    },
+    CASH_TERMINAL_PREVIOUS_ASSIGNMENT_NOT_ACTIVE: {
+      code: 'CASH_TERMINAL_PREVIOUS_ASSIGNMENT_NOT_ACTIVE',
+      message: 'La terminal anterior ya fue desactivada. Actualice la pantalla e intente la asignación normal.'
+    },
+    CASH_TERMINAL_REGISTER_NOT_FOUND: {
+      code: 'CASH_TERMINAL_REGISTER_NOT_FOUND',
+      message: 'No se encontró una caja activa de este restaurante.'
+    },
+    CASH_TERMINAL_CONFIRMATION_REQUIRED: {
+      code: 'CASH_TERMINAL_CONFIRMATION_REQUIRED',
+      message: 'Confirme que la terminal anterior está fuera de servicio y que sus cobros pendientes ya se sincronizaron.'
+    }
+  };
+  if (knownErrors[marker]) {
+    return new CashTerminalReassignmentError(knownErrors[marker].message, knownErrors[marker].code);
+  }
+  if (databaseError.code === '42501') {
+    return new CashTerminalReassignmentError(
+      'El servidor rechazó la reasignación por permisos. Revise la autorización de la operación y los permisos de la RPC.',
+      'CASH_TERMINAL_PERMISSION_DENIED'
+    );
+  }
+  return new CashTerminalReassignmentError(
+    'No se pudo cambiar la asignación de la terminal. Actualice la pantalla e intente de nuevo; si persiste, contacte al administrador.',
+    'CASH_TERMINAL_REASSIGNMENT_FAILED'
+  );
+}
+
+export async function reassignCashTerminal(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  value: unknown
+): Promise<{ terminalId: string; deactivatedTerminalId: string; registerId: string; assigned: true; alreadyAssigned: boolean }> {
+  const input = asRecord(value, 'La reasignación de terminal');
+  const previousTerminalId = requiredUuid(input.previousTerminalId, 'La terminal anterior');
+  const registerId = requiredUuid(input.registerId, 'La caja');
+  const deviceKey = requireDeviceKey(input.deviceKey);
+  const deviceName = optionalText(input.deviceName, 'El nombre del dispositivo', 120) || 'Dispositivo POS';
+  if (input.confirmed !== true) {
+    throw new CashTerminalReassignmentError(
+      'Confirme que la terminal anterior está fuera de servicio y que sus cobros pendientes ya se sincronizaron.',
+      'CASH_TERMINAL_CONFIRMATION_REQUIRED'
+    );
+  }
+
+  const result = await admin.rpc('pos_reassign_cash_terminal', {
+    p_tenant_id: tenantId,
+    p_previous_terminal_id: previousTerminalId,
+    p_register_id: registerId,
+    p_device_key: deviceKey,
+    p_device_name: deviceName,
+    p_confirmed: true
+  });
+  if (result.error) throw cashTerminalReassignmentFailure(result.error);
+
+  const row = result.data && typeof result.data === 'object' && !Array.isArray(result.data)
+    ? result.data as RecordValue
+    : {};
+  if (row.assigned !== true || typeof row.terminalId !== 'string') {
+    throw cashTerminalReassignmentFailure(null);
+  }
+  return {
+    terminalId: row.terminalId,
+    deactivatedTerminalId: typeof row.deactivatedTerminalId === 'string' ? row.deactivatedTerminalId : previousTerminalId,
+    registerId: typeof row.registerId === 'string' ? row.registerId : registerId,
+    assigned: true,
+    alreadyAssigned: row.alreadyAssigned === true
+  };
+}
