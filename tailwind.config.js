@@ -13,7 +13,7 @@ export default {
         'neutral': '#6b686d',
       },
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
+        sans: ['DM Sans', 'system-ui', 'sans-serif'],
       },
     },
   },
