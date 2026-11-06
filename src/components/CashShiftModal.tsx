@@ -912,7 +912,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             type="button"
             onClick={handleCloseDailyCash}
             disabled={isClosingDailyCash || registers.length === 0 || hasOpenDiningTables || !dailyCashStatus?.isOpen || dailyCashStatus.isClosed}
-            className="px-3 py-1 bg-[#588157] hover:bg-[#466b45] disabled:bg-stone-300 disabled:text-stone-500 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
+            className="px-3 py-1 bg-[#588157] hover:bg-[#466b45] disabled:bg-stone-300 disabled:text-stone-900 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
             title="Cierra una vez la caja seleccionada para la fecha local de la sucursal; requiere apertura diaria y que no haya mesas abiertas."
           >
             <LockKeyhole className="w-3.5 h-3.5" />
