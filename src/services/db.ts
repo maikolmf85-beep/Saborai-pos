@@ -24,7 +24,7 @@ export interface OfflineSyncQueueItem {
   actorUserId?: string;
   actorEmployeeId?: string | null;
   synced: boolean;
-  status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED';
+  status?: 'PENDING' | 'PROCESSING' | 'SYNCED' | 'FAILED' | 'REJECTED';
   attemptCount?: number;
   nextAttemptAt?: string;
   lastError?: string;
@@ -36,6 +36,10 @@ export function filterPendingItemsForTenant(items: OfflineSyncQueueItem[], tenan
   return items
     .filter(item => item.tenantId === tenantId && item.status !== 'SYNCED' && !item.synced)
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
+export function filterSyncableItemsForTenant(items: OfflineSyncQueueItem[], tenantId: string): OfflineSyncQueueItem[] {
+  return filterPendingItemsForTenant(items, tenantId).filter(item => item.status !== 'REJECTED');
 }
 
 export class SaboraiLocalDB {
@@ -259,7 +263,7 @@ export class SaboraiLocalDB {
   async getPendingCount(tenantId = this.activeTenantId ?? ''): Promise<number> {
     if (!tenantId) return 0;
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
-    return filterPendingItemsForTenant(all, tenantId).length;
+    return filterSyncableItemsForTenant(all, tenantId).length;
   }
 
   async getPendingItems(tenantId = this.activeTenantId ?? ''): Promise<OfflineSyncQueueItem[]> {
@@ -285,13 +289,36 @@ export class SaboraiLocalDB {
     });
   }
 
+  private async markRejected(item: OfflineSyncQueueItem, code: string, message: string, notifyUser = true): Promise<void> {
+    await this.updateQueueItem({
+      ...item,
+      status: 'REJECTED',
+      synced: false,
+      nextAttemptAt: undefined,
+      lastError: message
+    });
+    if (notifyUser && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('saborai_sync_rejected', {
+        detail: {
+          tenantId: item.tenantId,
+          action: item.action,
+          code,
+          message,
+          employeeCreditIdempotencyKey: typeof item.payload?.employeeCredit?.idempotencyKey === 'string'
+            ? item.payload.employeeCredit.idempotencyKey
+            : undefined
+        }
+      }));
+    }
+  }
+
   async syncAllPending(tenantId = this.activeTenantId ?? ''): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
     if (!tenantId) return { syncedCount: 0, failedCount: 0, remainingCount: 0 };
     if (this.syncInFlight) {
       return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount(tenantId) };
     }
     this.syncInFlight = true;
-    const pending = await this.getPendingItems(tenantId);
+    const pending = filterSyncableItemsForTenant(await this.getPendingItems(tenantId), tenantId);
     if (!this.isOnline() || pending.length === 0) {
       this.syncInFlight = false;
       return { syncedCount: 0, failedCount: 0, remainingCount: pending.length };
@@ -311,7 +338,9 @@ export class SaboraiLocalDB {
 
     let syncedCount = 0;
     let failedCount = 0;
-    for (const originalItem of pending) {
+    const blockedOrders = new Map<string, string>();
+    for (let pendingIndex = 0; pendingIndex < pending.length; pendingIndex += 1) {
+      const originalItem = pending[pendingIndex];
       if (!originalItem.actorUserId || !originalItem.tenantId) {
         await this.updateQueueItem({
           ...originalItem,
@@ -325,6 +354,8 @@ export class SaboraiLocalDB {
       if (originalItem.actorUserId !== accountUserId
         || (originalItem.actorEmployeeId || null) !== (employeeId || null)
         || originalItem.tenantId !== activeTenantId) continue;
+      const itemOrderNumber = typeof originalItem.payload?.orderNumber === 'string' ? originalItem.payload.orderNumber : '';
+      if (originalItem.action !== 'PAYMENT' && itemOrderNumber && blockedOrders.has(itemOrderNumber)) continue;
       if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
 
       const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
@@ -344,7 +375,31 @@ export class SaboraiLocalDB {
           })
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status}`);
+        if (!response.ok) {
+          if (data.code === 'DAILY_CASH_CLOSED' && processingItem.action === 'PAYMENT') {
+            const rejectionMessage = data.error || 'La caja ya tiene cierre diario. El cobro no se registró; contacte al administrador si necesita corregir el cierre.';
+            await this.markRejected(
+              processingItem,
+              data.code,
+              rejectionMessage
+            );
+            failedCount += 1;
+            const orderNumber = typeof processingItem.payload?.orderNumber === 'string' ? processingItem.payload.orderNumber : '';
+            if (orderNumber) {
+              blockedOrders.set(orderNumber, rejectionMessage);
+              for (const dependent of pending.slice(pendingIndex + 1)) {
+                if (dependent.action === 'PAYMENT' || dependent.payload?.orderNumber !== orderNumber) continue;
+                if (dependent.actorUserId !== accountUserId
+                  || (dependent.actorEmployeeId || null) !== (employeeId || null)
+                  || dependent.tenantId !== activeTenantId) continue;
+                await this.markRejected(dependent, data.code, rejectionMessage, false);
+                failedCount += 1;
+              }
+            }
+            continue;
+          }
+          throw new Error(data.error || `Error HTTP ${response.status}`);
+        }
 
         await this.updateQueueItem({
           ...processingItem,

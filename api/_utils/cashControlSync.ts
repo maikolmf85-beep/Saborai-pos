@@ -1,5 +1,6 @@
 type CashControlAdminClient = {
   from(table: string): any;
+  rpc(functionName: string, args: RecordValue): any;
 };
 
 type RecordValue = Record<string, unknown>;
@@ -7,6 +8,68 @@ type RecordValue = Record<string, unknown>;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEVICE_KEY_RE = /^[A-Za-z0-9_-]{16,160}$/;
 const JSON_LIMIT = 96_000;
+
+export class DailyCashClosedError extends Error {
+  readonly code = 'DAILY_CASH_CLOSED';
+
+  constructor(registerName: string, businessDate: string, message?: string) {
+    super(message || `No se puede registrar el cobro: la caja "${registerName || 'Caja'}" ya tiene cierre diario para el ${businessDate}. El cobro no se registró. Contacte al administrador si necesita corregir el cierre.`);
+    this.name = 'DailyCashClosedError';
+  }
+}
+
+export function getBusinessDateForInstant(instant: string, timezone: string): string {
+  const timestamp = new Date(instant);
+  if (!Number.isFinite(timestamp.getTime())) throw new Error('La fecha del cobro no es válida.');
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).formatToParts(timestamp);
+  } catch {
+    throw new Error('No se pudo determinar la fecha local de la sucursal; el cobro no se registró. Contacte al administrador.');
+  }
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  if (!values.year || !values.month || !values.day) throw new Error('No se pudo determinar la fecha local de la sucursal; el cobro no se registró. Contacte al administrador.');
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+export async function assertCashRegisterOpenForPayment(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  branchId: string,
+  registerId: string,
+  registerName: string,
+  paidAt: string
+): Promise<string> {
+  const branch = await admin.from('pos_branches')
+    .select('timezone')
+    .eq('tenant_id', tenantId)
+    .eq('id', branchId)
+    .limit(1)
+    .maybeSingle();
+  if (branch.error || !branch.data?.timezone) {
+    throw new Error('No se pudo verificar la fecha local de la sucursal; el cobro no se registró. Contacte al administrador.');
+  }
+
+  const businessDate = getBusinessDateForInstant(paidAt, branch.data.timezone);
+  const closure = await admin.from('pos_daily_cash_closures')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('cash_register_id', registerId)
+    .eq('business_date', businessDate)
+    .limit(1)
+    .maybeSingle();
+  if (closure.error) {
+    throw new Error('No se pudo verificar si la caja tiene cierre diario; el cobro no se registró. Intente de nuevo o contacte al administrador.');
+  }
+  if (closure.data) throw new DailyCashClosedError(registerName, businessDate);
+  return businessDate;
+}
 
 function asRecord(value: unknown, label: string): RecordValue {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} es inválido.`);
@@ -149,30 +212,83 @@ export async function closeCashShift(
   tenantId: string,
   actorUserId: string,
   value: unknown
-): Promise<{ shiftId: string; updated: boolean; alreadyClosed: boolean }> {
+): Promise<RecordValue> {
   const input = asRecord(value, 'La operación de cierre');
-  const shiftId = requiredUuid(input.shiftId, 'El turno');
-  const update = buildCashShiftClosePayload(actorUserId, input.closure);
-  const result = await admin.from('pos_cash_shifts')
-    .update(update)
-    .eq('tenant_id', tenantId)
-    .eq('id', shiftId)
-    .eq('status', 'OPEN')
-    .select('id')
-    .maybeSingle();
-  if (result.error) throw new Error('No se pudo guardar el cierre del turno en la nube.');
-  if (result.data) return { shiftId: result.data.id, updated: true, alreadyClosed: false };
-
-  const existing = await admin.from('pos_cash_shifts')
-    .select('id, status, closed_by')
-    .eq('tenant_id', tenantId)
-    .eq('id', shiftId)
-    .maybeSingle();
-  if (existing.error) throw new Error('No se pudo verificar el estado del turno en la nube.');
-  if (existing.data?.status === 'CLOSED' && existing.data.closed_by === actorUserId) {
-    return { shiftId: existing.data.id, updated: false, alreadyClosed: true };
+  const shiftId = requiredText(input.shiftId, 'El turno', 120);
+  if (!UUID_RE.test(shiftId) && !/^[A-Za-z0-9_-]+$/.test(shiftId)) {
+    throw new Error('El identificador del turno tiene un formato inválido.');
   }
-  throw new Error('El turno no está abierto, no existe o no pertenece a este restaurante.');
+  const update = buildCashShiftClosePayload(actorUserId, input.closure);
+  let lookup = admin.from('pos_cash_shifts')
+    .select('id, status')
+    .eq('tenant_id', tenantId);
+  lookup = UUID_RE.test(shiftId) ? lookup.eq('id', shiftId) : lookup.eq('legacy_id', shiftId);
+  const existing = await lookup.limit(1).maybeSingle();
+  if (existing.error || !existing.data) {
+    throw new Error('El turno no existe o no pertenece a este restaurante.');
+  }
+
+  const result = await admin.rpc('pos_close_cash_shift', {
+    p_tenant_id: tenantId,
+    p_shift_id: existing.data.id,
+    p_closed_by: actorUserId,
+    p_counted_cash: update.counted_cash,
+    p_counted_cards: update.counted_cards,
+    p_counted_sinpe: update.counted_sinpe,
+    p_cash_breakdown: update.cash_breakdown,
+    p_dataphones_breakdown: update.dataphones_breakdown,
+    p_difference_reason: update.difference_reason,
+    p_notes: update.notes,
+    p_system_summary: update.system_summary
+  });
+  if (result.error || !result.data) {
+    throw new Error(result.error?.message || 'No se confirmó el cierre del turno en la nube.');
+  }
+  return {
+    ...result.data,
+    shiftId: String(result.data.shiftId || existing.data.id),
+    updated: result.data.alreadyClosed !== true,
+    alreadyClosed: result.data.alreadyClosed === true
+  };
+}
+
+export async function closeDailyCash(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  actorUserId: string,
+  value: unknown
+): Promise<RecordValue> {
+  const input = asRecord(value, 'El cierre diario');
+  const registerId = requiredText(input.registerId, 'La caja', 120);
+  if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) {
+    throw new Error('El identificador de la caja tiene un formato inválido.');
+  }
+  const businessDate = requiredText(input.businessDate, 'La fecha del cierre', 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)
+    || new Date(`${businessDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== businessDate) {
+    throw new Error('La fecha del cierre debe tener formato YYYY-MM-DD.');
+  }
+
+  let lookup = admin.from('pos_cash_registers')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true);
+  lookup = UUID_RE.test(registerId) ? lookup.eq('id', registerId) : lookup.eq('legacy_id', registerId);
+  const register = await lookup.limit(1).maybeSingle();
+  if (register.error || !register.data) {
+    throw new Error('No se encontró una caja activa de este restaurante.');
+  }
+
+  const result = await admin.rpc('pos_close_daily_cash', {
+    p_tenant_id: tenantId,
+    p_cash_register_id: register.data.id,
+    p_business_date: businessDate,
+    p_closed_by: actorUserId
+  });
+  if (result.error || !result.data) {
+    throw new Error(result.error?.message || 'No se confirmó el cierre diario de caja.');
+  }
+  return result.data as RecordValue;
 }
 
 export async function importCashShift(

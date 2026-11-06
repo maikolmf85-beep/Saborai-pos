@@ -446,6 +446,7 @@ Medio de Pago: ${paymentMethod}
     let cashAmt = 0;
     let cardAmt = 0;
     let sinpeAmt = 0;
+    let creditAmt = 0;
 
     if (paymentMethod === '01-Efectivo') {
       cashAmt = total;
@@ -453,12 +454,15 @@ Medio de Pago: ${paymentMethod}
       cardAmt = total;
     } else if (paymentMethod === '03-SINPE_Movil') {
       sinpeAmt = total;
+    } else if (paymentMethod === '04-Credito') {
+      creditAmt = total;
     }
 
-    if (paymentMethod !== '04-Credito') cashShiftService.recordSalePayment({
+    cashShiftService.recordSalePayment({
       cashAmount: cashAmt,
       cardAmount: cardAmt,
       sinpeAmount: sinpeAmt,
+      creditAmount: creditAmt,
       subtotal,
       tax: iva13,
       service10: servicio10,

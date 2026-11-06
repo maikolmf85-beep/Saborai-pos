@@ -37,14 +37,21 @@ export interface ShiftSystemSummary {
   cashSales: number;
   cardSales: number;
   sinpeSales: number;
+  creditSales?: number;
+  mixedSales?: number;
   totalSales: number;
   subtotal: number;
   totalTax: number;
   serviceTax10: number;
+  taxesAvailable?: boolean;
+  taxesNote?: string;
   totalInflows: number;
   totalOutflows: number;
   expectedCashInDrawer: number; // initialFloat + cashSales + totalInflows - totalOutflows
   invoicesCount: number;
+  documentsCountAvailable?: boolean;
+  paymentsScopeAvailable?: boolean;
+  paymentsScopeNote?: string;
 }
 
 export interface CashRegister {
@@ -144,7 +151,14 @@ export interface ZReportData {
     cashTotal: number;
     cardTotal: number;
     sinpeTotal: number;
+    creditTotal?: number;
+    mixedTotal?: number;
     invoicesCount: number;
+    documentsCountAvailable?: boolean;
+    paymentsScopeAvailable?: boolean;
+    paymentsScopeNote?: string;
+    taxesAvailable?: boolean;
+    taxesNote?: string;
   };
   cashFlowSummary: {
     initialFloat: number;
@@ -171,6 +185,9 @@ export interface ZReportData {
 }
 
 export interface ConsolidatedZReportData {
+  closureType?: 'DAILY' | 'CONSOLIDATED';
+  closureId?: string;
+  cashRegisterId?: string;
   reportDate: string;
   tenantName: string;
   cedulaJuridica: string;
@@ -187,6 +204,8 @@ export interface ConsolidatedZReportData {
     cashSales: number;
     cardSales: number;
     sinpeSales: number;
+    creditSales?: number;
+    mixedSales?: number;
     totalSales: number;
     inflowsTotal: number;
     outflowsTotal: number;
@@ -204,6 +223,8 @@ export interface ConsolidatedZReportData {
     cashTotal: number;
     cardTotal: number;
     sinpeTotal: number;
+    creditTotal?: number;
+    mixedTotal?: number;
     initialFloatTotal: number;
     inflowsTotal: number;
     outflowsTotal: number;
@@ -211,5 +232,10 @@ export interface ConsolidatedZReportData {
     countedCashTotal: number;
     differenceTotal: number;
     invoicesCount: number;
+    documentsCountAvailable?: boolean;
+    paymentsScopeAvailable?: boolean;
+    paymentsScopeNote?: string;
+    taxesAvailable?: boolean;
+    taxesNote?: string;
   };
 }

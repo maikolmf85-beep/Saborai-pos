@@ -69,29 +69,52 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
       text += `Cedula: ${consolidatedReport.cedulaJuridica}\n`;
       text += `${consolidatedReport.location}\n`;
       text += divider;
-      text += `REPORTE Z CONSOLIDADO MULTI-CAJAS\n`;
+      text += `${consolidatedReport.closureType === 'DAILY' ? 'CIERRE DIARIO DE CAJA' : 'REPORTE Z CONSOLIDADO MULTI-CAJAS'}\n`;
       text += `Sucursal: ${consolidatedReport.branchCode} | Fecha: ${consolidatedReport.reportDate}\n`;
+      if (consolidatedReport.closureType === 'DAILY') {
+        text += `Caja: ${consolidatedReport.registersSummary[0]?.registerName || 'Caja'} | Terminal: ${consolidatedReport.registersSummary[0]?.terminalCode || '—'}\n`;
+      }
       text += `Generado: ${new Date(consolidatedReport.generatedAt).toLocaleString('es-CR')}\n`;
       text += `Por: ${consolidatedReport.generatedBy}\n`;
       text += divider;
-      text += `RESUMEN GLOBAL DE VENTAS\n`;
-      text += `Comprobantes Emitidos: ${consolidatedReport.totals?.invoicesCount ?? 0}\n`;
-      text += `Subtotal Grav/Exento:  CRC ${(consolidatedReport.totals?.subtotal ?? 0).toLocaleString()}\n`;
-      text += `IVA Trasladado (13%):  CRC ${(consolidatedReport.totals?.taxTotal ?? 0).toLocaleString()}\n`;
-      text += `Servicio Rest. (10%):  CRC ${(consolidatedReport.totals?.service10Total ?? 0).toLocaleString()}\n`;
+      text += `${consolidatedReport.closureType === 'DAILY' ? 'RESUMEN DE VENTAS DEL DÍA' : 'RESUMEN GLOBAL DE VENTAS'}\n`;
+      text += `Comprobantes registrados: ${consolidatedReport.totals?.documentsCountAvailable === true ? (consolidatedReport.totals?.invoicesCount ?? 0).toLocaleString() : 'No disponible'}\n`;
+      if (consolidatedReport.totals?.paymentsScopeAvailable !== true) {
+        text += `${consolidatedReport.totals?.paymentsScopeNote || 'Total de cobros: No disponible; hay pagos sin turno o fecha verificables.'}\n`;
+      }
+      if (consolidatedReport.totals?.taxesAvailable === true) {
+        text += `Subtotal Grav/Exento:  CRC ${(consolidatedReport.totals?.subtotal ?? 0).toLocaleString()}\n`;
+        text += `IVA Trasladado (13%):  CRC ${(consolidatedReport.totals?.taxTotal ?? 0).toLocaleString()}\n`;
+        text += `Servicio Rest. (10%):  CRC ${(consolidatedReport.totals?.service10Total ?? 0).toLocaleString()}\n`;
+      } else text += `${consolidatedReport.totals?.taxesNote || 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'}\n`;
       text += subDivider;
       text += `VENTA TOTAL:           CRC ${(consolidatedReport.totals?.grossTotal ?? 0).toLocaleString()}\n`;
       text += subDivider;
-      text += `AUDITORIA DE GAVETAS DE EFECTIVO\n`;
-      text += `(+) Fondos Iniciales:  CRC ${(consolidatedReport.totals?.initialFloatTotal ?? 0).toLocaleString()}\n`;
-      text += `(+) Ventas Efectivo:   CRC ${(consolidatedReport.totals?.cashTotal ?? 0).toLocaleString()}\n`;
-      text += `(=) Esperado Gavetas:  CRC ${(consolidatedReport.totals?.expectedCashTotal ?? 0).toLocaleString()}\n`;
-      text += `(✓) Declarado Real:    CRC ${(consolidatedReport.totals?.countedCashTotal ?? 0).toLocaleString()}\n`;
-      text += `DIFERENCIA TOTAL:      CRC ${(consolidatedReport.totals?.differenceTotal ?? 0).toLocaleString()}\n`;
+      text += `VENTAS POR MEDIO DE PAGO\n`;
+      text += `Efectivo:              CRC ${(consolidatedReport.totals?.cashTotal ?? 0).toLocaleString()}\n`;
+      text += `Tarjetas:              CRC ${(consolidatedReport.totals?.cardTotal ?? 0).toLocaleString()}\n`;
+      text += `SINPE Móvil:            CRC ${(consolidatedReport.totals?.sinpeTotal ?? 0).toLocaleString()}\n`;
+      text += `Venta a crédito:       CRC ${(consolidatedReport.totals?.creditTotal ?? 0).toLocaleString()}\n`;
+      text += `Pago mixto:            CRC ${(consolidatedReport.totals?.mixedTotal ?? 0).toLocaleString()}\n`;
+      text += subDivider;
+      if (consolidatedReport.closureType === 'DAILY') {
+        text += `OPERACIONES DE EFECTIVO DEL DÍA\n`;
+        text += `Ventas efectivo:       CRC ${(consolidatedReport.totals?.cashTotal ?? 0).toLocaleString()}\n`;
+        text += `Ingresos:              CRC ${(consolidatedReport.totals?.inflowsTotal ?? 0).toLocaleString()}\n`;
+        text += `Egresos:               CRC ${(consolidatedReport.totals?.outflowsTotal ?? 0).toLocaleString()}\n`;
+        text += `Efectivo neto generado: CRC ${(consolidatedReport.totals?.expectedCashTotal ?? 0).toLocaleString()}\n`;
+      } else {
+        text += `AUDITORIA DE GAVETAS DE EFECTIVO\n`;
+        text += `(+) Fondos Iniciales:  CRC ${(consolidatedReport.totals?.initialFloatTotal ?? 0).toLocaleString()}\n`;
+        text += `(+) Ventas Efectivo:   CRC ${(consolidatedReport.totals?.cashTotal ?? 0).toLocaleString()}\n`;
+        text += `(=) Esperado Gavetas:  CRC ${(consolidatedReport.totals?.expectedCashTotal ?? 0).toLocaleString()}\n`;
+        text += `(✓) Declarado Real:    CRC ${(consolidatedReport.totals?.countedCashTotal ?? 0).toLocaleString()}\n`;
+        text += `DIFERENCIA TOTAL:      CRC ${(consolidatedReport.totals?.differenceTotal ?? 0).toLocaleString()}\n`;
+      }
       text += divider;
-      text += `DESGLOSE POR TERMINAL / CAJA:\n`;
+      text += `${consolidatedReport.closureType === 'DAILY' ? 'CAJA REGISTRADA:' : 'DESGLOSE POR TERMINAL / CAJA:'}\n`;
       consolidatedReport.registersSummary.forEach((r) => {
-        text += `• ${r.registerName} (DGT: ${r.terminalCode}): CRC ${r.totalSales.toLocaleString()} (Dif: CRC ${r.difference.toLocaleString()})\n`;
+        text += `• ${r.registerName} (DGT: ${r.terminalCode}): CRC ${r.totalSales.toLocaleString()}${consolidatedReport.closureType === 'DAILY' ? '' : ` (Dif: CRC ${r.difference.toLocaleString()})`}\n`;
       });
       text += divider;
       text += `\n\n\n_____________________   _____________________\n`;
@@ -111,11 +134,16 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
       text += `Cierre:   ${new Date(report.closedAt).toLocaleString('es-CR')}\n`;
       text += `Cajero:   ${report.cashierName}\n`;
       text += divider;
-      text += `RESUMEN DE VENTAS FACTURADAS\n`;
-      text += `Comprobantes Emitidos: ${report.salesSummary?.invoicesCount ?? 0}\n`;
-      text += `Subtotal:              CRC ${(report.salesSummary?.subtotal ?? 0).toLocaleString()}\n`;
-      text += `IVA (13%):             CRC ${(report.salesSummary?.taxTotal ?? 0).toLocaleString()}\n`;
-      text += `Servicio (10%):        CRC ${(report.salesSummary?.service10Total ?? 0).toLocaleString()}\n`;
+      text += `RESUMEN DE VENTAS DEL TURNO\n`;
+      text += `Comprobantes registrados: ${report.salesSummary?.documentsCountAvailable === true ? (report.salesSummary?.invoicesCount ?? 0).toLocaleString() : 'No disponible'}\n`;
+      if (report.salesSummary?.paymentsScopeAvailable !== true) {
+        text += `${report.salesSummary?.paymentsScopeNote || 'Total de cobros: No disponible; hay pagos sin turno o fecha verificables.'}\n`;
+      }
+      if (report.salesSummary?.taxesAvailable === true) {
+        text += `Subtotal:              CRC ${(report.salesSummary?.subtotal ?? 0).toLocaleString()}\n`;
+        text += `IVA (13%):             CRC ${(report.salesSummary?.taxTotal ?? 0).toLocaleString()}\n`;
+        text += `Servicio (10%):        CRC ${(report.salesSummary?.service10Total ?? 0).toLocaleString()}\n`;
+      } else text += `${report.salesSummary?.taxesNote || 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'}\n`;
       text += subDivider;
       text += `VENTA BRUTA TOTAL:     CRC ${(report.salesSummary?.grossTotal ?? 0).toLocaleString()}\n`;
       text += subDivider;
@@ -130,6 +158,8 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
         text += `  Diferencia Lotes:    CRC ${(report.cardSummary.difference ?? 0).toLocaleString()}\n`;
       }
       text += `SINPE Móvil:           CRC ${(report.salesSummary?.sinpeTotal ?? 0).toLocaleString()}\n`;
+      text += `Venta a crédito:       CRC ${(report.salesSummary?.creditTotal ?? 0).toLocaleString()}\n`;
+      text += `Pago mixto:            CRC ${(report.salesSummary?.mixedTotal ?? 0).toLocaleString()}\n`;
       text += subDivider;
       text += `AUDITORIA DE GAVETA DE EFECTIVO\n`;
       text += `(+) Fondo Inicial:     CRC ${(report.cashFlowSummary?.initialFloat ?? 0).toLocaleString()}\n`;
@@ -159,7 +189,7 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Reporte_Z_${report ? `Turno_${report.shiftNumber}` : 'Consolidado'}_${new Date().toISOString().slice(0, 10)}.txt`;
+    link.download = `Reporte_Z_${report ? `Turno_${report.shiftNumber}` : consolidatedReport?.closureType === 'DAILY' ? 'Cierre_Diario' : 'Consolidado'}_${new Date().toISOString().slice(0, 10)}.txt`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -190,16 +220,16 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
               <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
                 <span>
                   {consolidatedReport 
-                    ? 'Reporte Z Consolidado - Multi-Cajas' 
+                    ? consolidatedReport.closureType === 'DAILY' ? 'Cierre Diario de Caja' : 'Reporte Z Consolidado - Multi-Cajas'
                     : `Reporte Z - Cierre de Turno #${report?.shiftNumber}`}
                 </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-200 text-stone-800">
-                  {consolidatedReport ? 'Auditoría Global' : 'Oficial'}
+                  {consolidatedReport ? consolidatedReport.closureType === 'DAILY' ? 'Diario' : 'Auditoría Global' : 'Oficial'}
                 </span>
               </h3>
               <p className="text-xs text-stone-500">
                 {consolidatedReport
-                  ? 'Cierre global acumulado de todas las terminales y cajas del restaurante'
+                  ? consolidatedReport.closureType === 'DAILY' ? 'Operaciones del día completo para una caja registrada' : 'Cierre global acumulado de todas las terminales y cajas del restaurante'
                   : 'Auditoría fiscal y cuadre de caja de restaurante'}
               </p>
             </div>
@@ -255,10 +285,12 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                 <div className="text-[11px] text-stone-600">Cédula: {consolidatedReport.cedulaJuridica}</div>
                 <div className="text-[10px] text-stone-500">{consolidatedReport.location}</div>
                 <div className="text-[10px] font-bold text-stone-800 uppercase mt-1">
-                  REPORTE Z CONSOLIDADO DEL NEGOCIO
+                  {consolidatedReport.closureType === 'DAILY' ? 'CIERRE DIARIO DE CAJA' : 'REPORTE Z CONSOLIDADO DEL NEGOCIO'}
                 </div>
                 <div className="text-[11px] font-bold bg-stone-900 text-white py-1 rounded mt-1">
-                  TODAS LAS CAJAS • SUCURSAL {consolidatedReport.branchCode}
+                  {consolidatedReport.closureType === 'DAILY'
+                    ? `${consolidatedReport.registersSummary[0]?.registerName || 'Caja'} • SUCURSAL ${consolidatedReport.branchCode}`
+                    : `TODAS LAS CAJAS • SUCURSAL ${consolidatedReport.branchCode}`}
                 </div>
               </div>
 
@@ -281,26 +313,29 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
               {/* Consolidated Sales Totals */}
               <div className="py-3 border-b-2 border-dashed border-stone-300 space-y-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  Resumen Global de Facturación
+                  {consolidatedReport.closureType === 'DAILY' ? 'Resumen de Ventas del Día' : 'Resumen Global de Facturación'}
                 </div>
                 <div className="flex justify-between">
-                  <span>Comprobantes Emitidos:</span>
-                  <span className="font-bold">{consolidatedReport.totals?.invoicesCount ?? 0}</span>
+                  <span>Comprobantes registrados:</span>
+                  <span className="font-bold">{consolidatedReport.totals?.documentsCountAvailable === true ? (consolidatedReport.totals?.invoicesCount ?? 0).toLocaleString() : 'No disponible'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Subtotal Gravado/Exento:</span>
-                  <span>₡{(consolidatedReport.totals?.subtotal ?? 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>IVA Trasladado (13%):</span>
-                  <span>₡{(consolidatedReport.totals?.taxTotal ?? 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Servicio Restaurante (10%):</span>
-                  <span>₡{(consolidatedReport.totals?.service10Total ?? 0).toLocaleString()}</span>
-                </div>
+                {consolidatedReport.totals?.paymentsScopeAvailable !== true && <div className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-900">{consolidatedReport.totals?.paymentsScopeNote || 'Total de cobros: No disponible; hay pagos sin turno o fecha verificables.'}</div>}
+                {consolidatedReport.totals?.taxesAvailable === true ? <>
+                  <div className="flex justify-between">
+                    <span>Subtotal Gravado/Exento:</span>
+                    <span>₡{(consolidatedReport.totals?.subtotal ?? 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>IVA Trasladado (13%):</span>
+                    <span>₡{(consolidatedReport.totals?.taxTotal ?? 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Servicio Restaurante (10%):</span>
+                    <span>₡{(consolidatedReport.totals?.service10Total ?? 0).toLocaleString()}</span>
+                  </div>
+                </> : <div className="text-[10px] text-stone-500">{consolidatedReport.totals?.taxesNote || 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'}</div>}
                 <div className="flex justify-between pt-1 border-t border-stone-200 text-sm font-black">
-                  <span>VENTA TOTAL CONSOLIDADA:</span>
+                  <span>{consolidatedReport.closureType === 'DAILY' ? 'VENTA TOTAL DEL DÍA:' : 'VENTA TOTAL CONSOLIDADA:'}</span>
                   <span>₡{(consolidatedReport.totals?.grossTotal ?? 0).toLocaleString()}</span>
                 </div>
               </div>
@@ -308,7 +343,7 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
               {/* Sales by Payment Method */}
               <div className="py-3 border-b-2 border-dashed border-stone-300 space-y-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  Consolidado por Medio de Pago
+                  {consolidatedReport.closureType === 'DAILY' ? 'Operaciones por Medio de Pago' : 'Consolidado por Medio de Pago'}
                 </div>
                 <div className="flex justify-between items-center">
                   <span>💵 Efectivo Total:</span>
@@ -322,17 +357,25 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                   <span>📱 SINPE Móvil Total:</span>
                   <span className="font-bold">₡{(consolidatedReport.totals?.sinpeTotal ?? 0).toLocaleString()}</span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span>Venta a crédito:</span>
+                  <span className="font-bold">₡{(consolidatedReport.totals?.creditTotal ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Pago mixto:</span>
+                  <span className="font-bold">₡{(consolidatedReport.totals?.mixedTotal ?? 0).toLocaleString()}</span>
+                </div>
               </div>
 
               {/* Consolidated Cash Flow */}
               <div className="py-3 border-b-2 border-dashed border-stone-300 space-y-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  Auditoría Global de Gavetas de Efectivo
+                  {consolidatedReport.closureType === 'DAILY' ? 'Operaciones de Efectivo del Día' : 'Auditoría Global de Gavetas de Efectivo'}
                 </div>
-                <div className="flex justify-between">
+                {consolidatedReport.closureType !== 'DAILY' && <div className="flex justify-between">
                   <span>(+) Fondos Iniciales (Todas las cajas):</span>
                   <span>₡{(consolidatedReport.totals?.initialFloatTotal ?? 0).toLocaleString()}</span>
-                </div>
+                </div>}
                 <div className="flex justify-between">
                   <span>(+) Ventas Totales en Efectivo:</span>
                   <span>₡{(consolidatedReport.totals?.cashTotal ?? 0).toLocaleString()}</span>
@@ -350,15 +393,15 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                   </div>
                 )}
                 <div className="flex justify-between pt-1 border-t border-stone-200 font-bold">
-                  <span>(=) Efectivo Teórico Esperado:</span>
+                  <span>{consolidatedReport.closureType === 'DAILY' ? '(=) Efectivo Neto Generado:' : '(=) Efectivo Teórico Esperado:'}</span>
                   <span>₡{(consolidatedReport.totals?.expectedCashTotal ?? 0).toLocaleString()}</span>
                 </div>
-                <div className="flex justify-between font-black text-sm">
+                {consolidatedReport.closureType !== 'DAILY' && <div className="flex justify-between font-black text-sm">
                   <span>(✓) Efectivo Real Declarado:</span>
                   <span>₡{(consolidatedReport.totals?.countedCashTotal ?? 0).toLocaleString()}</span>
-                </div>
+                </div>}
 
-                <div className={`p-2 rounded-xl text-center font-bold text-xs mt-2 ${
+                {consolidatedReport.closureType !== 'DAILY' && <div className={`p-2 rounded-xl text-center font-bold text-xs mt-2 ${
                   isExact 
                     ? 'bg-emerald-50 text-emerald-900 border border-emerald-300'
                     : isShortage
@@ -368,7 +411,7 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                   {isExact && '✓ CUADRE GENERAL EXACTO (₡0)'}
                   {isShortage && `⚠ FALTANTE GENERAL: -₡${Math.abs(consolidatedReport.totals?.differenceTotal ?? 0).toLocaleString()}`}
                   {isSurplus && `ℹ SOBRANTE GENERAL: +₡${(consolidatedReport.totals?.differenceTotal ?? 0).toLocaleString()}`}
-                </div>
+                </div>}
               </div>
 
               {/* Breakdown Per Cash Register */}
@@ -395,16 +438,20 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                       <span>Tarj: ₡{reg.cardSales.toLocaleString()}</span>
                       <span>SINPE: ₡{reg.sinpeSales.toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between border-t border-dashed border-stone-200 pt-1">
-                      <span>Esperado / Contado:</span>
-                      <span className="font-bold">₡{reg.expectedCash.toLocaleString()} / ₡{reg.countedCash.toLocaleString()}</span>
+                    <div className="flex justify-between text-[10px] text-stone-500">
+                      <span>Crédito: ₡{(reg.creditSales ?? 0).toLocaleString()}</span>
+                      <span>Mixto: ₡{(reg.mixedSales ?? 0).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between font-bold">
+                    <div className="flex justify-between border-t border-dashed border-stone-200 pt-1">
+                      <span>{consolidatedReport.closureType === 'DAILY' ? 'Efectivo neto del día:' : 'Esperado / Contado:'}</span>
+                      <span className="font-bold">{consolidatedReport.closureType === 'DAILY' ? `₡${reg.expectedCash.toLocaleString()}` : `₡${reg.expectedCash.toLocaleString()} / ₡${reg.countedCash.toLocaleString()}`}</span>
+                    </div>
+                    {consolidatedReport.closureType !== 'DAILY' && <div className="flex justify-between font-bold">
                       <span>Diferencia:</span>
                       <span className={reg.difference === 0 ? 'text-emerald-700' : reg.difference < 0 ? 'text-rose-700' : 'text-amber-700'}>
                         {reg.difference === 0 ? '₡0 (Exacto)' : reg.difference < 0 ? `-₡${Math.abs(reg.difference).toLocaleString()}` : `+₡${reg.difference.toLocaleString()}`}
                       </span>
-                    </div>
+                    </div>}
                   </div>
                 ))}
               </div>
@@ -480,24 +527,27 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
               {/* Sales Summary & Taxes */}
               <div className="py-3 border-b-2 border-dashed border-stone-300 space-y-1.5">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-stone-500">
-                  Resumen de Ventas Facturadas
+                  Resumen de Ventas del Turno
                 </div>
                 <div className="flex justify-between">
-                  <span>Comprobantes Emitidos:</span>
-                  <span className="font-bold">{report.salesSummary?.invoicesCount ?? 0}</span>
+                  <span>Comprobantes registrados:</span>
+                  <span className="font-bold">{report.salesSummary?.documentsCountAvailable === true ? (report.salesSummary?.invoicesCount ?? 0).toLocaleString() : 'No disponible'}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Subtotal Gravado/Exento:</span>
-                  <span>₡{(report.salesSummary?.subtotal ?? 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>IVA Trasladado (Hacienda):</span>
-                  <span>₡{(report.salesSummary?.taxTotal ?? 0).toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Servicio Restaurante (10% Ley):</span>
-                  <span>₡{(report.salesSummary?.service10Total ?? 0).toLocaleString()}</span>
-                </div>
+                {report.salesSummary?.paymentsScopeAvailable !== true && <div className="rounded-lg bg-amber-50 border border-amber-200 px-2 py-1.5 text-[10px] text-amber-900">{report.salesSummary?.paymentsScopeNote || 'Total de cobros: No disponible; hay pagos sin turno o fecha verificables.'}</div>}
+                {report.salesSummary?.taxesAvailable === true ? <>
+                  <div className="flex justify-between">
+                    <span>Subtotal Gravado/Exento:</span>
+                    <span>₡{(report.salesSummary?.subtotal ?? 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>IVA Trasladado (Hacienda):</span>
+                    <span>₡{(report.salesSummary?.taxTotal ?? 0).toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Servicio Restaurante (10% Ley):</span>
+                    <span>₡{(report.salesSummary?.service10Total ?? 0).toLocaleString()}</span>
+                  </div>
+                </> : <div className="text-[10px] text-stone-500">{report.salesSummary?.taxesNote || 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'}</div>}
                 <div className="flex justify-between pt-1 border-t border-stone-200 text-sm font-black">
                   <span>VENTA TOTAL BRUTA:</span>
                   <span>₡{(report.salesSummary?.grossTotal ?? 0).toLocaleString()}</span>
@@ -556,6 +606,14 @@ export const ZReportModal: React.FC<ZReportModalProps> = ({
                     <span>📱 SINPE Móvil:</span>
                   </span>
                   <span className="font-bold">₡{(report.salesSummary?.sinpeTotal ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Venta a crédito:</span>
+                  <span className="font-bold">₡{(report.salesSummary?.creditTotal ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Pago mixto:</span>
+                  <span className="font-bold">₡{(report.salesSummary?.mixedTotal ?? 0).toLocaleString()}</span>
                 </div>
               </div>
 

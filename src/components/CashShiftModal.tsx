@@ -47,6 +47,9 @@ import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOpeningZones';
+import { isOpenDiningTable, getCostaRicaBusinessDate } from '../services/cashClosureRules';
+import { localDB } from '../services/db';
+import { posCloudService } from '../services/posCloudService';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -180,6 +183,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [countedSinpeInput, setCountedSinpeInput] = useState<number>(0);
   const [differenceJustification, setDifferenceJustification] = useState<string>('');
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [dailyCloseError, setDailyCloseError] = useState<string | null>(null);
+  const [isClosingDailyCash, setIsClosingDailyCash] = useState(false);
 
   // Multi-Caja Editing and Quick Creation state (must be before any early return)
   const [editingRegisterId, setEditingRegisterId] = useState<string | null>(null);
@@ -379,14 +384,6 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const handleFinalizeShiftClosing = () => {
     setCloseError(null);
 
-    // Validate that no tables are open globally
-    const hasOpenTables = tables.some(t => t.status !== 'AVAILABLE');
-    if (hasOpenTables) {
-      setCloseError("No se puede hacer el cierre de caja porque hay mesas o cuentas abiertas. Cierra todas las mesas primero.");
-      soundService.playErrorBuzz();
-      return;
-    }
-
     const closingUser: UserProfile = currentUser || {
       id: activeShift?.openedBy?.userId || 'usr_cajero',
       name: activeShift?.openedBy?.userName || 'Cajero en Turno',
@@ -408,13 +405,20 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
 
     setConfirmConfig({
       isOpen: true,
-      title: '¿Confirmar cierre de turno y arqueo?',
-      message: `Estás a punto de cerrar el turno de ${currentRegisterObj?.name || 'la caja'} y generar el Reporte Z oficial. Se registrará un total en efectivo contado de ₡${countedCashTotal.toLocaleString()} y datáfonos de ₡${totalDataphonesCounted.toLocaleString()}. ¿Deseas proceder?`,
+      title: '¿Confirmar cierre de turno?',
+      message: `Se cerrará únicamente el turno abierto de ${currentRegisterObj?.name || 'la caja'} y se generará su Reporte Z. Las comandas de mesas abiertas permanecerán abiertas y sus cobros se asignarán al siguiente turno. Efectivo contado: ₡${countedCashTotal.toLocaleString()}; datáfonos: ₡${totalDataphonesCounted.toLocaleString()}. ¿Deseas proceder?`,
       confirmLabel: 'Sí, cerrar turno',
       type: 'warning',
       onConfirm: async () => {
         try {
-          const { closedShift, zReport } = cashShiftService.closeShift(
+          await localDB.syncAllPending(tenant.id);
+          const pendingPayments = (await localDB.getPendingItems(tenant.id)).filter(item => item.action === 'PAYMENT');
+          if (pendingPayments.length > 0) {
+            throw new Error('Hay cobros pendientes de sincronizar. Conecta el dispositivo y sincronízalos antes de cerrar para conservar su atribución al turno.');
+          }
+          await cashShiftService.flushCloudSync();
+
+          const { closedShift, zReport } = await cashShiftService.closeShift(
             countedCashTotal,
             totalDataphonesCounted,
             Number(countedSinpeInput || 0),
@@ -424,16 +428,6 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             selectedRegisterId,
             dataphones
           );
-
-          try {
-            await cashShiftService.flushCloudSync();
-          } catch (syncError: any) {
-            refreshData(selectedRegisterId);
-            setCloseError(`El cierre quedó aplicado en este dispositivo, pero no se confirmó en la nube: ${syncError?.message || 'error de sincronización'}. Verifica la conexión antes de continuar.`);
-            soundService.playErrorBuzz();
-            setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-            return;
-          }
 
           soundService.playSuccessChime();
           setActiveShift(null);
@@ -445,7 +439,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             onOpenZReport(zReport);
           }
         } catch (err: any) {
-          setCloseError(err.message || 'Error al cerrar caja.');
+          setCloseError(err.message || 'Error al cerrar el turno.');
           soundService.playErrorBuzz();
           setConfirmConfig(prev => ({ ...prev, isOpen: false }));
         }
@@ -457,6 +451,126 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     if (!onOpenConsolidatedZReport) return;
     const report = cashShiftService.generateConsolidatedZReport(tenant);
     onOpenConsolidatedZReport(report);
+  };
+
+  const runDailyCashClose = async () => {
+    setDailyCloseError(null);
+    setIsClosingDailyCash(true);
+    try {
+      if (!localDB.isOnline()) throw new Error('El cierre diario requiere conexión para guardar y validar la caja en el servidor.');
+      await localDB.syncAllPending(tenant.id);
+      const pendingPayments = (await localDB.getPendingItems(tenant.id)).filter(item => item.action === 'PAYMENT');
+      if (pendingPayments.length > 0) {
+        throw new Error('Hay cobros pendientes de sincronizar. Sincronízalos antes de cerrar para incluir todas las operaciones del día.');
+      }
+      await cashShiftService.flushCloudSync();
+
+      const businessDate = getCostaRicaBusinessDate();
+      const operationId = `daily-cash-close:${tenant.id}:${selectedRegisterId}:${businessDate}`;
+      const result = await posCloudService.syncOperation<Record<string, any>>(
+        'CLOSE_DAILY_CASH',
+        { registerId: selectedRegisterId, businessDate },
+        tenant.id,
+        operationId
+      );
+      const summary = result?.summary && typeof result.summary === 'object' ? result.summary : {};
+      const amount = (key: string) => {
+        const value = Number(summary[key]);
+        return Number.isFinite(value) ? value : 0;
+      };
+      const registerId = String(result.cashRegisterId || selectedRegisterId);
+      const registerSummary = {
+        registerId,
+        registerName: String(summary.registerName || currentRegisterObj?.name || 'Caja'),
+        terminalCode: String(summary.terminalCode || currentRegisterObj?.terminalCode || '00001'),
+        shiftsCount: amount('shiftsCount'),
+        initialFloatTotal: amount('initialFloatTotal'),
+        cashSales: amount('cashSales'),
+        cardSales: amount('cardSales'),
+        sinpeSales: amount('sinpeSales'),
+        creditSales: amount('creditSales'),
+        mixedSales: amount('mixedSales'),
+        totalSales: amount('totalSales'),
+        inflowsTotal: amount('inflowsTotal'),
+        outflowsTotal: amount('outflowsTotal'),
+        taxTotal: amount('taxTotal'),
+        service10Total: amount('service10Total'),
+        expectedCash: amount('expectedCash'),
+        countedCash: amount('countedCash'),
+        difference: amount('difference')
+      };
+      const report: ConsolidatedZReportData = {
+        closureType: 'DAILY',
+        closureId: typeof result.closureId === 'string' ? result.closureId : undefined,
+        cashRegisterId: registerId,
+        reportDate: String(result.businessDate || businessDate),
+        tenantName: tenant.name,
+        cedulaJuridica: tenant.cedulaJuridica || '',
+        location: tenant.location || '',
+        branchCode: String(summary.branchCode || currentRegisterObj?.branchCode || '001'),
+        generatedAt: String(result.closedAt || new Date().toISOString()),
+        generatedBy: currentUser?.name || 'Usuario POS',
+        registersSummary: [registerSummary],
+        totals: {
+          grossTotal: registerSummary.totalSales,
+          subtotal: 0,
+          taxTotal: registerSummary.taxTotal,
+          service10Total: registerSummary.service10Total,
+          cashTotal: registerSummary.cashSales,
+          cardTotal: registerSummary.cardSales,
+          sinpeTotal: registerSummary.sinpeSales,
+          creditTotal: registerSummary.creditSales,
+          mixedTotal: registerSummary.mixedSales,
+          initialFloatTotal: registerSummary.initialFloatTotal,
+          inflowsTotal: registerSummary.inflowsTotal,
+          outflowsTotal: registerSummary.outflowsTotal,
+          expectedCashTotal: registerSummary.expectedCash,
+          countedCashTotal: registerSummary.countedCash,
+          differenceTotal: registerSummary.difference,
+          invoicesCount: amount('invoicesCount'),
+          documentsCountAvailable: summary.documentsCountAvailable === true,
+          paymentsScopeAvailable: summary.paymentsScopeAvailable === true,
+          paymentsScopeNote: typeof summary.paymentsScopeNote === 'string' ? summary.paymentsScopeNote : 'Total de cobros no disponible: hay pagos sin turno o fecha de cobro verificables en esta sucursal.',
+          taxesAvailable: summary.taxesAvailable === true,
+          taxesNote: typeof summary.taxesNote === 'string' ? summary.taxesNote : 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'
+        }
+      };
+      setDailyCloseError(result.alreadyClosed === true
+        ? 'Este cierre diario ya estaba guardado; se muestra el registro existente.'
+        : null);
+      onOpenConsolidatedZReport?.(report);
+    } catch (error: any) {
+      setDailyCloseError(error?.message || 'No se pudo guardar el cierre diario de caja.');
+      soundService.playErrorBuzz();
+    } finally {
+      setIsClosingDailyCash(false);
+    }
+  };
+
+  const handleCloseDailyCash = () => {
+    const openTables = tables.filter(isOpenDiningTable);
+    if (openTables.length > 0) {
+      setDailyCloseError(`No se puede cerrar la caja del día: ${openTables.length} mesa(s) tienen una comanda abierta.`);
+      soundService.playErrorBuzz();
+      return;
+    }
+    if (!selectedRegisterId) {
+      setDailyCloseError('Selecciona una caja registrada antes de cerrar el día.');
+      return;
+    }
+
+    const businessDate = getCostaRicaBusinessDate();
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Confirmar cierre diario de caja?',
+      message: `Se guardará una sola vez el cierre de ${currentRegisterObj?.name || 'la caja'} (${businessDate}), con sus cobros y movimientos del día. Hazlo al terminar las operaciones: no cierra el turno y no se recalcula si después registras más cobros. El servidor volverá a validar que no queden mesas o comandas abiertas.`,
+      confirmLabel: 'Cerrar caja del día',
+      type: 'warning',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        void runDailyCashClose();
+      }
+    });
   };
 
   // Multi-Caja Editing and Quick Creation handlers
@@ -554,6 +668,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   };
 
   const currentRegisterObj = registers.find(r => r.id === selectedRegisterId) || registers[0] || cashShiftService.getCurrentRegister();
+  const openDiningTables = tables.filter(isOpenDiningTable);
+  const hasOpenDiningTables = openDiningTables.length > 0;
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-stone-950/70 backdrop-blur-md animate-in fade-in duration-200">
@@ -649,7 +765,22 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               <span>Reporte Z Consolidado Multi-Cajas</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={handleCloseDailyCash}
+            disabled={isClosingDailyCash || registers.length === 0 || hasOpenDiningTables}
+            className="px-3 py-1 bg-[#588157] hover:bg-[#466b45] disabled:bg-stone-300 disabled:text-stone-500 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
+            title="Cierra una vez la caja seleccionada para la fecha local de Costa Rica; requiere que no haya mesas abiertas."
+          >
+            <LockKeyhole className="w-3.5 h-3.5" />
+            <span>{isClosingDailyCash ? 'Guardando cierre...' : hasOpenDiningTables ? 'Cierre diario: hay mesas abiertas' : 'Cerrar Caja del Día'}</span>
+          </button>
         </div>
+        {dailyCloseError && (
+          <div role="status" className={`px-6 py-2 border-b text-[11px] ${dailyCloseError.startsWith('Este cierre diario ya estaba') ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+            {dailyCloseError}
+          </div>
+        )}
 
         {/* Modal Navigation Tabs */}
         <div className="px-6 border-b border-stone-200 bg-white flex items-center gap-2 overflow-x-auto scrollbar-none">
@@ -699,7 +830,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             }`}
           >
             <LockKeyhole className="w-3.5 h-3.5" />
-            <span>Cerrar Turno & Caja</span>
+            <span>Cerrar Turno</span>
           </button>
 
           <button
@@ -1009,7 +1140,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer ring-2 ring-amber-300/80"
                   >
                     <LockKeyhole className="w-3.5 h-3.5 text-stone-950" />
-                    <span>Cerrar Turno y Caja</span>
+                    <span>Cerrar Turno</span>
                   </button>
                 </div>
               </div>
@@ -1132,13 +1263,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-black text-white flex items-center gap-2">
-                      <span>Cierre de Turno y Caja</span>
+                      <span>Cierre de Turno</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-stone-950 font-black uppercase tracking-wider">
                         {currentRegisterObj?.name || 'Caja 01 - Principal'}
                       </span>
                     </h4>
                     <p className="text-xs text-stone-300 mt-0.5">
-                      Ingresa el efectivo contado en gaveta (Arqueo Ciego), concilia datáfonos y emite el Reporte Z oficial.
+                      Cuenta la caja y concilia este turno. Las mesas abiertas permanecen en servicio y sus cobros pasan al siguiente turno.
                     </p>
                   </div>
                 </div>
@@ -1162,7 +1293,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                     className="w-full sm:w-auto px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-black rounded-xl transition-all shadow-md flex items-center justify-center gap-2 shrink-0 cursor-pointer ring-2 ring-amber-300/60"
                   >
                     <LockKeyhole className="w-4 h-4" />
-                    <span>Realizar Cierre de Caja</span>
+                    <span>Realizar Cierre de Turno</span>
                   </button>
                 </div>
               </div>
@@ -1274,8 +1405,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-900 flex items-start gap-2.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="block font-bold">Protocolo de Arqueo Ciego:</strong>
-                  Cuenta y digita los billetes y monedas físicos en la gaveta. Al confirmar, el sistema comparará automáticamente contra las ventas registradas y emitirá el <strong>Reporte Z</strong>.
+                  <strong className="block font-bold">Cierre del turno actual:</strong>
+                  Cuenta y digita los billetes y monedas físicos en la gaveta. El sistema incluye los cobros del intervalo apertura→cierre, permite conservar mesas abiertas sin cerrarlas y emite el <strong>Reporte Z del turno</strong>.
                 </div>
               </div>
 

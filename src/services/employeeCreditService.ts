@@ -273,6 +273,29 @@ class EmployeeCreditService {
     return transaction;
   }
 
+  discardPendingCharge(tenantId: string, idempotencyKey: string): boolean {
+    if (!tenantId || !idempotencyKey) return false;
+    const ledger = this.getLedger(tenantId);
+    const charge = ledger.transactions.find(item => item.idempotencyKey === idempotencyKey
+      && item.type === 'CHARGE' && item.pending === true);
+    if (!charge) return false;
+
+    const now = new Date().toISOString();
+    const accounts = ledger.accounts.map(account => account.employeeId === charge.employeeId
+      ? {
+          ...account,
+          balance: Math.max(0, Math.round((account.balance - charge.amount + Number.EPSILON) * 100) / 100),
+          updatedAt: now
+        }
+      : account);
+    this.saveLedger(tenantId, {
+      ...ledger,
+      accounts,
+      transactions: ledger.transactions.filter(item => item.idempotencyKey !== idempotencyKey)
+    });
+    return true;
+  }
+
   async refreshLedger(tenantId: string): Promise<EmployeeCreditLedger> {
     const token = currentToken();
     if (!token) throw new Error('No hay una sesión autenticada para consultar el registro de consumo.');

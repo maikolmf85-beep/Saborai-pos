@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
+import { parseFiscalInvoiceIssuedAt } from './_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
 
 const require = createRequire(import.meta.url);
@@ -409,6 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       clave,
       consecutivo: String(consecutivo || clave).slice(0, 20)
     });
+    const issuedAt = parseFiscalInvoiceIssuedAt(invoiceData.fechaEmision);
 
     // 4. Enviar a Recepción de Hacienda
     const recepcionRes = await fetch(endpoints.api, {
@@ -438,6 +440,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           document_type: String(documentType || 'TE').slice(0, 2),
           hacienda_status: 'PROCESSING',
           total: Number(total || 0),
+          ...(issuedAt ? { issued_at: issuedAt } : {}),
           invoice_data: invoiceData,
           xml_content: rawXml || null,
           signed_xml_content: finalXmlBase64,
@@ -476,6 +479,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           document_type: String(documentType || 'TE').slice(0, 2),
           hacienda_status: 'REJECTED',
           total: Number(total || 0),
+          ...(issuedAt ? { issued_at: issuedAt } : {}),
           invoice_data: invoiceData,
           xml_content: rawXml || null,
           signed_xml_content: finalXmlBase64,

@@ -128,6 +128,16 @@ class CashControlCloudService {
     return Boolean(isSupabaseConfigured && supabaseClient);
   }
 
+  async closeShiftInCloud(tenantId: string, shiftId: string, closure: Record<string, unknown>): Promise<Record<string, any>> {
+    if (!this.isAvailable()) throw new Error('El cierre de turno requiere conexión con la nube.');
+    return posCloudService.syncOperation<Record<string, any>>(
+      'CLOSE_CASH_SHIFT',
+      { shiftId, closure },
+      tenantId,
+      `cash-close:${tenantId}:${shiftId}`
+    );
+  }
+
   getMigrationMarker(tenantId: string): string | null {
     if (typeof window === 'undefined' || !tenantId) return null;
     return localStorage.getItem(`${MIGRATION_MARKER_PREFIX}${tenantId}`);

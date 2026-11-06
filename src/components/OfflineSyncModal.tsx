@@ -146,13 +146,13 @@ export const OfflineSyncModal: React.FC<OfflineSyncModalProps> = ({
                       <span>{new Date(it.timestamp).toLocaleTimeString('es-CR')}</span>
                     </span>
                     {it.lastError && (
-                      <span className="block max-w-[280px] truncate text-[10px] text-red-600" title={it.lastError}>
+                      <span className="block max-w-[280px] break-words whitespace-normal text-[10px] text-red-600" title={it.lastError}>
                         {it.lastError}
                       </span>
                     )}
                   </div>
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${it.status === 'FAILED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
-                    {it.status === 'FAILED' ? 'Error / reintento' : 'Pendiente'}
+                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold shrink-0 ${it.status === 'FAILED' || it.status === 'REJECTED' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {it.status === 'REJECTED' ? 'Bloqueado' : it.status === 'FAILED' ? 'Error / reintento' : 'Pendiente'}
                   </span>
                 </div>
               ))

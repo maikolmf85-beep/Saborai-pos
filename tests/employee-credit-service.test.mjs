@@ -49,6 +49,23 @@ test('el cargo del pago rápido comparte una clave idempotente entre caché loca
   assert.match(registration.syncPayload.idempotencyKey, /clave-unica-1/);
 });
 
+test('descarta el cargo de crédito local pendiente cuando el pago es rechazado por cierre de caja', () => {
+  resetStorage();
+  employeeCreditService.recordCharge({
+    tenantId: 'tenant-a',
+    employeeId: 'ana',
+    employeeName: 'Ana Rojas',
+    amount: 125.5,
+    orderNumber: 'EMP-1010',
+    idempotencyKey: 'credit:quick:tenant-a:invoice-1010'
+  });
+  assert.equal(employeeCreditService.getBalance('tenant-a', 'ana'), 125.5);
+  assert.equal(employeeCreditService.discardPendingCharge('tenant-a', 'credit:quick:tenant-a:invoice-1010'), true);
+  assert.equal(employeeCreditService.getBalance('tenant-a', 'ana'), 0);
+  assert.equal(employeeCreditService.getLedger('tenant-a').transactions.length, 0);
+  assert.equal(employeeCreditService.discardPendingCharge('tenant-a', 'credit:quick:tenant-a:invoice-1010'), false);
+});
+
 test('los cargos locales se guardan por tenant, son pendientes y se deduplican por clave', () => {
   resetStorage();
   const params = {

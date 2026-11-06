@@ -21,6 +21,7 @@ import { printerService } from '../services/printerService';
 import { getTenantItem } from '../services/tenantStorage';
 import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService } from '../services/employeeCreditService';
 import { localDB } from '../services/db';
+import { shouldCloseOrderAfterPayment } from '../services/cashClosureRules';
 import { PosNotification } from './NotificationToast';
 import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
 
@@ -284,20 +285,21 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         cardAmt = mixedCard;
         sinpeAmt = mixedSinpe;
       }
-
-      cashShiftService.recordSalePayment({
-        cashAmount: cashAmt,
-        cardAmount: cardAmt,
-        sinpeAmount: sinpeAmt,
-        subtotal,
-        tax: iva13,
-        service10: servicio10,
-        registerId: currentRegister.id,
-        tenantId: tenant.id,
-        actor: staffList.find(staff => staff.id === selectedEmployeeId) || staffList[0],
-        reference: generatedClave
-      });
     }
+
+    cashShiftService.recordSalePayment({
+      cashAmount: cashAmt,
+      cardAmount: cardAmt,
+      sinpeAmount: sinpeAmt,
+      creditAmount: isCreditoFuncionario ? total : 0,
+      subtotal,
+      tax: iva13,
+      service10: servicio10,
+      registerId: currentRegister.id,
+      tenantId: tenant.id,
+      actor: staffList.find(staff => staff.id === selectedEmployeeId) || staffList[0],
+      reference: generatedClave
+    });
 
     // Hacienda Simulation Integration
     const invoiceObj: any = {
@@ -353,6 +355,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
           { amount: mixedCard, method: 'CARD', provider: 'POS' },
           { amount: mixedSinpe, method: 'SINPE', reference: sinpeRef || undefined, provider: 'POS' }
         ].filter(payment => payment.amount > 0);
+    const closeOrder = shouldCloseOrderAfterPayment(rawItems, subAccountId);
 
     const shouldQueueInvoice = isOffline || isSimplified || !emitToHacienda;
     const inventoryItems = items.filter(item => !item.inventoryDeductedAtDispatch).map(item => ({
@@ -372,11 +375,14 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       {
         orderNumber: table.activeOrder?.orderNumber,
         tableNumber: table.number,
+        cashRegisterId: currentRegister.id,
+        cashShiftId: cashShiftService.getActiveShift(currentRegister.id)?.id,
         payments: paymentRows,
         employeeCredit: employeeCreditCharge?.syncPayload,
         total,
         currency: 'CRC',
-        occurredAt: emissionDate.toISOString()
+        occurredAt: emissionDate.toISOString(),
+        closeOrder
       },
       `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
       tenant.id

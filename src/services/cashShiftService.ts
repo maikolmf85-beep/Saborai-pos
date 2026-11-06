@@ -382,14 +382,20 @@ class CashShiftService {
       cashSales: 0,
       cardSales: 0,
       sinpeSales: 0,
+      creditSales: 0,
+      mixedSales: 0,
       totalSales: 0,
       subtotal: 0,
       totalTax: 0,
       serviceTax10: 0,
+      taxesAvailable: false,
+      taxesNote: 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.',
       totalInflows: 0,
       totalOutflows: 0,
       expectedCashInDrawer: initialFloat,
-      invoicesCount: 0
+      invoicesCount: 0,
+      documentsCountAvailable: false,
+      paymentsScopeAvailable: true
     };
 
     // Determinar salones a enlazar
@@ -465,6 +471,8 @@ class CashShiftService {
     cashAmount?: number;
     cardAmount?: number;
     sinpeAmount?: number;
+    creditAmount?: number;
+    mixedAmount?: number;
     subtotal?: number;
     tax?: number;
     service10?: number;
@@ -484,6 +492,8 @@ class CashShiftService {
     const cash = params.cashAmount || 0;
     const card = params.cardAmount || 0;
     const sinpe = params.sinpeAmount || 0;
+    const credit = params.creditAmount || 0;
+    const mixed = params.mixedAmount || 0;
     const subtotal = params.subtotal || 0;
     const tax = params.tax || 0;
     const serv10 = params.service10 || 0;
@@ -491,11 +501,14 @@ class CashShiftService {
     s.cashSales += cash;
     s.cardSales += card;
     s.sinpeSales += sinpe;
-    s.totalSales += (cash + card + sinpe);
+    s.creditSales = (s.creditSales || 0) + credit;
+    s.mixedSales = (s.mixedSales || 0) + mixed;
+    s.totalSales += (cash + card + sinpe + credit + mixed);
     s.subtotal += subtotal;
     s.totalTax += tax;
     s.serviceTax10 += serv10;
-    s.invoicesCount += 1;
+    // Un pago no prueba que se haya registrado un comprobante fiscal.
+    s.documentsCountAvailable = false;
 
     // Recalculate expected cash in drawer
     s.expectedCashInDrawer = shift.initialCashFloat + s.cashSales + s.totalInflows - s.totalOutflows;
@@ -508,9 +521,9 @@ class CashShiftService {
         actor: params.actor,
         registerId: targetRegisterId,
         shiftId: shift.id,
-        amount: cash + card + sinpe,
+        amount: cash + card + sinpe + credit + mixed,
         reference: params.reference,
-        metadata: { cashAmount: cash, cardAmount: card, sinpeAmount: sinpe }
+        metadata: { cashAmount: cash, cardAmount: card, sinpeAmount: sinpe, creditAmount: credit, mixedAmount: mixed }
       });
     }
   }
@@ -683,7 +696,7 @@ class CashShiftService {
     return billsTotal + coinsTotal + Math.round(usdInCRC);
   }
 
-  closeShift(
+  async closeShift(
     countedCash: number,
     countedCards: number,
     countedSinpe: number,
@@ -692,7 +705,7 @@ class CashShiftService {
     differenceReason?: string,
     registerId?: string,
     dataphonesBreakdown?: DataphoneClosingEntry[]
-  ): { closedShift: CashShift; zReport: ZReportData } {
+  ): Promise<{ closedShift: CashShift; zReport: ZReportData }> {
     const targetRegisterId = registerId || this.currentTerminalId;
     const shift = this.activeShiftsMap[targetRegisterId];
 
@@ -700,7 +713,33 @@ class CashShiftService {
       throw new Error(`No hay un turno abierto en esta caja para cerrar.`);
     }
 
-    const expected = shift.systemSummary.expectedCashInDrawer;
+    const closedAt = new Date().toISOString();
+    let serverResult: Record<string, any> | null = null;
+    if (cashControlCloudService.isAvailable()) {
+      if (!this.tenantId) throw new Error('No se pudo confirmar el restaurante para cerrar el turno.');
+      serverResult = await cashControlCloudService.closeShiftInCloud(this.tenantId, shift.id, {
+        legacy_id: shift.id,
+        closed_at: closedAt,
+        expected_cash: shift.systemSummary.expectedCashInDrawer,
+        counted_cash: countedCash,
+        difference: countedCash - shift.systemSummary.expectedCashInDrawer,
+        notes: shift.notes,
+        participants: shift.participants || [],
+        movements: shift.movements,
+        system_summary: shift.systemSummary,
+        cash_breakdown: cashBreakdown || null,
+        counted_cards: countedCards,
+        dataphones_breakdown: dataphonesBreakdown || [],
+        counted_sinpe: countedSinpe,
+        difference_reason: differenceReason || '',
+        z_report_generated: true
+      });
+    }
+
+    if (serverResult?.summary && typeof serverResult.summary === 'object') {
+      shift.systemSummary = { ...shift.systemSummary, ...serverResult.summary };
+    }
+    const expected = Number(shift.systemSummary.expectedCashInDrawer) || 0;
     const diff = countedCash - expected;
 
     shift.status = 'CLOSED';
@@ -708,7 +747,7 @@ class CashShiftService {
       userId: closedByUser.id,
       userName: closedByUser.name
     };
-    shift.closedAt = new Date().toISOString();
+    shift.closedAt = typeof serverResult?.closedAt === 'string' ? serverResult.closedAt : closedAt;
     shift.countedCash = countedCash;
     shift.countedCards = countedCards;
     shift.dataphonesBreakdown = dataphonesBreakdown;
@@ -721,7 +760,9 @@ class CashShiftService {
     // Archive into history (newest first)
     this.shiftsHistory = [shift, ...this.shiftsHistory];
     delete this.activeShiftsMap[targetRegisterId];
-    this.saveToStorage();
+    // The server already confirmed the transition. Persist locally without
+    // queuing a second close based on a stale browser summary.
+    this.saveToStorage(false);
 
     const zReport = this.generateZReport(shift);
     return { closedShift: shift, zReport };
@@ -732,6 +773,8 @@ class CashShiftService {
       cashSales: 0,
       cardSales: 0,
       sinpeSales: 0,
+      creditSales: 0,
+      mixedSales: 0,
       totalSales: 0,
       subtotal: 0,
       totalTax: 0,
@@ -739,7 +782,10 @@ class CashShiftService {
       totalInflows: 0,
       totalOutflows: 0,
       expectedCashInDrawer: shift.initialCashFloat || 0,
-      invoicesCount: 0
+      invoicesCount: 0,
+      documentsCountAvailable: false,
+      paymentsScopeAvailable: false,
+      taxesAvailable: false
     };
     const diff = shift.cashDifference ?? 0;
     let diffStatus: 'EXACT' | 'SHORTAGE' | 'SURPLUS' = 'EXACT';
@@ -763,13 +809,20 @@ class CashShiftService {
       initialFloat: shift.initialCashFloat || 0,
       salesSummary: {
         grossTotal: gross,
-        subtotal: s.subtotal || Math.round(gross / 1.23),
-        taxTotal: s.totalTax || Math.round(gross * 0.13),
-        service10Total: s.serviceTax10 || Math.round(gross * 0.10),
+        subtotal: s.subtotal || 0,
+        taxTotal: s.totalTax || 0,
+        service10Total: s.serviceTax10 || 0,
         cashTotal: s.cashSales || 0,
         cardTotal: s.cardSales || 0,
         sinpeTotal: s.sinpeSales || 0,
-        invoicesCount: s.invoicesCount || 0
+        creditTotal: s.creditSales || 0,
+        mixedTotal: s.mixedSales || 0,
+        invoicesCount: s.invoicesCount || 0,
+        documentsCountAvailable: s.documentsCountAvailable === true,
+        paymentsScopeAvailable: s.paymentsScopeAvailable === true,
+        paymentsScopeNote: s.paymentsScopeNote || 'Total de cobros no disponible: hay pagos sin turno o fecha de cobro verificables en esta sucursal.',
+        taxesAvailable: s.taxesAvailable === true,
+        taxesNote: s.taxesNote || 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'
       },
       cashFlowSummary: {
         initialFloat: shift.initialCashFloat || 0,
@@ -816,11 +869,11 @@ class CashShiftService {
       let cashSales = 0;
       let cardSales = 0;
       let sinpeSales = 0;
+      let creditSales = 0;
+      let mixedSales = 0;
       let totalSales = 0;
       let inflowsTotal = 0;
       let outflowsTotal = 0;
-      let taxTotal = 0;
-      let service10Total = 0;
       let expectedCash = 0;
       let countedCash = 0;
       let difference = 0;
@@ -830,11 +883,11 @@ class CashShiftService {
         cashSales += s.systemSummary.cashSales;
         cardSales += s.systemSummary.cardSales;
         sinpeSales += s.systemSummary.sinpeSales;
+        creditSales += s.systemSummary.creditSales || 0;
+        mixedSales += s.systemSummary.mixedSales || 0;
         totalSales += s.systemSummary.totalSales;
         inflowsTotal += s.systemSummary.totalInflows;
         outflowsTotal += s.systemSummary.totalOutflows;
-        taxTotal += s.systemSummary.totalTax;
-        service10Total += s.systemSummary.serviceTax10;
         expectedCash += s.systemSummary.expectedCashInDrawer;
         countedCash += s.countedCash ?? s.systemSummary.expectedCashInDrawer;
         difference += (s.cashDifference ?? 0);
@@ -849,25 +902,33 @@ class CashShiftService {
         cashSales,
         cardSales,
         sinpeSales,
+        creditSales,
+        mixedSales,
         totalSales,
         inflowsTotal,
         outflowsTotal,
-        taxTotal,
-        service10Total,
+        taxTotal: 0,
+        service10Total: 0,
         expectedCash,
         countedCash,
         difference
       };
     });
 
+    const documentsCountAvailable = matchingShifts.length > 0 && matchingShifts.every(
+      shift => shift.status === 'CLOSED' && shift.systemSummary.documentsCountAvailable === true
+    );
+    const paymentsScopeAvailable = matchingShifts.length > 0 && matchingShifts.every(
+      shift => shift.status === 'CLOSED' && shift.systemSummary.paymentsScopeAvailable === true
+    );
+
     const totals = registersSummary.reduce((acc, curr) => {
       acc.grossTotal += curr.totalSales;
-      acc.subtotal += Math.round(curr.totalSales / 1.23);
-      acc.taxTotal += curr.taxTotal;
-      acc.service10Total += curr.service10Total;
       acc.cashTotal += curr.cashSales;
       acc.cardTotal += curr.cardSales;
       acc.sinpeTotal += curr.sinpeSales;
+      acc.creditTotal += curr.creditSales || 0;
+      acc.mixedTotal += curr.mixedSales || 0;
       acc.initialFloatTotal += curr.initialFloatTotal;
       acc.inflowsTotal += curr.inflowsTotal;
       acc.outflowsTotal += curr.outflowsTotal;
@@ -883,13 +944,22 @@ class CashShiftService {
       cashTotal: 0,
       cardTotal: 0,
       sinpeTotal: 0,
+      creditTotal: 0,
+      mixedTotal: 0,
       initialFloatTotal: 0,
       inflowsTotal: 0,
       outflowsTotal: 0,
       expectedCashTotal: 0,
       countedCashTotal: 0,
       differenceTotal: 0,
-      invoicesCount: matchingShifts.reduce((sum, s) => sum + s.systemSummary.invoicesCount, 0)
+      invoicesCount: documentsCountAvailable
+        ? matchingShifts.reduce((sum, shift) => sum + shift.systemSummary.invoicesCount, 0)
+        : 0,
+      documentsCountAvailable,
+      paymentsScopeAvailable,
+      paymentsScopeNote: 'Total de cobros no disponible: hay pagos sin turno o fecha de cobro verificables en esta sucursal.',
+      taxesAvailable: false,
+      taxesNote: 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'
     });
 
     return {

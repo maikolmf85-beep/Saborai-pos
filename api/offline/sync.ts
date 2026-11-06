@@ -5,12 +5,13 @@ import { ROLE_PERMISSIONS } from '../_utils/rolePermissions.js';
 import { employeeSessionActorMatches } from '../_utils/employeeSession.js';
 import { recordEmployeeCreditTransaction } from '../_utils/employeeCredit.js';
 import { handleEmployeeCreditRequest } from '../_utils/employeeCreditEndpoint.js';
+import { parseFiscalInvoiceIssuedAt } from '../_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
-import { assignCashTerminal, closeCashShift, importCashShift } from '../_utils/cashControlSync.js';
+import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, importCashShift } from '../_utils/cashControlSync.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -125,9 +126,7 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
         .from('pos_orders')
         .update({
           branch_id: branch.id,
-          ...(scope.cashRegisterId ? { cash_register_id: scope.cashRegisterId } : {}),
           ...(scope.cashShiftId ? { cash_shift_id: scope.cashShiftId } : {}),
-          ...(scope.terminalId ? { terminal_id: scope.terminalId } : {}),
           table_id: tableResult.data.id,
           server_name: typeof activeOrder.server === 'string' ? activeOrder.server.slice(0, 120) : null,
           status: 'OPEN'
@@ -147,9 +146,7 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
         .insert({
           tenant_id: tenantId,
           branch_id: branch.id,
-          cash_register_id: scope.cashRegisterId,
           cash_shift_id: scope.cashShiftId,
-          terminal_id: scope.terminalId,
           table_id: tableResult.data.id,
           order_number: activeOrder.orderNumber.trim().slice(0, 80),
           status: 'OPEN',
@@ -236,61 +233,242 @@ async function syncEmployeeCredit(tenantId: string, userId: string, operationId:
   });
 }
 
+function readCashControlId(value: unknown, label: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || value.length > 120 || !/^[A-Za-z0-9_-]+$/.test(value)) {
+    throw new Error(`${label} tiene un formato inválido.`);
+  }
+  return value;
+}
+
+async function resolveCashRegister(tenantId: string, identifier: string) {
+  let query = supabaseAdmin.from('pos_cash_registers')
+    .select('id, branch_id, name')
+    .eq('tenant_id', tenantId);
+  query = isUuid(identifier) ? query.eq('id', identifier) : query.eq('legacy_id', identifier);
+  const result = await query.limit(1).maybeSingle();
+  if (result.error || !result.data) throw new Error('No se encontró la caja asociada al cobro.');
+  return result.data as { id: string; branch_id: string; name: string };
+}
+
+async function resolvePaymentShift(
+  tenantId: string,
+  registerId: string,
+  identifier: string | null,
+  paidAt: string
+) {
+  let query = supabaseAdmin.from('pos_cash_shifts')
+    .select('id, branch_id, cash_register_id, status, opened_at, closed_at')
+    .eq('tenant_id', tenantId)
+    .eq('cash_register_id', registerId);
+  if (identifier) {
+    query = isUuid(identifier) ? query.eq('id', identifier) : query.eq('legacy_id', identifier);
+  } else {
+    query = query.eq('status', 'OPEN').order('opened_at', { ascending: false });
+  }
+  const result = await query.limit(1).maybeSingle();
+  const shift = result.data as {
+    id: string; branch_id: string; cash_register_id: string; status: string; opened_at: string; closed_at: string | null;
+  } | null;
+  if (result.error || !shift) throw new Error('No se encontró un turno para la caja al momento del cobro.');
+  const paidTimestamp = Date.parse(paidAt);
+  const openedTimestamp = Date.parse(shift.opened_at);
+  const closedTimestamp = shift.closed_at ? Date.parse(shift.closed_at) : Number.POSITIVE_INFINITY;
+  if (shift.status !== 'OPEN' && shift.status !== 'CLOSED') throw new Error('El turno asociado al cobro no es válido.');
+  if (!Number.isFinite(paidTimestamp) || paidTimestamp < openedTimestamp || paidTimestamp >= closedTimestamp) {
+    throw new Error('El cobro ocurrió fuera del intervalo del turno seleccionado.');
+  }
+  return shift;
+}
+
 async function syncPayment(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
-  const scope = readOperationalScope(payload);
   const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
   const payments = Array.isArray(payload?.payments) ? payload.payments : [];
   if (!orderNumber || payments.length === 0) throw new Error('El pago no contiene una orden y un desglose válido.');
 
   const orderResult = await supabaseAdmin
     .from('pos_orders')
-    .select('id, branch_id, cash_shift_id, cash_register_id, terminal_id')
+    .select('id, branch_id, status')
     .eq('tenant_id', tenantId)
     .eq('idempotency_key', `order:${tenantId}:${orderNumber}`)
     .maybeSingle();
   if (orderResult.error || !orderResult.data) {
     throw new Error('La orden aún no existe en la nube; se reintentará después de sincronizar la comanda.');
   }
+  const orderId = orderResult.data.id;
 
   const allowedMethods = new Set(['CASH', 'CARD', 'SINPE', 'MIXED', 'CREDIT']);
-  const inserted: string[] = [];
-  for (const [index, payment] of payments.entries()) {
-    const amount = safeNumber(payment?.amount, 0);
-    if (amount <= 0) continue;
-    const method = allowedMethods.has(payment?.method) ? payment.method : 'CASH';
-    const idempotencyKey = `${operationId}:${index}`;
-    const existing = await supabaseAdmin
-      .from('pos_payments')
-      .select('id')
-      .eq('tenant_id', tenantId)
-      .eq('idempotency_key', idempotencyKey)
-      .maybeSingle();
-    if (existing.data) {
-      inserted.push(existing.data.id);
-      continue;
-    }
+  const preparedPayments = payments.map((payment: any, index: number) => ({
+    payment,
+    index,
+    amount: safeNumber(payment?.amount, 0),
+    method: allowedMethods.has(payment?.method) ? payment.method : 'CASH',
+    idempotencyKey: `${operationId}:${index}`
+  })).filter((item: any) => item.amount > 0);
+  if (preparedPayments.length === 0) throw new Error('El pago no contiene montos positivos válidos.');
 
+  const existingPayments = new Map<string, any>();
+  for (const item of preparedPayments) {
+    const existing = await supabaseAdmin.from('pos_payments')
+      .select('id, order_id, cash_shift_id, paid_at, amount, method')
+      .eq('tenant_id', tenantId)
+      .eq('idempotency_key', item.idempotencyKey)
+      .maybeSingle();
+    if (existing.error) throw new Error('No se pudo verificar si el cobro ya se había registrado.');
+    if (existing.data) {
+      if (existing.data.order_id !== orderResult.data.id
+        || Number(existing.data.amount) !== item.amount
+        || existing.data.method !== item.method) {
+        throw new Error('La clave de este cobro ya está asociada a una operación distinta; contacte al administrador.');
+      }
+      existingPayments.set(item.idempotencyKey, existing.data);
+    }
+  }
+
+  // Si todos los renglones ya existen, es un reintento idempotente: nunca debe
+  // fallar por un cierre diario posterior ni volver a insertar/cargar el pago.
+  if (existingPayments.size === preparedPayments.length) {
+    const firstExisting = existingPayments.get(preparedPayments[0].idempotencyKey);
+    for (const item of preparedPayments) {
+      const existing = existingPayments.get(item.idempotencyKey);
+      if (existing.cash_shift_id !== firstExisting.cash_shift_id
+        || existing.paid_at !== firstExisting.paid_at) {
+        throw new Error('Los renglones del cobro idempotente tienen alcances distintos; contacte al administrador.');
+      }
+    }
+    let existingCashRegisterId: string | null = null;
+    if (firstExisting.cash_shift_id) {
+      const shiftLookup = await supabaseAdmin.from('pos_cash_shifts')
+        .select('cash_register_id')
+        .eq('tenant_id', tenantId)
+        .eq('id', firstExisting.cash_shift_id)
+        .maybeSingle();
+      if (!shiftLookup.error) existingCashRegisterId = shiftLookup.data?.cash_register_id || null;
+    }
+    const creditAmount = preparedPayments
+      .filter((item: any) => item.method === 'CREDIT')
+      .reduce((total: number, item: any) => total + item.amount, 0);
+    if (creditAmount > 0) await syncEmployeeCredit(tenantId, userId, operationId, orderResult.data.id, orderNumber, payload, creditAmount);
+    if (payload?.closeOrder === true && orderResult.data.status !== 'CLOSED') {
+      const closeResult = await supabaseAdmin.from('pos_orders')
+        .update({ status: 'CLOSED', closed_at: new Date().toISOString() })
+        .eq('id', orderResult.data.id)
+        .eq('tenant_id', tenantId);
+      if (closeResult.error) throw new Error('No se pudo completar el cierre de la orden ya cobrada.');
+    }
+    const paymentIds = preparedPayments.map((item: any) => existingPayments.get(item.idempotencyKey).id);
+    await supabaseAdmin.from('pos_audit_events').insert({
+      tenant_id: tenantId,
+      actor_user_id: userId,
+      action: 'OFFLINE_SYNC',
+      actor_employee_id: employeeId || null,
+      entity_type: 'PAYMENT',
+      entity_id: orderResult.data.id,
+      request_id: operationId,
+      metadata: { paymentIds, orderNumber, status: 'PENDING', source: 'pwa', alreadyApplied: true }
+    });
+    return {
+      orderId: orderResult.data.id,
+      paymentIds,
+      cashRegisterId: existingCashRegisterId,
+      cashShiftId: firstExisting.cash_shift_id,
+      paidAt: firstExisting.paid_at,
+      status: 'PENDING',
+      alreadyApplied: true
+    };
+  }
+
+  let priorCashShiftId: string | null = null;
+  let priorCashRegisterId: string | null = null;
+  let priorPaidAt: string | null = null;
+  if (existingPayments.size > 0) {
+    const firstExisting = existingPayments.values().next().value;
+    for (const existing of existingPayments.values()) {
+      if (existing.cash_shift_id !== firstExisting.cash_shift_id || existing.paid_at !== firstExisting.paid_at) {
+        throw new Error('Los renglones ya registrados de este cobro tienen alcances distintos; contacte al administrador.');
+      }
+    }
+    if (!firstExisting.cash_shift_id || !firstExisting.paid_at) {
+      throw new Error('Hay un renglón de este cobro ya registrado sin turno o fecha verificables; no se reasignó. Contacte al administrador.');
+    }
+    priorCashShiftId = firstExisting.cash_shift_id;
+    priorPaidAt = firstExisting.paid_at;
+    const priorShift = await supabaseAdmin.from('pos_cash_shifts')
+      .select('cash_register_id')
+      .eq('tenant_id', tenantId)
+      .eq('id', priorCashShiftId)
+      .maybeSingle();
+    if (priorShift.error || !priorShift.data?.cash_register_id) {
+      throw new Error('No se pudo verificar la caja original del cobro parcialmente aplicado; no se reasignó. Contacte al administrador.');
+    }
+    priorCashRegisterId = priorShift.data.cash_register_id;
+  }
+
+  const registerIdentifier = readCashControlId(priorCashRegisterId || payload?.cashRegisterId, 'La caja');
+  if (!registerIdentifier) throw new Error('El cobro requiere una caja registrada. Selecciona una caja y abre su turno.');
+  const register = await resolveCashRegister(tenantId, registerIdentifier);
+  const requestedShiftId = priorCashShiftId || readCashControlId(payload?.cashShiftId, 'El turno');
+  const occurredAtValue = typeof payload?.occurredAt === 'string' ? payload.occurredAt : '';
+  const occurredTimestamp = occurredAtValue ? Date.parse(occurredAtValue) : Number.NaN;
+  if (!priorPaidAt && occurredAtValue && !Number.isFinite(occurredTimestamp)) throw new Error('La fecha del cobro es inválida.');
+  if (!priorPaidAt && Number.isFinite(occurredTimestamp) && occurredTimestamp > Date.now() + 5 * 60 * 1000) {
+    throw new Error('La fecha del cobro no puede estar en el futuro.');
+  }
+  const paidAt = priorPaidAt || (Number.isFinite(occurredTimestamp) ? new Date(occurredTimestamp).toISOString() : new Date().toISOString());
+
+  // Se consulta antes de insertar el cobro. El trigger SQL vuelve a validar
+  // dentro de la misma transacción para cerrar carreras con el cierre diario.
+  if (existingPayments.size < preparedPayments.length) {
+    await assertCashRegisterOpenForPayment(supabaseAdmin, tenantId, register.branch_id, register.id, register.name, paidAt);
+  }
+
+  const shift = await resolvePaymentShift(tenantId, register.id, requestedShiftId, paidAt);
+  if (shift.branch_id !== register.branch_id) throw new Error('La caja y el turno no pertenecen a la misma sucursal.');
+
+  const missingPaymentRows = preparedPayments
+    .filter((item: any) => !existingPayments.has(item.idempotencyKey))
+    .map((item: any) => ({
+      tenant_id: tenantId,
+      order_id: orderId,
+      cash_shift_id: shift.id,
+      amount: item.amount,
+      method: item.method,
+      provider: typeof item.payment?.provider === 'string' ? item.payment.provider.slice(0, 80) : 'POS_OFFLINE_SYNC',
+      provider_transaction_id: typeof item.payment?.reference === 'string' ? item.payment.reference.slice(0, 160) : null,
+      status: 'PENDING',
+      paid_at: paidAt,
+      idempotency_key: item.idempotencyKey
+    }));
+  const insertedByKey = new Map<string, string>();
+  if (missingPaymentRows.length > 0) {
+    // Un único INSERT mantiene atómicos los medios de pago mixtos. El trigger
+    // bloquea la misma fila de caja durante toda la sentencia, así que el cierre
+    // diario no puede quedar entre dos renglones de una venta.
     const paymentResult = await supabaseAdmin
       .from('pos_payments')
-      .insert({
-        tenant_id: tenantId,
-        order_id: orderResult.data.id,
-        branch_id: scope.branchId || orderResult.data.branch_id,
-        cash_shift_id: scope.cashShiftId || orderResult.data.cash_shift_id,
-        cash_register_id: scope.cashRegisterId || orderResult.data.cash_register_id,
-        terminal_id: scope.terminalId || orderResult.data.terminal_id,
-        amount,
-        method,
-        provider: typeof payment?.provider === 'string' ? payment.provider.slice(0, 80) : 'POS_OFFLINE_SYNC',
-        provider_transaction_id: typeof payment?.reference === 'string' ? payment.reference.slice(0, 160) : null,
-        status: 'PENDING',
-        idempotency_key: idempotencyKey
-      })
-      .select('id')
-      .single();
-    if (paymentResult.error || !paymentResult.data) throw new Error('No se pudo registrar el pago pendiente.');
-    inserted.push(paymentResult.data.id);
+      .insert(missingPaymentRows)
+      .select('id, idempotency_key');
+    if (paymentResult.error || !paymentResult.data) {
+      const dbMessage = typeof paymentResult.error?.message === 'string' ? paymentResult.error.message : '';
+      const dailyClosedPrefix = 'DAILY_CASH_CLOSED|';
+      if (dbMessage.startsWith(dailyClosedPrefix)) {
+        throw new DailyCashClosedError(register.name, '', dbMessage.slice(dailyClosedPrefix.length));
+      }
+      throw new Error('No se pudo registrar el pago pendiente.');
+    }
+    for (const row of paymentResult.data) {
+      if (typeof row?.id === 'string' && typeof row?.idempotency_key === 'string') {
+        insertedByKey.set(row.idempotency_key, row.id);
+      }
+    }
   }
+  const inserted = preparedPayments.map((item: any) =>
+    existingPayments.get(item.idempotencyKey)?.id || insertedByKey.get(item.idempotencyKey)
+  );
+  if (inserted.some((paymentId: unknown) => typeof paymentId !== 'string')) {
+    throw new Error('No se pudieron confirmar todos los renglones del cobro; contacte al administrador.');
+  }
+  const paymentIds = inserted as string[];
 
   const creditAmount = payments
     .filter((payment: any) => payment?.method === 'CREDIT')
@@ -314,10 +492,10 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
     entity_type: 'PAYMENT',
     entity_id: orderResult.data.id,
     request_id: operationId,
-    metadata: { paymentIds: inserted, orderNumber, status: 'PENDING', source: 'pwa' }
+    metadata: { paymentIds, orderNumber, status: 'PENDING', source: 'pwa' }
   });
 
-  return { orderId: orderResult.data.id, paymentIds: inserted, status: 'PENDING' };
+  return { orderId: orderResult.data.id, paymentIds, cashRegisterId: register.id, cashShiftId: shift.id, paidAt, status: 'PENDING' };
 }
 
 async function findOrder(tenantId: string, orderNumber: unknown) {
@@ -423,8 +601,35 @@ async function syncInvoice(tenantId: string, userId: string, employeeId: string 
   if (!clave || !consecutivo) throw new Error('El comprobante offline no contiene clave y consecutivo.');
   if (!['FE', 'TE', 'NC', 'ND'].includes(payload?.documentType)) throw new Error('El tipo de comprobante offline no es válido.');
 
-  const branch = await findBranch(tenantId, scope.branchId);
+  if (scope.branchId && scope.branchId !== order.branchId) {
+    throw new Error('La sucursal del comprobante no coincide con la sucursal de la orden.');
+  }
+  const branch = await findBranch(tenantId, scope.branchId || order.branchId);
   if (!branch) throw new Error('No existe una sucursal activa para registrar el comprobante.');
+
+  let linkedPaymentId: string | null = null;
+  if (payload?.paymentId !== undefined && payload?.paymentId !== null && payload?.paymentId !== '') {
+    if (!isUuid(payload.paymentId)) throw new Error('El payment_id del comprobante no es un UUID válido.');
+    const payment = await supabaseAdmin.from('pos_payments')
+      .select('id, order_id, cash_shift_id')
+      .eq('tenant_id', tenantId)
+      .eq('id', payload.paymentId)
+      .maybeSingle();
+    if (payment.error || !payment.data || payment.data.order_id !== order.id) {
+      throw new Error('El payment_id del comprobante no corresponde a esta orden.');
+    }
+    if (payment.data.cash_shift_id) {
+      const paymentShift = await supabaseAdmin.from('pos_cash_shifts')
+        .select('branch_id')
+        .eq('tenant_id', tenantId)
+        .eq('id', payment.data.cash_shift_id)
+        .maybeSingle();
+      if (paymentShift.error || !paymentShift.data || paymentShift.data.branch_id !== branch.id) {
+        throw new Error('El turno del pago no coincide con la sucursal del comprobante.');
+      }
+    }
+    linkedPaymentId = payment.data.id;
+  }
 
   const existing = await supabaseAdmin
     .from('pos_invoices')
@@ -439,14 +644,13 @@ async function syncInvoice(tenantId: string, userId: string, employeeId: string 
     tenant_id: tenantId,
     branch_id: branch.id,
     order_id: order.id,
-    cash_shift_id: scope.cashShiftId,
-    cash_register_id: scope.cashRegisterId,
-    terminal_id: scope.terminalId,
+    payment_id: linkedPaymentId,
     clave: clave.slice(0, 50),
     consecutivo: consecutivo.slice(0, 20),
     document_type: payload.documentType,
     hacienda_status: 'PENDING',
     total: Math.max(0, safeNumber(payload.total, 0)),
+    issued_at: parseFiscalInvoiceIssuedAt(payload?.invoiceData?.fechaEmision),
     invoice_data: sanitizeFiscalInvoiceData(payload.invoiceData),
     xml_content: typeof payload.xmlContent === 'string' ? payload.xmlContent : null
   }).select('id, hacienda_status').single();
@@ -536,19 +740,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     else if (action === 'ADJUST_INVENTORY') result = await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'EMIT_INVOICE') result = await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'CLOSE_CASH_SHIFT') result = await closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
+    else if (action === 'CLOSE_DAILY_CASH') result = await closeDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
     else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
     else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
     else result = await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
 
-    if (action === 'CLOSE_CASH_SHIFT' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
+    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
       const details = result as Record<string, unknown>;
-      const entityId = typeof details.terminalId === 'string' ? details.terminalId : details.shiftId;
+      const entityId = typeof details.terminalId === 'string'
+        ? details.terminalId
+        : typeof details.closureId === 'string' ? details.closureId : details.shiftId;
       const audit = await supabaseAdmin.from('pos_audit_events').insert({
         tenant_id: tenantId,
         actor_user_id: auth.userId,
         action: 'OFFLINE_SYNC',
         actor_employee_id: auth.employeeId || null,
-        entity_type: action === 'ASSIGN_CASH_TERMINAL' ? 'CASH_TERMINAL' : 'CASH_SHIFT',
+        entity_type: action === 'ASSIGN_CASH_TERMINAL'
+          ? 'CASH_TERMINAL'
+          : action === 'CLOSE_DAILY_CASH' ? 'DAILY_CASH_CLOSURE' : 'CASH_SHIFT',
         entity_id: entityId || null,
         request_id: operationId,
         metadata: { action, ...details }
@@ -558,6 +767,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
-    return res.status(409).json({ error: error?.message || 'No se pudo aplicar la operación offline.' });
+    return res.status(409).json({
+      error: error?.message || 'No se pudo aplicar la operación offline.',
+      ...(typeof error?.code === 'string' ? { code: error.code } : {})
+    });
   }
 }

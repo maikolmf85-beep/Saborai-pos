@@ -35,7 +35,7 @@ import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
 import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
-import { posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
+import { PosCloudSyncError, posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
 import { inventoryService } from './services/inventoryService';
 import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
@@ -239,6 +239,31 @@ export function App() {
       setNotifications(prev => prev.filter(n => n.id !== notif.id));
     }, 7000);
   }, []);
+
+  useEffect(() => {
+    const handleRejectedSync = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        tenantId?: string;
+        code?: string;
+        message?: string;
+        employeeCreditIdempotencyKey?: string;
+      }>).detail;
+      if (detail?.tenantId !== tenant.id || detail.code !== 'DAILY_CASH_CLOSED') return;
+      if (detail.employeeCreditIdempotencyKey
+        && employeeCreditService.discardPendingCharge(tenant.id, detail.employeeCreditIdempotencyKey)) {
+        void employeeCreditService.refreshLedger(tenant.id).catch(() => {});
+      }
+      addNotification({
+        id: `daily_cash_closed_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'Cobro no registrado: caja cerrada',
+        message: detail.message || 'La caja ya tiene cierre diario. Contacte al administrador si necesita corregir el cierre.',
+        timestamp: new Date()
+      });
+    };
+    window.addEventListener('saborai_sync_rejected', handleRejectedSync);
+    return () => window.removeEventListener('saborai_sync_rejected', handleRejectedSync);
+  }, [addNotification, tenant.id]);
 
   useEffect(() => {
     if (isLoadingAuth || !currentUser?.id) return;
@@ -1603,6 +1628,15 @@ export function App() {
 
   const handleRegisterPayment = (sale: SaleCloudPayload) => {
     const paymentOperationId = salePaymentOperationId(tenant.id, sale);
+    const cashRegisterId = cashShiftService.getCurrentRegisterId();
+    const cashShiftId = cashShiftService.getActiveShift(cashRegisterId)?.id;
+    const saleOccurredAt = new Date().toISOString();
+    const saleWithCashScope: SaleCloudPayload = {
+      ...sale,
+      cashRegisterId,
+      cashShiftId: cashShiftId || undefined,
+      occurredAt: saleOccurredAt
+    };
     const executiveEmployeeId = sale.table.activeOrder?.executiveEmployeeId;
     const employeeCredit = sale.paymentMethod === '04-Credito' && executiveEmployeeId
       ? {
@@ -1622,6 +1656,9 @@ export function App() {
     };
     const paymentPayload = {
       orderNumber: sale.table.activeOrder?.orderNumber,
+      cashRegisterId,
+      cashShiftId,
+      occurredAt: saleOccurredAt,
       payments: [{
         amount: sale.total,
         method: sale.paymentMethod === '01-Efectivo' ? 'CASH' : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : sale.paymentMethod === '04-Credito' ? 'CREDIT' : 'SINPE',
@@ -1649,9 +1686,23 @@ export function App() {
     }
 
     if (localDB.isOnline()) {
-      void posCloudService.syncSale(tenant.id, sale).then(() => {
+      void posCloudService.syncSale(tenant.id, saleWithCashScope).then(() => {
         void employeeCreditService.refreshLedger(tenant.id).catch(error => console.warn('[Employee Credit] No se pudo actualizar la vista local:', error));
       }).catch(async error => {
+        if (error instanceof PosCloudSyncError && error.code === 'DAILY_CASH_CLOSED') {
+          if (employeeCredit?.idempotencyKey
+            && employeeCreditService.discardPendingCharge(tenant.id, employeeCredit.idempotencyKey)) {
+            void employeeCreditService.refreshLedger(tenant.id).catch(() => {});
+          }
+          addNotification({
+            id: `daily_cash_closed_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Cobro no registrado: caja cerrada',
+            message: error.message,
+            timestamp: new Date()
+          });
+          return;
+        }
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
         await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
         if (inventoryPayload.items.length > 0) await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);

@@ -2,7 +2,7 @@ import type { ElectronicInvoiceCR, Table } from '../types';
 import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems';
 import { getUndispatchedItems } from './inventoryDispatch';
 
-export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE' | 'CLOSE_CASH_SHIFT' | 'IMPORT_CASH_SHIFT' | 'ASSIGN_CASH_TERMINAL';
+export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE' | 'CLOSE_CASH_SHIFT' | 'CLOSE_DAILY_CASH' | 'IMPORT_CASH_SHIFT' | 'ASSIGN_CASH_TERMINAL';
 
 export interface SaleCloudPayload {
   table: Table;
@@ -10,7 +10,17 @@ export interface SaleCloudPayload {
   paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
   total: number;
   closeOrder: boolean;
+  cashRegisterId?: string;
+  cashShiftId?: string;
+  occurredAt?: string;
   items: Array<{ name: string; quantity: number; menuItemId?: string; inventoryDeductedAtDispatch?: boolean }>;
+}
+
+export class PosCloudSyncError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = 'PosCloudSyncError';
+  }
 }
 
 export function salePaymentOperationId(tenantId: string, sale: SaleCloudPayload): string {
@@ -57,7 +67,13 @@ class PosCloudService {
       body: JSON.stringify({ operationId, tenantId, action, ...actor, payload })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `No se pudo sincronizar ${action}.`);
+    if (!response.ok) {
+      throw new PosCloudSyncError(
+        data.error || `No se pudo sincronizar ${action}.`,
+        response.status,
+        typeof data.code === 'string' ? data.code : undefined
+      );
+    }
     return data.result as T;
   }
 
@@ -68,7 +84,7 @@ class PosCloudService {
     const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
     const paymentOperationId = salePaymentOperationId(tenantId, sale);
     await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
-    await this.syncOperation('PAYMENT', {
+    const paymentResult = await this.syncOperation<{ paymentIds?: string[] }>('PAYMENT', {
       orderNumber,
       payments: [{
         amount: sale.total,
@@ -77,6 +93,9 @@ class PosCloudService {
           : sale.paymentMethod === '02-Tarjeta' ? 'CARD' : sale.paymentMethod === '04-Credito' ? 'CREDIT' : 'SINPE',
         provider: 'POS_ONLINE'
       }],
+      cashRegisterId: sale.cashRegisterId,
+      cashShiftId: sale.cashShiftId,
+      occurredAt: sale.occurredAt || new Date().toISOString(),
       employeeCredit: sale.paymentMethod === '04-Credito' && sale.table.activeOrder?.executiveEmployeeId
         ? {
             employeeId: sale.table.activeOrder.executiveEmployeeId,
@@ -95,6 +114,7 @@ class PosCloudService {
     }
     await this.syncOperation('EMIT_INVOICE', {
       orderNumber,
+      paymentId: paymentResult.paymentIds?.length === 1 ? paymentResult.paymentIds[0] : undefined,
       clave: sale.invoice.clave50Digitos,
       consecutivo: sale.invoice.consecutivo,
       documentType: sale.invoice.tipoDocumento || 'TE',

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { describeNyzaAction, getNyzaMenuSnapshot, getNyzaTableSnapshot, validateNyzaAction } from '../src/services/nyzaActionValidation.ts';
-import { filterPendingItemsForTenant } from '../src/services/db.ts';
+import { filterPendingItemsForTenant, filterSyncableItemsForTenant } from '../src/services/db.ts';
 import { runTenantBoundToolSequence } from '../src/services/nyzaToolSequence.ts';
 
 class MemoryStorage {
@@ -264,6 +264,15 @@ test('filtra cola offline estrictamente por tenant y excluye elementos legacy si
     { ...base, id: 'done', tenantId: 'restaurant-a', synced: true, status: 'SYNCED' }
   ], 'restaurant-a');
   assert.deepEqual(pending.map(item => item.id), ['a']);
+});
+
+test('mantiene visibles los pagos bloqueados por cierre diario pero los excluye de nuevos reintentos', () => {
+  const items = [
+    { id: 'pending', tenantId: 'restaurant-a', action: 'PAYMENT', payload: {}, timestamp: '2026-01-01T00:00:00Z', synced: false, status: 'PENDING', description: 'Pago pendiente' },
+    { id: 'rejected', tenantId: 'restaurant-a', action: 'PAYMENT', payload: {}, timestamp: '2026-01-02T00:00:00Z', synced: false, status: 'REJECTED', description: 'Caja cerrada' }
+  ];
+  assert.deepEqual(filterPendingItemsForTenant(items, 'restaurant-a').map(item => item.id), ['pending', 'rejected']);
+  assert.deepEqual(filterSyncableItemsForTenant(items, 'restaurant-a').map(item => item.id), ['pending']);
 });
 
 test('cancela herramientas Nyza restantes si cambia el tenant durante una herramienta async', async () => {
