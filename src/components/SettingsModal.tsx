@@ -406,7 +406,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           )}
 
           <div className="ml-auto flex items-center gap-2 my-1 shrink-0">
-            {onOpenStaffModal && (
+            {currentUser?.role === 'ADMIN' && onOpenStaffModal && (
               <button
                 onClick={() => {
                   onClose();

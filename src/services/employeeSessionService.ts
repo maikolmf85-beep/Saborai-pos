@@ -53,10 +53,10 @@ export async function syncEmployeeRoster(tenantId: string, employees: UserProfil
   await readResponse(response);
 }
 
-export async function fetchEmployeeRoster(tenantId: string): Promise<UserProfile[]> {
+async function fetchEmployeeRosterFrom(tenantId: string, path: string, includeContacts: boolean): Promise<UserProfile[]> {
   const token = currentToken();
   if (!token) throw new Error('No hay una sesión autenticada para cargar el padrón.');
-  const response = await fetch('/api/auth/employee-roster', {
+  const response = await fetch(path, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}` }
   });
@@ -67,13 +67,21 @@ export async function fetchEmployeeRoster(tenantId: string): Promise<UserProfile
   const mapProfile = (member: any): UserProfile => ({
     id: String(member.id || ''),
     name: String(member.name || ''),
-    email: String(member.email || ''),
-    phone: String(member.phone || ''),
+    email: includeContacts ? String(member.email || '') : '',
+    phone: includeContacts ? String(member.phone || '') : '',
     restaurantName: String(member.restaurantName || ''),
     role: member.role,
     active: member.active !== false
   });
   return [mapProfile(data.owner), ...data.employees.map(mapProfile)].filter(member => Boolean(member.id));
+}
+
+export function fetchEmployeeRoster(tenantId: string): Promise<UserProfile[]> {
+  return fetchEmployeeRosterFrom(tenantId, '/api/auth/employee-roster', false);
+}
+
+export function fetchEmployeeRosterAdmin(tenantId: string): Promise<UserProfile[]> {
+  return fetchEmployeeRosterFrom(tenantId, '/api/auth/employee-roster-admin', true);
 }
 
 export async function createEmployeeSession(

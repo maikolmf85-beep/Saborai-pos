@@ -4,8 +4,9 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { Resend } from 'resend';
 import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
-import { allowedOriginForRedirect, checkRateLimit, getJwtSecret, handleOptions, requireAuth, requireRole, setCorsHeaders } from './_utils/security.js';
+import { allowedOriginForRedirect, authenticateRequest, checkRateLimit, getJwtSecret, handleOptions, requireAuth, requireRole, setCorsHeaders } from './_utils/security.js';
 import { buildEmployeeTokenClaims, isEmployeeRole, normalizeEmployeeRoster } from './_utils/employeeSession.js';
+import { authorizeEmployeeRosterRead, buildEmployeeRosterPayload } from './_utils/employeeRoster.js';
 import { processTilopaySubscription } from './_utils/tilopayClient.js';
 import { consumeTilopaySignupHandoff, getTilopaySignupHandoff } from './_utils/tilopaySignupHandoff.js';
 import { consumePasswordResetToken, createPasswordResetToken } from './_utils/passwordReset.js';
@@ -129,51 +130,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    if (rawAction === 'employee-roster') {
-      if (!['GET', 'POST'].includes(req.method || '')) return res.status(405).json({ error: 'Method Not Allowed' });
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un tenant asociado.' });
+    if (rawAction === 'employee-roster' || rawAction === 'employee-roster-admin') {
+      const includeContacts = rawAction === 'employee-roster-admin';
+      if (includeContacts && req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
+      if (!includeContacts && !['GET', 'POST'].includes(req.method || '')) return res.status(405).json({ error: 'Method Not Allowed' });
 
       if (req.method === 'GET') {
-        const [employeesResult, ownerResult] = await Promise.all([
-          supabase
-            .from('pos_employees')
+        const auth = await authenticateRequest(req);
+        const access = authorizeEmployeeRosterRead(auth, includeContacts ? 'contacts' : 'operational');
+        if (access.allowed === false) return res.status(access.status).json({ error: access.error });
+        const employeesQuery = access.includeContacts
+          ? supabase.from('pos_employees')
             .select('external_id, name, email, phone, role, is_active')
-            .eq('tenant_id', auth.tenantId)
-            .order('name', { ascending: true }),
-          supabase
-            .from('users')
+            .eq('tenant_id', access.tenantId)
+            .order('name', { ascending: true })
+          : supabase.from('pos_employees')
+            .select('external_id, name, role, is_active')
+            .eq('tenant_id', access.tenantId)
+            .order('name', { ascending: true });
+        const ownerQuery = access.includeContacts
+          ? supabase.from('users')
             .select('id, name, email, phone, restaurant_name, role, active')
-            .eq('id', auth.userId)
+            .eq('id', access.userId)
             .maybeSingle()
+          : supabase.from('users')
+            .select('id, name, role, active')
+            .eq('id', access.userId)
+            .maybeSingle();
+        const [employeesResult, ownerResult] = await Promise.all([
+          employeesQuery,
+          ownerQuery
         ]);
         if (employeesResult.error || ownerResult.error || !ownerResult.data) {
           console.error('[Auth] No se pudo leer el padrón de empleados.');
           return res.status(503).json({ error: 'No se pudo cargar el padrón de empleados.' });
         }
-        const owner = ownerResult.data;
-        const ownerProfile = {
-          id: owner.id,
-          name: owner.name,
-          email: owner.email,
-          phone: owner.phone,
-          restaurantName: owner.restaurant_name,
-          role: owner.role,
-          active: owner.active
-        };
-        const employees = (employeesResult.data || []).map((employee: any) => ({
-          id: employee.external_id,
-          name: employee.name,
-          email: employee.email || '',
-          phone: employee.phone || '',
-          restaurantName: owner.restaurant_name,
-          role: employee.role,
-          active: employee.is_active
-        }));
-        return res.status(200).json({ success: true, tenantId: auth.tenantId, accountUserId: auth.userId, owner: ownerProfile, employees });
+        return res.status(200).json(buildEmployeeRosterPayload(
+          access,
+          ownerResult.data,
+          employeesResult.data || []
+        ));
       }
 
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un tenant asociado.' });
       if (!requireRole(auth, res, ['ADMIN'])) return;
 
       const rateLimit = checkRateLimit(`employee-roster:${auth.userId}`, 20, 60000);

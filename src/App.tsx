@@ -39,7 +39,7 @@ import { PosCloudSyncError, posCloudService, SaleCloudPayload, salePaymentOperat
 import { inventoryService } from './services/inventoryService';
 import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
-import { createEmployeeSession, fetchEmployeeRoster, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
+import { createEmployeeSession, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -1159,13 +1159,18 @@ export function App() {
       ? syncEmployeeRoster(tenant.id, staffList)
       : Promise.resolve();
     void migration
-      .then(() => fetchEmployeeRoster(tenant.id))
+      .then(() => employeeRosterRole === 'ADMIN'
+        ? fetchEmployeeRosterAdmin(tenant.id)
+        : fetchEmployeeRoster(tenant.id))
       .then(serverStaff => {
         const serverHasEmployees = serverStaff.length > 1;
         const effectiveStaff = serverHasEmployees
           ? serverStaff
           : [serverStaff[0], ...staffList.filter(member => member.id !== serverStaff[0]?.id)];
-        handleUpdateStaff(redactEmployeePins(effectiveStaff));
+        const visibleStaff = employeeRosterRole === 'ADMIN'
+          ? effectiveStaff
+          : effectiveStaff.map(member => ({ ...member, email: '', phone: '' }));
+        handleUpdateStaff(redactEmployeePins(visibleStaff));
       })
       .catch(error => {
         employeeRosterSyncRef.current = '';
@@ -2358,7 +2363,7 @@ export function App() {
 
       {/* Staff & User Roles Management Modal */}
       <StaffModal
-        isOpen={isStaffModalOpen}
+        isOpen={isStaffModalOpen && currentUser?.role === 'ADMIN'}
         onClose={() => setIsStaffModalOpen(false)}
         currentUser={currentUser}
         currentTenant={tenant}
