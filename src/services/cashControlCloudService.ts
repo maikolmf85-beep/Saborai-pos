@@ -415,48 +415,38 @@ class CashControlCloudService {
     let skippedExisting = 0;
 
     for (const local of preview.localRegisters) {
-      const branchResult = await this.resolveBranch(tenantId, local.branchCode, cloud.branches);
+      const requestedBranchCode = String(local.branchCode || '001').replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
+      const exactBranch = cloud.branches.find(candidate => candidate.code === requestedBranchCode);
+      if (!exactBranch && cloud.branches.length > 1) {
+        conflicts.push(`No se importó la caja "${local.name}": no se encontró la sucursal ${requestedBranchCode}.`);
+        continue;
+      }
+      const branch = exactBranch || (cloud.branches.length === 1 ? cloud.branches[0] : undefined);
+      const branchCode = branch?.code || requestedBranchCode;
       const legacyMatch = cloud.registers.find(remote => remote.legacy_id === local.id);
-      const codeMatch = cloud.registers.find(remote => remote.branch_id === branchResult.id && remote.terminal_code === local.terminalCode);
+      const codeMatch = branch
+        ? cloud.registers.find(remote => remote.branch_id === branch.id && remote.terminal_code === local.terminalCode)
+        : undefined;
       if (isUnrelatedRegisterCodeMatch(local.id, legacyMatch?.id, codeMatch?.id)) {
-        conflicts.push(`No se importó la caja "${local.name}": el código DGT ${local.terminalCode} ya pertenece a "${codeMatch?.name || 'otra caja'}" en la sucursal ${local.branchCode}.`);
+        conflicts.push(`No se importó la caja "${local.name}": el código DGT ${local.terminalCode} ya pertenece a "${codeMatch?.name || 'otra caja'}" en la sucursal ${branchCode}.`);
         continue;
       }
       const existing = legacyMatch || codeMatch;
-
-      if (existing && !options.overwriteExisting) {
+      if (existing && !options.overwriteExisting && !local.assignedPrinterId && !existing.assigned_printer_id) {
         importedRegisterIds.set(local.id, existing);
         skippedExisting += 1;
-        if (!existing.legacy_id) {
-          await client.from('pos_cash_registers').update({ legacy_id: local.id, source_device_key: deviceKey }).eq('id', existing.id);
-        }
         continue;
       }
 
-      const payload = {
-        tenant_id: tenantId,
-        branch_id: branchResult.id,
-        name: local.name,
-        terminal_code: local.terminalCode,
-        allows_billing: local.allowsBilling,
-        allows_ordering: local.allowsOrdering,
-        is_default: Boolean(local.isDefault),
-        linked_zones: local.linkedZones || (local.linkedZone ? [local.linkedZone] : []),
-        notes: local.notes || null,
-        legacy_id: local.id,
-        source_device_key: deviceKey,
-        is_active: local.isActive !== false
-      };
-
-      const result = existing
-        ? await client.from('pos_cash_registers').update(payload).eq('id', existing.id).select('*').single()
-        : await client.from('pos_cash_registers').insert(payload).select('*').single();
-      if (result.error || !result.data) {
-        conflicts.push(`No se pudo importar la caja "${local.name}": ${result.error?.message || 'respuesta vacía'}`);
-        continue;
+      try {
+        const result = await this.ensureCloudBranchAndRegister(tenantId, local, branchCode, deviceKey, Boolean(options.overwriteExisting));
+        importedRegisterIds.set(local.id, result.register);
+        if (result.created) importedRegisters += 1;
+        else if (!result.updated) skippedExisting += 1;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        conflicts.push(`No se pudo importar la caja "${local.name}": ${message}`);
       }
-      importedRegisterIds.set(local.id, result.data as CloudRegister);
-      importedRegisters += existing ? 0 : 1;
     }
 
     let importedShifts = 0;
@@ -567,31 +557,67 @@ class CashControlCloudService {
     }, tenantId);
   }
 
-  private async resolveBranch(tenantId: string, branchCode: string, branches: CloudBranch[]): Promise<CloudBranch> {
-    const normalizedCode = String(branchCode || '001').replace(/[^0-9]/g, '').padStart(3, '0').slice(-3);
-    const exact = branches.find(branch => branch.code === normalizedCode);
-    if (exact) return exact;
-    if (branches.length === 1) return branches[0];
-
-    const client = supabaseClient;
-    if (branches.length === 0 && client) {
-      const created = await client
-        .from('pos_branches')
-        .insert({
-          tenant_id: tenantId,
-          name: 'Sucursal Principal',
-          code: normalizedCode,
-          timezone: 'America/Costa_Rica',
-          currency: 'CRC',
-          is_active: true
-        })
-        .select('id, tenant_id, code, name')
-        .single();
-      if (!created.error && created.data) return created.data as CloudBranch;
-      throw new Error(`No se pudo crear la sucursal principal (${normalizedCode}): ${created.error?.message || 'respuesta vacía'}`);
+  private async ensureCloudBranchAndRegister(
+    tenantId: string,
+    local: CashRegister,
+    branchCode: string,
+    deviceKey: string,
+    overwriteExisting: boolean
+  ): Promise<{ branch: CloudBranch; register: CloudRegister; created: boolean; updated: boolean }> {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') {
+      throw new Error('La creación de la sucursal y la caja requiere una sesión activa en línea.');
     }
+    const token = localStorage.getItem('saborai_token');
+    if (!token) throw new Error('No se encontró una sesión válida; vuelve a iniciar sesión como administrador.');
+    const localPrinters = getTenantItem<Array<{
+      id: string;
+      name: string;
+      role: 'caja' | 'cocina' | 'bar';
+      enabled: boolean;
+    }>>('printers_config_v2', tenantId) || [];
 
-    throw new Error(`No se encontró una sucursal para el código ${branchCode || '(vacío)'} del tenant ${tenantId}.`);
+    const response = await fetch('/api/tenant/onboarding', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        action: 'ensure-cash-control-setup',
+        tenantId,
+        branch: { code: branchCode, name: 'Sucursal Principal' },
+        register: {
+          name: local.name,
+          terminalCode: local.terminalCode,
+          legacyId: local.id,
+          allowsBilling: local.allowsBilling,
+          allowsOrdering: local.allowsOrdering,
+          isActive: local.isActive !== false,
+          isDefault: Boolean(local.isDefault),
+          linkedZones: local.linkedZones || (local.linkedZone ? [local.linkedZone] : []),
+          assignedPrinterId: local.assignedPrinterId || null,
+          notes: local.notes || null,
+          sourceDeviceKey: deviceKey
+        },
+        printers: localPrinters.map(printer => ({
+          id: printer.id,
+          name: printer.name,
+          role: printer.role,
+          enabled: printer.enabled
+        })),
+        overwriteExisting
+      })
+    });
+    const result = await response.json().catch(() => ({})) as Record<string, any>;
+    if (!response.ok) throw new Error(result.error || `El servidor rechazó la creación (HTTP ${response.status}).`);
+    if (!result.branch || !result.register) throw new Error('El servidor no confirmó la sucursal y la caja.');
+
+    return {
+      branch: result.branch as CloudBranch,
+      register: result.register as CloudRegister,
+      created: result.created === true,
+      updated: result.updated === true
+    };
   }
 
   subscribe(tenantId: string, onChange: () => void): () => void {
