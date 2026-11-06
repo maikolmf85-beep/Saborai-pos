@@ -2,7 +2,7 @@ import type { ElectronicInvoiceCR, Table } from '../types';
 import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems';
 import { getUndispatchedItems } from './inventoryDispatch';
 
-export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE' | 'CLOSE_CASH_SHIFT' | 'CLOSE_DAILY_CASH' | 'IMPORT_CASH_SHIFT' | 'ASSIGN_CASH_TERMINAL';
+export type PosCloudAction = 'UPDATE_TABLE' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE' | 'CLOSE_CASH_SHIFT' | 'CLOSE_DAILY_CASH' | 'GET_DAILY_CASH_STATUS' | 'OPEN_DAILY_CASH' | 'IMPORT_CASH_SHIFT' | 'ASSIGN_CASH_TERMINAL';
 
 export interface SaleCloudPayload {
   table: Table;

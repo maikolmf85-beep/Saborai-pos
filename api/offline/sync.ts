@@ -9,9 +9,9 @@ import { parseFiscalInvoiceIssuedAt } from '../_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
-import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, importCashShift } from '../_utils/cashControlSync.js';
+import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash } from '../_utils/cashControlSync.js';
 
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -454,6 +454,10 @@ async function syncPayment(tenantId: string, userId: string, employeeId: string 
       if (dbMessage.startsWith(dailyClosedPrefix)) {
         throw new DailyCashClosedError(register.name, '', dbMessage.slice(dailyClosedPrefix.length));
       }
+      const dailyNotOpenPrefix = 'DAILY_CASH_NOT_OPEN|';
+      if (dbMessage.startsWith(dailyNotOpenPrefix)) {
+        throw new DailyCashNotOpenError(register.name, '', dbMessage.slice(dailyNotOpenPrefix.length));
+      }
       throw new Error('No se pudo registrar el pago pendiente.');
     }
     for (const row of paymentResult.data) {
@@ -741,15 +745,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     else if (action === 'EMIT_INVOICE') result = await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'CLOSE_CASH_SHIFT') result = await closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
     else if (action === 'CLOSE_DAILY_CASH') result = await closeDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
+    else if (action === 'GET_DAILY_CASH_STATUS') result = await getDailyCashStatus(supabaseAdmin, tenantId, body.payload);
+    else if (action === 'OPEN_DAILY_CASH') result = await openDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
     else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
     else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
     else result = await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
 
-    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
+    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'OPEN_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL') {
       const details = result as Record<string, unknown>;
       const entityId = typeof details.terminalId === 'string'
         ? details.terminalId
-        : typeof details.closureId === 'string' ? details.closureId : details.shiftId;
+        : typeof details.openingId === 'string' ? details.openingId
+          : typeof details.closureId === 'string' ? details.closureId : details.shiftId;
       const audit = await supabaseAdmin.from('pos_audit_events').insert({
         tenant_id: tenantId,
         actor_user_id: auth.userId,
@@ -757,7 +764,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         actor_employee_id: auth.employeeId || null,
         entity_type: action === 'ASSIGN_CASH_TERMINAL'
           ? 'CASH_TERMINAL'
-          : action === 'CLOSE_DAILY_CASH' ? 'DAILY_CASH_CLOSURE' : 'CASH_SHIFT',
+          : action === 'OPEN_DAILY_CASH' ? 'DAILY_CASH_OPENING'
+            : action === 'CLOSE_DAILY_CASH' ? 'DAILY_CASH_CLOSURE' : 'CASH_SHIFT',
         entity_id: entityId || null,
         request_id: operationId,
         metadata: { action, ...details }

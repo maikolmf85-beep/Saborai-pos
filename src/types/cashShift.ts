@@ -69,6 +69,27 @@ export interface CashRegister {
   linkedZones?: string[]; // Múltiples salones asociados (ej: ['Salón Principal', 'Patio'])
 }
 
+export interface DailyCashStatus {
+  registerId: string;
+  registerName: string;
+  businessDate: string;
+  timezone: string;
+  isOpen: boolean;
+  isClosed: boolean;
+  openedAt?: string | null;
+  openedBy?: string | null;
+  closedAt?: string | null;
+}
+
+export interface DailyCashOpeningResult {
+  openingId: string;
+  cashRegisterId: string;
+  businessDate: string;
+  timezone: string;
+  openedAt: string;
+  alreadyOpened: boolean;
+}
+
 export interface CashShiftParticipant {
   userId: string;
   userName: string;

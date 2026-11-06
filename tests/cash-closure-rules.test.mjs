@@ -93,3 +93,18 @@ test('la migración cuenta documentos reales por caja/turno/fecha, y separa brut
   assert.match(sql, /at time zone v_branch\.timezone/i);
   assert.doesNotMatch(sql, /update public\.pos_tables/i);
 });
+
+test('la migración añade apertura diaria única y la exige antes de turno, cobros y cierre del día', async () => {
+  const sql = await readFile(new URL('../supabase/migrations/20261106100000_daily_cash_openings.sql', import.meta.url), 'utf8');
+  assert.match(sql, /20261105170000_shift_and_daily_cash_closures\.sql/);
+  assert.match(sql, /create table if not exists public\.pos_daily_cash_openings/i);
+  assert.match(sql, /unique \(tenant_id, branch_id, cash_register_id, business_date\)/i);
+  assert.match(sql, /v_business_date := \(v_now at time zone v_branch\.timezone\)::date/i);
+  assert.match(sql, /create trigger pos_cash_shifts_guard_daily_opening/i);
+  assert.match(sql, /create trigger pos_payments_guard_daily_cash_opening/i);
+  assert.match(sql, /create trigger pos_daily_cash_closures_guard_opening/i);
+  assert.match(sql, /DAILY_CASH_NOT_OPEN\|/);
+  assert.match(sql, /DAILY_CASH_CLOSED\|/);
+  assert.match(sql, /for update/i);
+  assert.match(sql, /alter table public\.pos_daily_cash_openings force row level security/i);
+});

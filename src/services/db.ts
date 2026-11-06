@@ -376,8 +376,10 @@ export class SaboraiLocalDB {
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          if (data.code === 'DAILY_CASH_CLOSED' && processingItem.action === 'PAYMENT') {
-            const rejectionMessage = data.error || 'La caja ya tiene cierre diario. El cobro no se registró; contacte al administrador si necesita corregir el cierre.';
+          if ((data.code === 'DAILY_CASH_CLOSED' || data.code === 'DAILY_CASH_NOT_OPEN') && processingItem.action === 'PAYMENT') {
+            const rejectionMessage = data.error || (data.code === 'DAILY_CASH_NOT_OPEN'
+              ? 'Primero debe abrirse la caja del día. El cobro no se registró.'
+              : 'La caja ya tiene cierre diario. El cobro no se registró; contacte al administrador si necesita corregir el cierre.');
             await this.markRejected(
               processingItem,
               data.code,

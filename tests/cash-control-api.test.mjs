@@ -8,8 +8,11 @@ import {
   closeCashShift,
   closeDailyCash,
   DailyCashClosedError,
+  DailyCashNotOpenError,
   getBusinessDateForInstant,
-  importCashShift
+  getDailyCashStatus,
+  importCashShift,
+  openDailyCash
 } from '../api/_utils/cashControlSync.ts';
 import { hasRolePermission, ROLE_PERMISSIONS } from '../api/_utils/rolePermissions.ts';
 
@@ -163,6 +166,56 @@ test('cierra una vez por caja y fecha local, con validación del servidor', asyn
   assert.equal(invalid.calls.length, 0);
 });
 
+test('abre la caja una vez por RPC con caja, tenant y responsable autenticado', async () => {
+  const resultFromServer = {
+    openingId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    cashRegisterId: registerId,
+    businessDate: '2026-11-06',
+    timezone: 'America/Costa_Rica',
+    openedAt: '2026-11-06T14:00:00.000Z',
+    alreadyOpened: false
+  };
+  const { admin, calls } = mockAdmin(
+    [{ data: { id: registerId }, error: null }],
+    [{ data: resultFromServer, error: null }]
+  );
+  assert.deepEqual(await openDailyCash(admin, tenantId, actorId, { registerId }), resultFromServer);
+  assert.deepEqual(calls[0].filters, [['tenant_id', tenantId], ['is_active', true], ['id', registerId]]);
+  assert.equal(calls[1].rpc, 'pos_open_daily_cash');
+  assert.deepEqual(calls[1].values, {
+    p_tenant_id: tenantId,
+    p_cash_register_id: registerId,
+    p_opened_by: actorId
+  });
+  const closed = mockAdmin(
+    [{ data: { id: registerId }, error: null }],
+    [{ data: null, error: { message: 'DAILY_CASH_CLOSED|La caja ya cerró el día.' } }]
+  );
+  await assert.rejects(openDailyCash(closed.admin, tenantId, actorId, { registerId }), error =>
+    error instanceof DailyCashClosedError && /ya cerró el día/.test(error.message)
+  );
+});
+
+test('consulta el estado diario por la fecha local devuelta por la sucursal', async () => {
+  const now = new Date().toISOString();
+  const expectedDate = getBusinessDateForInstant(now, 'America/Costa_Rica');
+  const { admin, calls } = mockAdmin([
+    { data: { id: registerId, branch_id: branchId, name: 'Caja Principal' }, error: null },
+    { data: { timezone: 'America/Costa_Rica' }, error: null },
+    { data: { id: 'daily-opening', opened_at: now, opened_by: actorId, timezone: 'America/Costa_Rica' }, error: null },
+    { data: null, error: null }
+  ]);
+  const status = await getDailyCashStatus(admin, tenantId, { registerId });
+  assert.equal(status.isOpen, true);
+  assert.equal(status.isClosed, false);
+  assert.equal(status.businessDate, expectedDate);
+  assert.equal(status.openedBy, actorId);
+  assert.deepEqual(calls[2].filters, [
+    ['tenant_id', tenantId], ['branch_id', branchId], ['cash_register_id', registerId], ['business_date', expectedDate]
+  ]);
+  assert.equal(calls[3].table, 'pos_daily_cash_closures');
+});
+
 test('rechaza un cobro en línea de caja/fecha local ya cerrada con mensaje claro', async () => {
   const { admin, calls } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
@@ -184,6 +237,34 @@ test('rechaza un cobro en línea de caja/fecha local ya cerrada con mensaje clar
   ]);
 });
 
+test('rechaza un cobro del día si falta la apertura diaria de caja', async () => {
+  const { admin, calls } = mockAdmin([
+    { data: { timezone: 'America/Costa_Rica' }, error: null },
+    { data: null, error: null },
+    { data: null, error: null }
+  ]);
+  await assert.rejects(
+    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T18:00:00.000Z'),
+    error => error instanceof DailyCashNotOpenError
+      && error.code === 'DAILY_CASH_NOT_OPEN'
+      && /Caja Principal/.test(error.message)
+      && /2026-11-06/.test(error.message)
+  );
+  assert.equal(calls[2].table, 'pos_daily_cash_openings');
+});
+
+test('rechaza el cobro offline si su instante es anterior a la apertura diaria', async () => {
+  const { admin } = mockAdmin([
+    { data: { timezone: 'America/Costa_Rica' }, error: null },
+    { data: null, error: null },
+    { data: { id: 'daily-opening', opened_at: '2026-11-06T17:00:00.000Z' }, error: null }
+  ]);
+  await assert.rejects(
+    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T16:59:00.000Z'),
+    error => error.code === 'DAILY_CASH_NOT_OPEN' && /anterior a la apertura/i.test(error.message)
+  );
+});
+
 test('rechaza la sincronización tardía offline cuyo paidAt sigue perteneciendo al día local ya cerrado', async () => {
   const paidAt = '2026-11-06T05:30:00.000Z'; // 23:30 del 5 de noviembre en Costa Rica
   assert.equal(getBusinessDateForInstant(paidAt, 'America/Costa_Rica'), '2026-11-05');
@@ -201,7 +282,8 @@ test('rechaza la sincronización tardía offline cuyo paidAt sigue perteneciendo
 test('el bloqueo de caja/fecha local no afecta a la misma caja en el siguiente día', async () => {
   const { admin } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: null, error: null }
+    { data: null, error: null },
+    { data: { id: 'daily-opening', opened_at: '2026-11-06T06:00:00.000Z' }, error: null }
   ]);
   const nextDay = await assertCashRegisterOpenForPayment(
     admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T06:30:00.000Z'
@@ -216,6 +298,7 @@ test('un reintento con todos los pagos ya aplicados evita el guard y no crea una
   assert.ok(replayIndex >= 0 && guardIndex > replayIndex);
   assert.match(handler.slice(replayIndex, guardIndex), /alreadyApplied: true/);
   assert.match(handler, /DAILY_CASH_CLOSED/);
+  assert.match(handler, /DAILY_CASH_NOT_OPEN/);
   const migration = await readFile(new URL('../supabase/migrations/20261105170000_shift_and_daily_cash_closures.sql', import.meta.url), 'utf8');
   assert.match(migration, /from public\.pos_cash_registers[\s\S]*for update[\s\S]*pos_daily_cash_closures/);
   assert.match(migration, /create trigger pos_payments_guard_daily_cash_closure[\s\S]*before insert or update of[\s\S]*on public\.pos_payments/i);
@@ -223,7 +306,14 @@ test('un reintento con todos los pagos ya aplicados evita el guard y no crea una
   assert.match(migration, /DAILY_CASH_CLOSED\|/);
   assert.match(handler, /typeof error\?\.code === 'string'[\s\S]*\{ code: error\.code \}/);
   const app = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
-  assert.match(app, /error instanceof PosCloudSyncError && error\.code === 'DAILY_CASH_CLOSED'[\s\S]*return;/);
+  assert.match(app, /\['DAILY_CASH_CLOSED', 'DAILY_CASH_NOT_OPEN'\]\.includes\(error\.code \|\| ''\)[\s\S]*return;/);
+  const openingMigration = await readFile(new URL('../supabase/migrations/20261106100000_daily_cash_openings.sql', import.meta.url), 'utf8');
+  assert.match(openingMigration, /create table if not exists public\.pos_daily_cash_openings/);
+  assert.match(openingMigration, /unique \(tenant_id, branch_id, cash_register_id, business_date\)/);
+  assert.match(openingMigration, /create trigger pos_cash_shifts_guard_daily_opening/);
+  assert.match(openingMigration, /create trigger pos_payments_guard_daily_cash_opening/);
+  assert.match(openingMigration, /DAILY_CASH_NOT_OPEN\|/);
+  assert.match(openingMigration, /20261024020000_phase3_hacienda_history\.sql/);
 });
 
 test('pagos y comprobantes usan solo los enlaces existentes del esquema de producción', async () => {
@@ -331,7 +421,7 @@ test('asigna el dispositivo solo a una caja activa del tenant y deriva sucursal 
 });
 
 test('el permiso de caja no se concede a roles sin caja y el handler enruta acciones autenticadas', async () => {
-  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']) {
+  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL']) {
     assert.equal(hasRolePermission('ADMIN', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('CAJERO', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('SALONERO_CAJA', ROLE_PERMISSIONS.offlineSync[action]), true);
@@ -343,6 +433,8 @@ test('el permiso de caja no se concede a roles sin caja y el handler enruta acci
   assert.match(handler, /employeeSessionActorMatches\(/);
   assert.match(handler, /CLOSE_CASH_SHIFT/);
   assert.match(handler, /CLOSE_DAILY_CASH/);
+  assert.match(handler, /GET_DAILY_CASH_STATUS/);
+  assert.match(handler, /OPEN_DAILY_CASH/);
   assert.match(handler, /IMPORT_CASH_SHIFT/);
   assert.match(handler, /ASSIGN_CASH_TERMINAL/);
 });
@@ -351,6 +443,8 @@ test('el cliente envía las escrituras por el endpoint seguro y no escribe direc
   const client = await readFile(new URL('../src/services/cashControlCloudService.ts', import.meta.url), 'utf8');
   assert.match(client, /syncOperation<Record<string, any>>\([\s\S]*?'CLOSE_CASH_SHIFT'/);
   assert.match(client, /'IMPORT_CASH_SHIFT'/);
+  assert.match(client, /'GET_DAILY_CASH_STATUS'/);
+  assert.match(client, /'OPEN_DAILY_CASH'/);
   assert.match(client, /syncOperation\('ASSIGN_CASH_TERMINAL'/);
   assert.doesNotMatch(client, /from\(['"]pos_cash_shifts['"]\)\s*\.(?:insert|update|upsert)/);
   assert.doesNotMatch(client, /from\(['"]pos_terminals['"]\)\s*\.(?:insert|update|upsert)/);
@@ -359,4 +453,16 @@ test('el cliente envía las escrituras por el endpoint seguro y no escribe direc
   const quickPayment = await readFile(new URL('../src/components/QuickPaymentModal.tsx', import.meta.url), 'utf8');
   assert.match(quickPayment, /shouldCloseOrderAfterPayment\(rawItems, subAccountId\)/);
   assert.match(quickPayment, /closeOrder/);
+});
+
+test('el pago rápido verifica apertura diaria antes de registrar ventas y mantiene un estado cacheado para efectivo offline', async () => {
+  const quickPayment = await readFile(new URL('../src/components/QuickPaymentModal.tsx', import.meta.url), 'utf8');
+  const preflight = quickPayment.indexOf('getDailyCashStatus(tenant.id, currentRegister.id)');
+  const localSale = quickPayment.indexOf('cashShiftService.recordSalePayment');
+  assert.ok(preflight >= 0 && localSale > preflight);
+  assert.match(quickPayment, /getCachedDailyCashStatus\(tenant\.id, currentRegister\.id\)/);
+  assert.match(quickPayment, /isDailyCashStatusForCurrentDate\(dailyCashStatus\)/);
+  const service = await readFile(new URL('../src/services/cashControlCloudService.ts', import.meta.url), 'utf8');
+  assert.match(service, /cacheDailyCashStatus\(tenantId, registerId, status\)/);
+  assert.match(service, /getCachedDailyCashStatus\(tenantId: string, registerId: string\)/);
 });

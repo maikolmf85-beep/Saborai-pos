@@ -248,7 +248,8 @@ export function App() {
         message?: string;
         employeeCreditIdempotencyKey?: string;
       }>).detail;
-      if (detail?.tenantId !== tenant.id || detail.code !== 'DAILY_CASH_CLOSED') return;
+      if (detail?.tenantId !== tenant.id
+        || !['DAILY_CASH_CLOSED', 'DAILY_CASH_NOT_OPEN'].includes(detail.code || '')) return;
       if (detail.employeeCreditIdempotencyKey
         && employeeCreditService.discardPendingCharge(tenant.id, detail.employeeCreditIdempotencyKey)) {
         void employeeCreditService.refreshLedger(tenant.id).catch(() => {});
@@ -256,8 +257,10 @@ export function App() {
       addNotification({
         id: `daily_cash_closed_${Date.now()}`,
         type: 'SYNC_ERROR',
-        title: 'Cobro no registrado: caja cerrada',
-        message: detail.message || 'La caja ya tiene cierre diario. Contacte al administrador si necesita corregir el cierre.',
+        title: detail.code === 'DAILY_CASH_NOT_OPEN' ? 'Cobro no registrado: caja sin apertura diaria' : 'Cobro no registrado: caja cerrada',
+        message: detail.message || (detail.code === 'DAILY_CASH_NOT_OPEN'
+          ? 'Primero debe abrirse la caja para el día local actual.'
+          : 'La caja ya tiene cierre diario. Contacte al administrador si necesita corregir el cierre.'),
         timestamp: new Date()
       });
     };
@@ -1689,7 +1692,7 @@ export function App() {
       void posCloudService.syncSale(tenant.id, saleWithCashScope).then(() => {
         void employeeCreditService.refreshLedger(tenant.id).catch(error => console.warn('[Employee Credit] No se pudo actualizar la vista local:', error));
       }).catch(async error => {
-        if (error instanceof PosCloudSyncError && error.code === 'DAILY_CASH_CLOSED') {
+        if (error instanceof PosCloudSyncError && ['DAILY_CASH_CLOSED', 'DAILY_CASH_NOT_OPEN'].includes(error.code || '')) {
           if (employeeCredit?.idempotencyKey
             && employeeCreditService.discardPendingCharge(tenant.id, employeeCredit.idempotencyKey)) {
             void employeeCreditService.refreshLedger(tenant.id).catch(() => {});
@@ -1697,7 +1700,7 @@ export function App() {
           addNotification({
             id: `daily_cash_closed_${Date.now()}`,
             type: 'SYNC_ERROR',
-            title: 'Cobro no registrado: caja cerrada',
+            title: error.code === 'DAILY_CASH_NOT_OPEN' ? 'Cobro no registrado: caja sin apertura diaria' : 'Cobro no registrado: caja cerrada',
             message: error.message,
             timestamp: new Date()
           });

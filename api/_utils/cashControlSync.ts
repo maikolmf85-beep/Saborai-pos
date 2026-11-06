@@ -18,6 +18,15 @@ export class DailyCashClosedError extends Error {
   }
 }
 
+export class DailyCashNotOpenError extends Error {
+  readonly code = 'DAILY_CASH_NOT_OPEN';
+
+  constructor(registerName: string, businessDate: string, message?: string) {
+    super(message || `No se puede registrar el cobro: primero debe abrirse la caja "${registerName || 'Caja'}" para el ${businessDate}. El cobro no se registró.`);
+    this.name = 'DailyCashNotOpenError';
+  }
+}
+
 export function getBusinessDateForInstant(instant: string, timezone: string): string {
   const timestamp = new Date(instant);
   if (!Number.isFinite(timestamp.getTime())) throw new Error('La fecha del cobro no es válida.');
@@ -68,6 +77,22 @@ export async function assertCashRegisterOpenForPayment(
     throw new Error('No se pudo verificar si la caja tiene cierre diario; el cobro no se registró. Intente de nuevo o contacte al administrador.');
   }
   if (closure.data) throw new DailyCashClosedError(registerName, businessDate);
+
+  const opening = await admin.from('pos_daily_cash_openings')
+    .select('id, opened_at')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('cash_register_id', registerId)
+    .eq('business_date', businessDate)
+    .limit(1)
+    .maybeSingle();
+  if (opening.error) {
+    throw new Error('No se pudo verificar si la caja fue abierta para el día; el cobro no se registró. Intente de nuevo o contacte al administrador.');
+  }
+  if (!opening.data) throw new DailyCashNotOpenError(registerName, businessDate);
+  if (opening.data.opened_at && Date.parse(paidAt) < Date.parse(opening.data.opened_at)) {
+    throw new DailyCashNotOpenError(registerName, businessDate, `El cobro es anterior a la apertura diaria de "${registerName || 'Caja'}" para el ${businessDate}; el cobro no se registró.`);
+  }
   return businessDate;
 }
 
@@ -291,6 +316,90 @@ export async function closeDailyCash(
   return result.data as RecordValue;
 }
 
+export async function getDailyCashStatus(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  value: unknown
+): Promise<RecordValue> {
+  const input = asRecord(value, 'La consulta del estado diario');
+  const registerId = requiredText(input.registerId, 'La caja', 120);
+  if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) {
+    throw new Error('El identificador de la caja tiene un formato inválido.');
+  }
+  let lookup = admin.from('pos_cash_registers')
+    .select('id, branch_id, name')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true);
+  lookup = UUID_RE.test(registerId) ? lookup.eq('id', registerId) : lookup.eq('legacy_id', registerId);
+  const register = await lookup.limit(1).maybeSingle();
+  if (register.error || !register.data) throw new Error('No se encontró una caja activa de este restaurante.');
+
+  const branch = await admin.from('pos_branches')
+    .select('timezone')
+    .eq('tenant_id', tenantId)
+    .eq('id', register.data.branch_id)
+    .limit(1)
+    .maybeSingle();
+  if (branch.error || !branch.data?.timezone) throw new Error('No se pudo determinar la fecha local de la sucursal.');
+  const businessDate = getBusinessDateForInstant(new Date().toISOString(), branch.data.timezone);
+  const filters = (query: any) => query
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', register.data.branch_id)
+    .eq('cash_register_id', register.data.id)
+    .eq('business_date', businessDate)
+    .limit(1)
+    .maybeSingle();
+  const opening = await filters(admin.from('pos_daily_cash_openings').select('id, opened_at, opened_by, timezone'));
+  if (opening.error) throw new Error('No se pudo consultar la apertura diaria de la caja.');
+  const closure = await filters(admin.from('pos_daily_cash_closures').select('id, closed_at, closed_by'));
+  if (closure.error) throw new Error('No se pudo consultar el cierre diario de la caja.');
+  return {
+    registerId: register.data.id,
+    registerName: register.data.name,
+    businessDate,
+    timezone: branch.data.timezone,
+    isOpen: Boolean(opening.data),
+    isClosed: Boolean(closure.data),
+    openedAt: opening.data?.opened_at || null,
+    openedBy: opening.data?.opened_by || null,
+    closedAt: closure.data?.closed_at || null
+  };
+}
+
+export async function openDailyCash(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  actorUserId: string,
+  value: unknown
+): Promise<RecordValue> {
+  const input = asRecord(value, 'La apertura diaria');
+  const registerId = requiredText(input.registerId, 'La caja', 120);
+  if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) {
+    throw new Error('El identificador de la caja tiene un formato inválido.');
+  }
+  const actorId = requiredUuid(actorUserId, 'El usuario autenticado');
+  let lookup = admin.from('pos_cash_registers')
+    .select('id')
+    .eq('tenant_id', tenantId)
+    .eq('is_active', true);
+  lookup = UUID_RE.test(registerId) ? lookup.eq('id', registerId) : lookup.eq('legacy_id', registerId);
+  const register = await lookup.limit(1).maybeSingle();
+  if (register.error || !register.data) throw new Error('No se encontró una caja activa de este restaurante.');
+  const result = await admin.rpc('pos_open_daily_cash', {
+    p_tenant_id: tenantId,
+    p_cash_register_id: register.data.id,
+    p_opened_by: actorId
+  });
+  if (result.error || !result.data) {
+    const message = result.error?.message || 'No se confirmó la apertura diaria de caja.';
+    if (message.startsWith('DAILY_CASH_CLOSED|')) {
+      throw new DailyCashClosedError('', '', message.slice('DAILY_CASH_CLOSED|'.length));
+    }
+    throw new Error(message);
+  }
+  return result.data as RecordValue;
+}
+
 export async function importCashShift(
   admin: CashControlAdminClient,
   tenantId: string,
@@ -336,7 +445,16 @@ export async function importCashShift(
   }
 
   const inserted = await admin.from('pos_cash_shifts').insert(row).select('id').single();
-  if (inserted.error || !inserted.data) throw new Error('No se pudo importar el turno en la nube.');
+  if (inserted.error || !inserted.data) {
+    const message = inserted.error?.message || '';
+    if (message.startsWith('DAILY_CASH_NOT_OPEN|')) {
+      throw new DailyCashNotOpenError('', '', message.slice('DAILY_CASH_NOT_OPEN|'.length));
+    }
+    if (message.startsWith('DAILY_CASH_CLOSED|')) {
+      throw new DailyCashClosedError('', '', message.slice('DAILY_CASH_CLOSED|'.length));
+    }
+    throw new Error('No se pudo importar el turno en la nube.');
+  }
   return { shiftId: inserted.data.id, alreadyExists: false };
 }
 

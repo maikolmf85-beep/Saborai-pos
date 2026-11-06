@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   X, 
   Receipt, 
@@ -39,15 +39,17 @@ import {
   ZReportData,
   CashRegister,
   ConsolidatedZReportData,
-  DataphoneClosingEntry
+  DataphoneClosingEntry,
+  DailyCashStatus
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
+import { cashControlCloudService } from '../services/cashControlCloudService';
 import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
 import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOpeningZones';
-import { isOpenDiningTable, getCostaRicaBusinessDate } from '../services/cashClosureRules';
+import { isOpenDiningTable } from '../services/cashClosureRules';
 import { localDB } from '../services/db';
 import { posCloudService } from '../services/posCloudService';
 
@@ -85,6 +87,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [selectedRegisterId, setSelectedRegisterId] = useState<string>('');
   const [historyFilterRegisterId, setHistoryFilterRegisterId] = useState<string>('ALL');
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [dailyCashStatus, setDailyCashStatus] = useState<DailyCashStatus | null>(null);
+  const [dailyCashError, setDailyCashError] = useState<string | null>(null);
+  const [isLoadingDailyCashStatus, setIsLoadingDailyCashStatus] = useState(false);
+  const [isOpeningDailyCash, setIsOpeningDailyCash] = useState(false);
+  const dailyCashStatusRequest = useRef(0);
 
   // Opening form state
   const [initialFloatInput, setInitialFloatInput] = useState<number>(50000);
@@ -197,6 +204,31 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const [newRegisterZones, setNewRegisterZones] = useState<string[]>([]);
   const [newRegisterError, setNewRegisterError] = useState<string | null>(null);
 
+  const refreshDailyCashStatus = useCallback(async (registerId?: string) => {
+    const targetRegisterId = registerId || selectedRegisterId || cashShiftService.getCurrentRegisterId();
+    const requestId = ++dailyCashStatusRequest.current;
+    if (!targetRegisterId) {
+      setDailyCashStatus(null);
+      setIsLoadingDailyCashStatus(false);
+      return;
+    }
+    setDailyCashStatus(null);
+    setIsLoadingDailyCashStatus(true);
+    setDailyCashError(null);
+    try {
+      if (!localDB.isOnline()) throw new Error('Se requiere conexión para verificar la apertura diaria de caja.');
+      const status = await cashControlCloudService.getDailyCashStatus(tenant.id, targetRegisterId);
+      if (requestId === dailyCashStatusRequest.current) setDailyCashStatus(status);
+    } catch (error: any) {
+      if (requestId === dailyCashStatusRequest.current) {
+        setDailyCashStatus(null);
+        setDailyCashError(error?.message || 'No se pudo verificar la apertura diaria de caja.');
+      }
+    } finally {
+      if (requestId === dailyCashStatusRequest.current) setIsLoadingDailyCashStatus(false);
+    }
+  }, [selectedRegisterId, tenant.id]);
+
   // Sync active shift on open
   useEffect(() => {
     if (isOpen) {
@@ -216,6 +248,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const initialZones = getInitialShiftZones(tenant.zones, registerZones, initialZone);
       setOpeningZones(initialZones);
       refreshData(curRegId);
+      void refreshDailyCashStatus(curRegId);
       setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
       if (currentUser && currentUser.active !== false) {
         setOpeningCashier(currentUser);
@@ -223,7 +256,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         setOpeningCashier(staffList.find(staff => staff.active !== false) || null);
       }
     }
-  }, [isOpen, currentUser, initialTab, staffList, tenant.zones, initialZone]);
+  }, [isOpen, currentUser, initialTab, staffList, tenant.id, tenant.zones, initialZone, refreshDailyCashStatus]);
 
   const refreshData = (regId?: string) => {
     const targetRegId = regId || selectedRegisterId || cashShiftService.getCurrentRegisterId();
@@ -260,6 +293,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   const handleSelectRegister = (regId: string) => {
     cashShiftService.setCurrentRegisterId(regId);
     setSelectedRegisterId(regId);
+    void refreshDailyCashStatus(regId);
     const reg = registers.find(r => r.id === regId);
     if (reg) {
       const regZones = reg.linkedZones && reg.linkedZones.length > 0
@@ -290,8 +324,14 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   ));
 
   // Handlers
-  const handleOpenShiftSubmit = () => {
+  const handleOpenShiftSubmit = async () => {
     setOpeningError(null);
+
+    if (!dailyCashStatus?.isOpen || dailyCashStatus.isClosed) {
+      setOpeningError('Primero abre la caja del día. Después puedes abrir este turno con su propio fondo inicial.');
+      soundService.playErrorBuzz();
+      return;
+    }
 
     const cashierToUse = selectedOpeningCashier;
     if (!cashierToUse) {
@@ -333,6 +373,12 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     try {
+      if (!localDB.isOnline()) throw new Error('Conecta el dispositivo para verificar que la caja del día sigue abierta.');
+      const latestDailyStatus = await cashControlCloudService.getDailyCashStatus(tenant.id, regIdToUse);
+      setDailyCashStatus(latestDailyStatus);
+      if (!latestDailyStatus.isOpen || latestDailyStatus.isClosed) {
+        throw new Error('Primero abre la caja para la fecha local actual. La apertura de turno es un paso separado.');
+      }
       const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
       const newShift = cashShiftService.openShift(
         tenant,
@@ -453,10 +499,66 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     onOpenConsolidatedZReport(report);
   };
 
+  const runDailyCashOpen = async () => {
+    setDailyCashError(null);
+    setIsOpeningDailyCash(true);
+    try {
+      if (!localDB.isOnline()) throw new Error('La apertura diaria requiere conexión para guardarse y validarse en el servidor.');
+      const result = await cashControlCloudService.openDailyCashInCloud(tenant.id, selectedRegisterId);
+      if (!result?.openingId || !result.businessDate || !result.openedAt) {
+        throw new Error('El servidor no confirmó todos los datos de la apertura diaria.');
+      }
+      const openedStatus: DailyCashStatus = {
+        registerId: result.cashRegisterId || selectedRegisterId,
+        registerName: currentRegisterObj?.name || 'Caja',
+        businessDate: result.businessDate,
+        timezone: result.timezone,
+        isOpen: true,
+        isClosed: false,
+        openedAt: result.openedAt
+      };
+      setDailyCashStatus(openedStatus);
+      cashControlCloudService.cacheDailyCashStatus(tenant.id, selectedRegisterId, openedStatus);
+      setAuditEvents(auditService.get(tenant.id, { limit: 250 }));
+      soundService.playSuccessChime();
+    } catch (error: any) {
+      setDailyCashError(error?.message || 'No se pudo confirmar la apertura diaria de caja.');
+      soundService.playErrorBuzz();
+    } finally {
+      setIsOpeningDailyCash(false);
+    }
+  };
+
+  const handleOpenDailyCash = () => {
+    setDailyCashError(null);
+    if (!selectedRegisterId) {
+      setDailyCashError('Selecciona una caja registrada antes de abrir el día.');
+      return;
+    }
+    if (dailyCashStatus?.isClosed) {
+      setDailyCashError('Esta caja ya tiene cierre diario para la fecha local actual. No se puede volver a abrir hoy.');
+      return;
+    }
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Abrir la caja para todo el día?',
+      message: `Se habilitará ${currentRegisterObj?.name || 'la caja'} para operar durante el ${dailyCashStatus?.businessDate || 'día local actual'}. Esto no abre ni cambia el turno; registra el fondo inicial por separado en cada apertura de turno.`,
+      confirmLabel: 'Abrir caja del día',
+      type: 'info',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        void runDailyCashOpen();
+      }
+    });
+  };
+
   const runDailyCashClose = async () => {
     setDailyCloseError(null);
     setIsClosingDailyCash(true);
     try {
+      if (!dailyCashStatus?.isOpen || dailyCashStatus.isClosed) {
+        throw new Error('Primero debe abrirse la caja del día antes de cerrarla.');
+      }
       if (!localDB.isOnline()) throw new Error('El cierre diario requiere conexión para guardar y validar la caja en el servidor.');
       await localDB.syncAllPending(tenant.id);
       const pendingPayments = (await localDB.getPendingItems(tenant.id)).filter(item => item.action === 'PAYMENT');
@@ -465,7 +567,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       }
       await cashShiftService.flushCloudSync();
 
-      const businessDate = getCostaRicaBusinessDate();
+      const businessDate = dailyCashStatus.businessDate;
       const operationId = `daily-cash-close:${tenant.id}:${selectedRegisterId}:${businessDate}`;
       const result = await posCloudService.syncOperation<Record<string, any>>(
         'CLOSE_DAILY_CASH',
@@ -535,6 +637,13 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           taxesNote: typeof summary.taxesNote === 'string' ? summary.taxesNote : 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'
         }
       };
+      const closedStatus: DailyCashStatus = {
+        ...dailyCashStatus,
+        isClosed: true,
+        closedAt: String(result.closedAt || new Date().toISOString())
+      };
+      setDailyCashStatus(closedStatus);
+      cashControlCloudService.cacheDailyCashStatus(tenant.id, selectedRegisterId, closedStatus);
       setDailyCloseError(result.alreadyClosed === true
         ? 'Este cierre diario ya estaba guardado; se muestra el registro existente.'
         : null);
@@ -548,6 +657,11 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
   };
 
   const handleCloseDailyCash = () => {
+    if (!dailyCashStatus?.isOpen || dailyCashStatus.isClosed) {
+      setDailyCloseError('Primero debe abrirse la caja del día y no debe tener un cierre diario existente.');
+      soundService.playErrorBuzz();
+      return;
+    }
     const openTables = tables.filter(isOpenDiningTable);
     if (openTables.length > 0) {
       setDailyCloseError(`No se puede cerrar la caja del día: ${openTables.length} mesa(s) tienen una comanda abierta.`);
@@ -559,7 +673,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       return;
     }
 
-    const businessDate = getCostaRicaBusinessDate();
+    const businessDate = dailyCashStatus.businessDate;
     setConfirmConfig({
       isOpen: true,
       title: '¿Confirmar cierre diario de caja?',
@@ -694,12 +808,29 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-700 border border-stone-300">
-                    Caja Cerrada
+                    Sin turno activo
+                  </span>
+                )}
+                {isLoadingDailyCashStatus ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-300">
+                    Verificando caja del día…
+                  </span>
+                ) : dailyCashStatus?.isClosed ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-stone-200 text-stone-700 border border-stone-300">
+                    Caja del día cerrada
+                  </span>
+                ) : dailyCashStatus?.isOpen ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Caja del día abierta
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    Apertura diaria pendiente
                   </span>
                 )}
               </div>
               <p className="text-xs text-stone-500">
-                Apertura con fondo de caja, registro de egresos / ingresos y arqueo ciego con Reporte Z
+                Apertura diaria de caja; apertura, movimientos y arqueo por turno con Reporte Z
               </p>
             </div>
           </div>
@@ -765,17 +896,34 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               <span>Reporte Z Consolidado Multi-Cajas</span>
             </button>
           )}
+          {!dailyCashStatus?.isOpen && !dailyCashStatus?.isClosed && (
+            <button
+              type="button"
+              onClick={handleOpenDailyCash}
+              disabled={isOpeningDailyCash || isLoadingDailyCashStatus || !selectedRegisterId}
+              className="px-3 py-1 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 disabled:text-stone-500 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
+              title="Abre una vez la caja seleccionada para la fecha local de la sucursal; no abre un turno."
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#a9b994]" />
+              <span>{isOpeningDailyCash ? 'Abriendo caja…' : 'Abrir caja del día'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleCloseDailyCash}
-            disabled={isClosingDailyCash || registers.length === 0 || hasOpenDiningTables}
+            disabled={isClosingDailyCash || registers.length === 0 || hasOpenDiningTables || !dailyCashStatus?.isOpen || dailyCashStatus.isClosed}
             className="px-3 py-1 bg-[#588157] hover:bg-[#466b45] disabled:bg-stone-300 disabled:text-stone-500 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
-            title="Cierra una vez la caja seleccionada para la fecha local de Costa Rica; requiere que no haya mesas abiertas."
+            title="Cierra una vez la caja seleccionada para la fecha local de la sucursal; requiere apertura diaria y que no haya mesas abiertas."
           >
             <LockKeyhole className="w-3.5 h-3.5" />
-            <span>{isClosingDailyCash ? 'Guardando cierre...' : hasOpenDiningTables ? 'Cierre diario: hay mesas abiertas' : 'Cerrar Caja del Día'}</span>
+            <span>{isLoadingDailyCashStatus ? 'Verificando caja…' : isClosingDailyCash ? 'Guardando cierre…' : hasOpenDiningTables ? 'Cierre diario: hay mesas abiertas' : dailyCashStatus?.isClosed ? 'Caja del día cerrada' : !dailyCashStatus?.isOpen ? 'Abrir caja del día primero' : 'Cerrar caja del día'}</span>
           </button>
         </div>
+        {dailyCashError && (
+          <div role="alert" className="px-6 py-2 border-b bg-rose-50 border-rose-200 text-rose-800 text-[11px]">
+            {dailyCashError}
+          </div>
+        )}
         {dailyCloseError && (
           <div role="status" className={`px-6 py-2 border-b text-[11px] ${dailyCloseError.startsWith('Este cierre diario ya estaba') ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
             {dailyCloseError}
@@ -794,7 +942,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             }`}
           >
             <Clock className="w-4 h-4 text-[#588157]" />
-            <span>{activeShift ? 'Resumen del Turno' : 'Apertura de Caja'}</span>
+            <span>{activeShift ? 'Resumen del Turno' : dailyCashStatus?.isOpen && !dailyCashStatus.isClosed ? 'Apertura de Turno' : 'Apertura diaria'}</span>
           </button>
 
           <button
@@ -877,9 +1025,38 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         <div className="p-6 overflow-y-auto flex-1">
           
           {/* ======================================================== */}
-          {/* STATE A: TAB STATUS WITH NO SHIFT OPEN -> APERTURA FORM  */}
+          {/* STATE A: APERTURA DIARIA REQUERIDA ANTES DEL TURNO       */}
           {/* ======================================================== */}
-          {activeTab === 'status' && !activeShift && (
+          {activeTab === 'status' && !activeShift && (!dailyCashStatus?.isOpen || dailyCashStatus.isClosed) && (
+            <div className="max-w-xl mx-auto rounded-3xl border border-amber-200 bg-amber-50 p-6 text-center space-y-3">
+              <div className="w-12 h-12 rounded-3xl bg-amber-100 text-amber-800 flex items-center justify-center mx-auto">
+                <LockKeyhole className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-stone-900">
+                {dailyCashStatus?.isClosed ? 'La caja del día ya está cerrada' : 'Abre la caja para iniciar el día'}
+              </h3>
+              <p className="text-xs text-stone-600">
+                {isLoadingDailyCashStatus
+                  ? 'Verificando en el servidor la apertura diaria de esta caja…'
+                  : dailyCashStatus?.isClosed
+                    ? `La caja ${currentRegisterObj?.name || ''} ya tiene cierre para ${dailyCashStatus.businessDate}. No se puede reabrir en esta fecha local.`
+                    : `La apertura diaria habilita esta caja para todo el ${dailyCashStatus?.businessDate || 'día local actual'}. Después, abre cada turno por separado e ingresa su fondo inicial.`}
+              </p>
+              {!isLoadingDailyCashStatus && dailyCashError && (
+                <p role="alert" className="text-[11px] font-semibold text-rose-700">{dailyCashError}</p>
+              )}
+              {!dailyCashStatus?.isClosed && !isLoadingDailyCashStatus && (
+                <p className="text-[11px] text-stone-500">
+                  Usa <strong>Abrir caja del día</strong> en la barra superior. Esta acción requiere conexión y no modifica ni abre un turno.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* STATE B: CAJA DIARIA ABIERTA -> APERTURA DE TURNO         */}
+          {/* ======================================================== */}
+          {activeTab === 'status' && !activeShift && dailyCashStatus?.isOpen && !dailyCashStatus.isClosed && (
             <div className="max-w-xl mx-auto space-y-6">
               <div className="text-center space-y-1">
                 <div className="w-12 h-12 rounded-3xl bg-[#588157]/15 text-[#588157] flex items-center justify-center mx-auto mb-2">
@@ -896,7 +1073,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   <span>Sucursal: {currentRegisterObj?.branchCode || '001'}</span>
                 </div>
                 <p className="text-xs text-stone-500 pt-1">
-                  Ingresa el fondo inicial en efectivo (base para dar vuelto) para iniciar la operación en esta caja.
+                  La caja del día está abierta desde {dailyCashStatus.openedAt ? new Date(dailyCashStatus.openedAt).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit', timeZone: dailyCashStatus.timezone }) : 'hoy'}. Ingresa el fondo inicial de este turno; cada cambio de turno requiere una nueva apertura.
                 </p>
               </div>
 

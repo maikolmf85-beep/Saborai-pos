@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   CreditCard, 
   Banknote, 
@@ -15,6 +15,7 @@ import {
 import { Table, TableItem, TenantInfo, UserProfile } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, reserveConsecutivoNumber } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
+import { cashControlCloudService } from '../services/cashControlCloudService';
 import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
@@ -78,6 +79,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   const [clave50Digitos, setClave50Digitos] = useState('');
   const [generatedXml, setGeneratedXml] = useState('');
   const [consecutivo, setConsecutivo] = useState('');
+  const dailyCashNotificationCounter = useRef(0);
 
   const rawItems = table?.activeOrder?.items || [];
   const items: TableItem[] = subAccountId === 'ALL'
@@ -202,7 +204,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     }
   };
 
-  const handleProcessPayment = (e: React.FormEvent) => {
+  const handleProcessPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit()) return;
 
@@ -232,6 +234,40 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     }
 
     setIsProcessing(true);
+
+    try {
+      const dailyCashStatus = isOffline
+        ? cashControlCloudService.getCachedDailyCashStatus(tenant.id, currentRegister.id)
+        : await cashControlCloudService.getDailyCashStatus(tenant.id, currentRegister.id);
+      const isCurrentBusinessDate = Boolean(dailyCashStatus
+        && cashControlCloudService.isDailyCashStatusForCurrentDate(dailyCashStatus));
+      if (!dailyCashStatus || !isCurrentBusinessDate || !dailyCashStatus.isOpen || dailyCashStatus.isClosed) {
+        setIsProcessing(false);
+        const message = isOffline
+          ? 'No hay una apertura diaria vigente y confirmada para esta caja. Conecta el dispositivo y abre la caja del día antes de cobrar.'
+          : dailyCashStatus?.isClosed
+            ? `La caja ya tiene cierre diario para ${dailyCashStatus.businessDate}. No se registró el cobro.`
+            : 'Primero abre la caja para la fecha local actual. Después podrás cobrar desde el turno abierto.';
+        onNotify?.({
+          id: `daily_cash_gate_${++dailyCashNotificationCounter.current}`,
+          type: 'SYNC_ERROR',
+          title: dailyCashStatus?.isClosed ? 'Caja del día cerrada' : 'Apertura diaria requerida',
+          message,
+          timestamp: new Date()
+        });
+        return;
+      }
+    } catch (error: any) {
+      setIsProcessing(false);
+      onNotify?.({
+        id: `daily_cash_status_error_${++dailyCashNotificationCounter.current}`,
+        type: 'SYNC_ERROR',
+        title: 'No se pudo verificar la apertura diaria',
+        message: error?.message || 'El cobro no se registró. Verifica la conexión y el estado de la caja del día.',
+        timestamp: new Date()
+      });
+      return;
+    }
 
     const emissionDate = new Date();
     const docType = 'TE' as const; // Consumidor final sin identificar => Tiquete Electrónico

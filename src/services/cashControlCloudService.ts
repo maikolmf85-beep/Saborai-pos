@@ -1,4 +1,4 @@
-import type { CashRegister, CashShift } from '../types/cashShift';
+import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus } from '../types/cashShift';
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
@@ -7,6 +7,7 @@ import { posCloudService } from './posCloudService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
+const DAILY_CASH_STATUS_CACHE_PREFIX = 'saborai_daily_cash_status:';
 
 type CloudBranch = {
   id: string;
@@ -135,6 +136,63 @@ class CashControlCloudService {
       { shiftId, closure },
       tenantId,
       `cash-close:${tenantId}:${shiftId}`
+    );
+  }
+
+  async getDailyCashStatus(tenantId: string, registerId: string): Promise<DailyCashStatus> {
+    const status = await posCloudService.syncOperation<DailyCashStatus>(
+      'GET_DAILY_CASH_STATUS',
+      { registerId },
+      tenantId
+    );
+    this.cacheDailyCashStatus(tenantId, registerId, status);
+    return status;
+  }
+
+  cacheDailyCashStatus(tenantId: string, registerId: string, status: DailyCashStatus): void {
+    if (typeof window === 'undefined' || !tenantId || !registerId) return;
+    try {
+      localStorage.setItem(`${DAILY_CASH_STATUS_CACHE_PREFIX}${tenantId}:${registerId}`, JSON.stringify(status));
+    } catch {}
+  }
+
+  getCachedDailyCashStatus(tenantId: string, registerId: string): DailyCashStatus | null {
+    if (typeof window === 'undefined' || !tenantId || !registerId) return null;
+    try {
+      const raw = localStorage.getItem(`${DAILY_CASH_STATUS_CACHE_PREFIX}${tenantId}:${registerId}`);
+      if (!raw) return null;
+      const status = JSON.parse(raw) as DailyCashStatus;
+      return typeof status.businessDate === 'string'
+        && typeof status.timezone === 'string'
+        && typeof status.isOpen === 'boolean'
+        && typeof status.isClosed === 'boolean'
+        ? status
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  isDailyCashStatusForCurrentDate(status: DailyCashStatus): boolean {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: status.timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(new Date());
+      const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+      return `${values.year}-${values.month}-${values.day}` === status.businessDate;
+    } catch {
+      return false;
+    }
+  }
+
+  async openDailyCashInCloud(tenantId: string, registerId: string): Promise<DailyCashOpeningResult> {
+    return posCloudService.syncOperation<DailyCashOpeningResult>(
+      'OPEN_DAILY_CASH',
+      { registerId },
+      tenantId
     );
   }
 
