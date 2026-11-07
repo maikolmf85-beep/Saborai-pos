@@ -9,6 +9,84 @@ export interface ClosedShiftUpdateResult {
 
 const CASH_TERMINAL_ASSIGNMENT_PREFIX = 'No se pudo asignar este dispositivo a la caja';
 
+export interface CashShiftCloseTarget {
+  shiftId: string;
+  registerId: string;
+}
+
+interface CashTerminalAssignmentConflictReference {
+  localRegisterId?: string;
+}
+
+interface ConfirmedCashControlSnapshot {
+  registers: Array<{ id: string; tenant_id: string; legacy_id?: string | null; is_active?: boolean }>;
+  shifts: Array<{ id: string; tenant_id: string; legacy_id?: string | null; status: string; cash_register_id: string }>;
+}
+
+export function isOnlyTerminalAssignmentConflictForRegister(
+  conflicts: string[],
+  terminalAssignmentConflict: CashTerminalAssignmentConflictReference | undefined,
+  registerId: string
+): boolean {
+  return Boolean(
+    registerId
+    && terminalAssignmentConflict?.localRegisterId === registerId
+    && conflicts.length === 1
+    && conflicts[0].toLowerCase().startsWith(CASH_TERMINAL_ASSIGNMENT_PREFIX.toLowerCase())
+  );
+}
+
+export function isConfirmedOpenShiftForRegister(
+  snapshot: ConfirmedCashControlSnapshot,
+  tenantId: string,
+  target: CashShiftCloseTarget,
+  remoteRegisterId: string
+): boolean {
+  const register = snapshot.registers.find(candidate =>
+    candidate.id === remoteRegisterId
+    && candidate.tenant_id === tenantId
+    && (candidate.legacy_id || candidate.id) === target.registerId
+    && candidate.is_active !== false
+  );
+  if (!register) return false;
+
+  const shift = snapshot.shifts.find(candidate =>
+    candidate.id === target.shiftId || candidate.legacy_id === target.shiftId
+  );
+  return Boolean(
+    shift
+    && shift.tenant_id === tenantId
+    && shift.status === 'OPEN'
+    && shift.cash_register_id === register.id
+  );
+}
+
+export async function commitAfterSuccessfulRemoteClose<T>(
+  closeRemotely: () => Promise<T>,
+  commitLocally: (result: T) => void
+): Promise<T> {
+  const result = await closeRemotely();
+  commitLocally(result);
+  return result;
+}
+
+export async function attemptCashTerminalAssignment<T>(
+  assign: () => Promise<unknown>,
+  inspectConflict: (error: unknown) => Promise<T | undefined>
+): Promise<{ assignedTerminal: boolean; conflicts: string[]; terminalAssignmentConflict?: T }> {
+  try {
+    await assign();
+    return { assignedTerminal: true, conflicts: [] };
+  } catch (error) {
+    const terminalAssignmentConflict = await inspectConflict(error);
+    return {
+      assignedTerminal: false,
+      conflicts: [formatCashTerminalAssignmentConflict(error)],
+      ...(terminalAssignmentConflict ? { terminalAssignmentConflict } : {})
+    };
+  }
+}
+
 export function formatCashTerminalAssignmentConflict(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : String(error ?? '').trim();
   if (!message) return CASH_TERMINAL_ASSIGNMENT_PREFIX;

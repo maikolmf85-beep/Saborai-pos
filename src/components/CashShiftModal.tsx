@@ -52,6 +52,7 @@ import { getInitialShiftZones, normalizeSalonOptions } from '../services/shiftOp
 import { isOpenDiningTable } from '../services/cashClosureRules';
 import { localDB } from '../services/db';
 import { posCloudService } from '../services/posCloudService';
+import { closeCashShiftAfterSync } from '../services/cashShiftCloseFlow';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -457,23 +458,25 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       type: 'warning',
       onConfirm: async () => {
         try {
-          await localDB.syncAllPending(tenant.id);
-          const pendingPayments = (await localDB.getPendingItems(tenant.id)).filter(item => item.action === 'PAYMENT');
-          if (pendingPayments.length > 0) {
-            throw new Error('Hay cobros pendientes de sincronizar. Conecta el dispositivo y sincronízalos antes de cerrar para conservar su atribución al turno.');
-          }
-          await cashShiftService.flushCloudSync();
-
-          const { closedShift, zReport } = await cashShiftService.closeShift(
-            countedCashTotal,
-            totalDataphonesCounted,
-            Number(countedSinpeInput || 0),
-            closingUser,
-            denominations,
-            differenceJustification,
-            selectedRegisterId,
-            dataphones
-          );
+          const { zReport } = await closeCashShiftAfterSync({
+            tenantId: tenant.id,
+            registerId: selectedRegisterId,
+            shift: activeShift,
+            syncPending: tenantId => localDB.syncAllPending(tenantId),
+            getPendingItems: tenantId => localDB.getPendingItems(tenantId),
+            flushCloudSync: target => cashShiftService.flushCloudSync(target),
+            getActiveShift: registerId => cashShiftService.getActiveShift(registerId),
+            closeShift: () => cashShiftService.closeShift(
+              countedCashTotal,
+              totalDataphonesCounted,
+              Number(countedSinpeInput || 0),
+              closingUser,
+              denominations,
+              differenceJustification,
+              selectedRegisterId,
+              dataphones
+            )
+          });
 
           soundService.playSuccessChime();
           setActiveShift(null);

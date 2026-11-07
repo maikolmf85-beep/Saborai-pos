@@ -17,7 +17,8 @@ import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
 import type { CashControlMigrationResult } from './cashControlCloudService';
 import { deleteCashRegisterFromState } from './cashRegisterDeletion';
-import { shouldApplyCloudSnapshot } from './cashControlSync';
+import { commitAfterSuccessfulRemoteClose, isOnlyTerminalAssignmentConflictForRegister, shouldApplyCloudSnapshot } from './cashControlSync';
+import type { CashShiftCloseTarget } from './cashControlSync';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -545,7 +546,7 @@ class CashShiftService {
     }, delay);
   }
 
-  async flushCloudSync(): Promise<CashControlMigrationResult | null> {
+  async flushCloudSync(closeShiftTarget?: CashShiftCloseTarget): Promise<CashControlMigrationResult | null> {
     if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
 
     let result: CashControlMigrationResult | null = null;
@@ -558,10 +559,39 @@ class CashShiftService {
       result = await this.syncToCloud();
     } while (this.cloudSyncRequested);
 
+    let terminalAssignmentConflictWasTolerated = false;
     if (result?.conflicts.length) {
-      throw new Error(result.conflicts.join(' '));
+      const conflict = result.terminalAssignmentConflict;
+      if (!closeShiftTarget || !conflict
+        || !isOnlyTerminalAssignmentConflictForRegister(result.conflicts, conflict, closeShiftTarget.registerId)) {
+        throw new Error(result.conflicts.join(' '));
+      }
+
+      try {
+        const confirmed = await cashControlCloudService.confirmsOpenShiftForRegister(
+          this.tenantId,
+          closeShiftTarget,
+          conflict.registerId
+        );
+        if (!confirmed) {
+          throw new Error('El turno no figura abierto en la caja indicada para este tenant.');
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`No se pudo confirmar el turno correcto en la nube; no se cerró el turno. ${reason}`);
+      }
+      terminalAssignmentConflictWasTolerated = true;
     }
     await this.refreshFromCloud();
+    if (terminalAssignmentConflictWasTolerated && closeShiftTarget) {
+      const refreshedShift = this.activeShiftsMap[closeShiftTarget.registerId];
+      if (!refreshedShift
+        || refreshedShift.id !== closeShiftTarget.shiftId
+        || refreshedShift.status !== 'OPEN'
+        || refreshedShift.cashRegisterId !== closeShiftTarget.registerId) {
+        throw new Error('No se pudo confirmar que el mismo turno siga abierto en la caja seleccionada. No se cerró el turno.');
+      }
+    }
     return result;
   }
 
@@ -712,57 +742,66 @@ class CashShiftService {
     if (!shift || shift.status !== 'OPEN') {
       throw new Error(`No hay un turno abierto en esta caja para cerrar.`);
     }
+    if (shift.cashRegisterId !== targetRegisterId) {
+      throw new Error('El turno abierto no está asociado a la caja seleccionada. Actualiza el estado e inténtalo de nuevo.');
+    }
 
     const closedAt = new Date().toISOString();
-    let serverResult: Record<string, any> | null = null;
+    const commitLocalClose = (serverResult: Record<string, any> | null) => {
+      if (serverResult?.summary && typeof serverResult.summary === 'object') {
+        shift.systemSummary = { ...shift.systemSummary, ...serverResult.summary };
+      }
+      const expected = Number(shift.systemSummary.expectedCashInDrawer) || 0;
+      const diff = countedCash - expected;
+
+      shift.status = 'CLOSED';
+      shift.closedBy = {
+        userId: closedByUser.id,
+        userName: closedByUser.name
+      };
+      shift.closedAt = typeof serverResult?.closedAt === 'string' ? serverResult.closedAt : closedAt;
+      shift.countedCash = countedCash;
+      shift.countedCards = countedCards;
+      shift.dataphonesBreakdown = dataphonesBreakdown;
+      shift.countedSinpe = countedSinpe;
+      shift.cashBreakdown = cashBreakdown;
+      shift.cashDifference = diff;
+      shift.differenceReason = differenceReason || '';
+      shift.zReportGenerated = true;
+
+      // Archive into history (newest first)
+      this.shiftsHistory = [shift, ...this.shiftsHistory];
+      delete this.activeShiftsMap[targetRegisterId];
+      // The server already confirmed the transition. Persist locally without
+      // queuing a second close based on a stale browser summary.
+      this.saveToStorage(false);
+    };
+
     if (cashControlCloudService.isAvailable()) {
       if (!this.tenantId) throw new Error('No se pudo confirmar el restaurante para cerrar el turno.');
-      serverResult = await cashControlCloudService.closeShiftInCloud(this.tenantId, shift.id, {
-        legacy_id: shift.id,
-        closed_at: closedAt,
-        expected_cash: shift.systemSummary.expectedCashInDrawer,
-        counted_cash: countedCash,
-        difference: countedCash - shift.systemSummary.expectedCashInDrawer,
-        notes: shift.notes,
-        participants: shift.participants || [],
-        movements: shift.movements,
-        system_summary: shift.systemSummary,
-        cash_breakdown: cashBreakdown || null,
-        counted_cards: countedCards,
-        dataphones_breakdown: dataphonesBreakdown || [],
-        counted_sinpe: countedSinpe,
-        difference_reason: differenceReason || '',
-        z_report_generated: true
-      });
+      await commitAfterSuccessfulRemoteClose(
+        () => cashControlCloudService.closeShiftInCloud(this.tenantId!, shift.id, {
+          legacy_id: shift.id,
+          closed_at: closedAt,
+          expected_cash: shift.systemSummary.expectedCashInDrawer,
+          counted_cash: countedCash,
+          difference: countedCash - shift.systemSummary.expectedCashInDrawer,
+          notes: shift.notes,
+          participants: shift.participants || [],
+          movements: shift.movements,
+          system_summary: shift.systemSummary,
+          cash_breakdown: cashBreakdown || null,
+          counted_cards: countedCards,
+          dataphones_breakdown: dataphonesBreakdown || [],
+          counted_sinpe: countedSinpe,
+          difference_reason: differenceReason || '',
+          z_report_generated: true
+        }),
+        commitLocalClose
+      );
+    } else {
+      commitLocalClose(null);
     }
-
-    if (serverResult?.summary && typeof serverResult.summary === 'object') {
-      shift.systemSummary = { ...shift.systemSummary, ...serverResult.summary };
-    }
-    const expected = Number(shift.systemSummary.expectedCashInDrawer) || 0;
-    const diff = countedCash - expected;
-
-    shift.status = 'CLOSED';
-    shift.closedBy = {
-      userId: closedByUser.id,
-      userName: closedByUser.name
-    };
-    shift.closedAt = typeof serverResult?.closedAt === 'string' ? serverResult.closedAt : closedAt;
-    shift.countedCash = countedCash;
-    shift.countedCards = countedCards;
-    shift.dataphonesBreakdown = dataphonesBreakdown;
-    shift.countedSinpe = countedSinpe;
-    shift.cashBreakdown = cashBreakdown;
-    shift.cashDifference = diff;
-    shift.differenceReason = differenceReason || '';
-    shift.zReportGenerated = true;
-
-    // Archive into history (newest first)
-    this.shiftsHistory = [shift, ...this.shiftsHistory];
-    delete this.activeShiftsMap[targetRegisterId];
-    // The server already confirmed the transition. Persist locally without
-    // queuing a second close based on a stale browser summary.
-    this.saveToStorage(false);
 
     const zReport = this.generateZReport(shift);
     return { closedShift: shift, zReport };

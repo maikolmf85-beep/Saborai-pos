@@ -2,7 +2,8 @@ import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus }
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
-import { formatCashTerminalAssignmentConflict, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
+import { attemptCashTerminalAssignment, isConfirmedOpenShiftForRegister, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
+import type { CashShiftCloseTarget } from './cashControlSync';
 import { posCloudService } from './posCloudService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
@@ -82,6 +83,7 @@ export interface CashControlMigrationPreview {
 export interface CashTerminalAssignmentConflict {
   terminalId: string;
   registerId: string;
+  localRegisterId: string;
   registerName: string;
   deviceName: string | null;
 }
@@ -145,6 +147,11 @@ class CashControlCloudService {
       tenantId,
       `cash-close:${tenantId}:${shiftId}`
     );
+  }
+
+  async confirmsOpenShiftForRegister(tenantId: string, target: CashShiftCloseTarget, remoteRegisterId: string): Promise<boolean> {
+    const snapshot = await this.getCloudSnapshot(tenantId);
+    return isConfirmedOpenShiftForRegister(snapshot, tenantId, target, remoteRegisterId);
   }
 
   async getDailyCashStatus(tenantId: string, registerId: string): Promise<DailyCashStatus> {
@@ -504,16 +511,14 @@ class CashControlCloudService {
     let assignedTerminal = false;
     if (currentRegister) {
       const deviceName = options.deviceName || (typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS');
-      try {
-        await posCloudService.syncOperation('ASSIGN_CASH_TERMINAL', {
+      const assignment = await attemptCashTerminalAssignment(
+        () => posCloudService.syncOperation('ASSIGN_CASH_TERMINAL', {
           registerId: currentRegister.id,
           deviceKey,
           deviceName
-        }, tenantId);
-        assignedTerminal = true;
-      } catch (error) {
-        conflicts.push(formatCashTerminalAssignmentConflict(error));
-        if ((error as any)?.code === 'CASH_TERMINAL_ALREADY_ASSIGNED') {
+        }, tenantId),
+        async error => {
+          if ((error as any)?.code !== 'CASH_TERMINAL_ALREADY_ASSIGNED') return undefined;
           const existingTerminal = await client.from('pos_terminals')
             .select('id, device_name')
             .eq('tenant_id', tenantId)
@@ -522,14 +527,21 @@ class CashControlCloudService {
             .limit(1)
             .maybeSingle();
           if (!existingTerminal.error && existingTerminal.data?.id) {
-            terminalAssignmentConflict = {
+            return {
               terminalId: existingTerminal.data.id,
               registerId: currentRegister.id,
+              localRegisterId: currentRegister.legacy_id || currentRegister.id,
               registerName: currentRegister.name,
               deviceName: existingTerminal.data.device_name || null
             };
           }
+          return undefined;
         }
+      );
+      assignedTerminal = assignment.assignedTerminal;
+      conflicts.push(...assignment.conflicts);
+      if (assignment.terminalAssignmentConflict) {
+        terminalAssignmentConflict = assignment.terminalAssignmentConflict;
       }
     }
 

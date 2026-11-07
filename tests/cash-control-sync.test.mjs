@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  attemptCashTerminalAssignment,
   buildClosedShiftCloudPayload,
+  commitAfterSuccessfulRemoteClose,
   formatCashTerminalAssignmentConflict,
+  isConfirmedOpenShiftForRegister,
+  isOnlyTerminalAssignmentConflictForRegister,
   isUnrelatedRegisterCodeMatch,
   shouldApplyCloudSnapshot,
   shouldSyncClosedShift,
@@ -43,6 +47,96 @@ test('muestra una sola vez el prefijo de error de asignación y conserva el diag
     `${prefix}: La caja seleccionada ya tiene otra terminal activa.`
   );
   assert.equal(formatCashTerminalAssignmentConflict(''), prefix);
+});
+
+test('solo reconoce un conflicto único de terminal para la caja local exacta', () => {
+  const terminalConflict = { localRegisterId: 'register-local-1' };
+  const assignmentMessage = 'No se pudo asignar este dispositivo a la caja: ya hay otra terminal activa.';
+  assert.equal(isOnlyTerminalAssignmentConflictForRegister(
+    [assignmentMessage], terminalConflict, 'register-local-1'
+  ), true);
+  assert.equal(isOnlyTerminalAssignmentConflictForRegister(
+    [assignmentMessage], terminalConflict, 'register-local-2'
+  ), false);
+  assert.equal(isOnlyTerminalAssignmentConflictForRegister(
+    [assignmentMessage, 'No se pudo importar otra caja'], terminalConflict, 'register-local-1'
+  ), false);
+  assert.equal(isOnlyTerminalAssignmentConflictForRegister(
+    ['No se pudo importar la caja'], terminalConflict, 'register-local-1'
+  ), false);
+  assert.equal(isOnlyTerminalAssignmentConflictForRegister(
+    [assignmentMessage], undefined, 'register-local-1'
+  ), false);
+});
+
+test('la sincronización reporta terminal previa activa sin alterar ni reasignar terminales', async () => {
+  const state = { activeTerminalId: 'terminal-existing' };
+  const calls = [];
+  const result = await attemptCashTerminalAssignment(
+    async () => {
+      calls.push('ASSIGN_CASH_TERMINAL');
+      if (state.activeTerminalId) {
+        const error = new Error('CASH_TERMINAL_ALREADY_ASSIGNED');
+        error.code = 'CASH_TERMINAL_ALREADY_ASSIGNED';
+        throw error;
+      }
+      state.activeTerminalId = 'terminal-this-device';
+    },
+    async error => {
+      calls.push('READ_EXISTING_TERMINAL');
+      assert.equal(error.code, 'CASH_TERMINAL_ALREADY_ASSIGNED');
+      return { terminalId: state.activeTerminalId, localRegisterId: 'register-local-1' };
+    }
+  );
+
+  assert.equal(result.assignedTerminal, false);
+  assert.equal(result.conflicts.length, 1);
+  assert.match(result.conflicts[0], /No se pudo asignar este dispositivo a la caja/);
+  assert.deepEqual(result.terminalAssignmentConflict, {
+    terminalId: 'terminal-existing', localRegisterId: 'register-local-1'
+  });
+  assert.deepEqual(calls, ['ASSIGN_CASH_TERMINAL', 'READ_EXISTING_TERMINAL']);
+  assert.equal(state.activeTerminalId, 'terminal-existing');
+});
+
+test('confirma el mismo turno OPEN, tenant y caja activa antes de tolerar el conflicto', () => {
+  const snapshot = {
+    registers: [{ id: 'register-remote-1', legacy_id: 'register-local-1', tenant_id: 'tenant-1', is_active: true }],
+    shifts: [{ id: 'shift-remote-1', legacy_id: 'shift-local-1', tenant_id: 'tenant-1', status: 'OPEN', cash_register_id: 'register-remote-1' }]
+  };
+  const target = { shiftId: 'shift-local-1', registerId: 'register-local-1' };
+  assert.equal(isConfirmedOpenShiftForRegister(snapshot, 'tenant-1', target, 'register-remote-1'), true);
+  assert.equal(isConfirmedOpenShiftForRegister(snapshot, 'tenant-1', target, 'register-remote-2'), false);
+  assert.equal(isConfirmedOpenShiftForRegister({
+    ...snapshot,
+    shifts: [{ ...snapshot.shifts[0], cash_register_id: 'register-remote-2' }]
+  }, 'tenant-1', target, 'register-remote-1'), false);
+  assert.equal(isConfirmedOpenShiftForRegister({
+    ...snapshot,
+    shifts: [{ ...snapshot.shifts[0], status: 'CLOSED' }]
+  }, 'tenant-1', target, 'register-remote-1'), false);
+  assert.equal(isConfirmedOpenShiftForRegister(snapshot, 'other-tenant', target, 'register-remote-1'), false);
+});
+
+test('no marca localmente el turno cerrado si el servidor rechaza el cierre', async () => {
+  const shift = { status: 'OPEN' };
+  let localCommitCount = 0;
+  await assert.rejects(
+    commitAfterSuccessfulRemoteClose(
+      async () => { throw new Error('Cierre rechazado por el servidor'); },
+      () => { localCommitCount += 1; shift.status = 'CLOSED'; }
+    ),
+    /Cierre rechazado por el servidor/
+  );
+  assert.equal(shift.status, 'OPEN');
+  assert.equal(localCommitCount, 0);
+
+  const result = await commitAfterSuccessfulRemoteClose(
+    async () => ({ closedAt: '2026-11-06T20:00:00.000Z' }),
+    () => { shift.status = 'CLOSED'; }
+  );
+  assert.equal(result.closedAt, '2026-11-06T20:00:00.000Z');
+  assert.equal(shift.status, 'CLOSED');
 });
 
 test('descarta el snapshot que empezó antes de una mutación local', () => {
