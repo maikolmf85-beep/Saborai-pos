@@ -1,4 +1,5 @@
 import type { CashShift } from '../types/cashShift';
+import type { DailyCashStatus } from '../types/cashShift';
 
 export type RemoteShiftStatus = 'OPEN' | 'CLOSED' | 'VOIDED';
 
@@ -10,12 +11,25 @@ export interface ClosedShiftUpdateResult {
 const CASH_TERMINAL_ASSIGNMENT_PREFIX = 'No se pudo asignar este dispositivo a la caja';
 
 export interface CashShiftCloseTarget {
+  kind: 'shift';
   shiftId: string;
   registerId: string;
 }
 
+export interface DailyCashCloseTarget {
+  kind: 'daily';
+  tenantId: string;
+  registerId: string;
+  cloudRegisterId: string;
+  businessDate: string;
+  timezone: string;
+}
+
+export type CashControlCloseTarget = CashShiftCloseTarget | DailyCashCloseTarget;
+
 interface CashTerminalAssignmentConflictReference {
   localRegisterId?: string;
+  registerId?: string;
 }
 
 interface ConfirmedCashControlSnapshot {
@@ -34,6 +48,53 @@ export function isOnlyTerminalAssignmentConflictForRegister(
     && conflicts.length === 1
     && conflicts[0].toLowerCase().startsWith(CASH_TERMINAL_ASSIGNMENT_PREFIX.toLowerCase())
   );
+}
+
+export function isOnlyTerminalAssignmentConflictForDailyCash(
+  conflicts: string[],
+  terminalAssignmentConflict: CashTerminalAssignmentConflictReference | undefined,
+  target: DailyCashCloseTarget,
+  tenantId: string
+): boolean {
+  return Boolean(
+    target.tenantId === tenantId
+    && target.cloudRegisterId
+    && terminalAssignmentConflict?.registerId === target.cloudRegisterId
+    && isOnlyTerminalAssignmentConflictForRegister(conflicts, terminalAssignmentConflict, target.registerId)
+  );
+}
+
+export function isConfirmedOpenDailyCashForRegister(
+  status: Pick<DailyCashStatus, 'registerId' | 'businessDate' | 'timezone' | 'isOpen' | 'isClosed'>,
+  tenantId: string,
+  target: DailyCashCloseTarget
+): boolean {
+  const date = target.businessDate;
+  const validDate = /^\d{4}-\d{2}-\d{2}$/.test(date)
+    && !Number.isNaN(new Date(`${date}T00:00:00.000Z`).valueOf())
+    && new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) === date;
+  return Boolean(
+    tenantId === target.tenantId
+    && target.registerId
+    && target.cloudRegisterId
+    && validDate
+    && target.timezone
+    && status.registerId === target.cloudRegisterId
+    && status.businessDate === target.businessDate
+    && status.timezone === target.timezone
+    && status.isOpen === true
+    && status.isClosed === false
+  );
+}
+
+export async function confirmOpenDailyCashFromRemote(
+  tenantId: string,
+  target: DailyCashCloseTarget,
+  readStatus: (tenantId: string, registerId: string) => Promise<DailyCashStatus>
+): Promise<boolean> {
+  if (tenantId !== target.tenantId) return false;
+  const status = await readStatus(tenantId, target.registerId);
+  return isConfirmedOpenDailyCashForRegister(status, tenantId, target);
 }
 
 export function isConfirmedOpenShiftForRegister(

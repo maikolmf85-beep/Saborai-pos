@@ -104,7 +104,7 @@ test('confirma el mismo turno OPEN, tenant y caja activa antes de tolerar el con
     registers: [{ id: 'register-remote-1', legacy_id: 'register-local-1', tenant_id: 'tenant-1', is_active: true }],
     shifts: [{ id: 'shift-remote-1', legacy_id: 'shift-local-1', tenant_id: 'tenant-1', status: 'OPEN', cash_register_id: 'register-remote-1' }]
   };
-  const target = { shiftId: 'shift-local-1', registerId: 'register-local-1' };
+  const target = { kind: 'shift', shiftId: 'shift-local-1', registerId: 'register-local-1' };
   assert.equal(isConfirmedOpenShiftForRegister(snapshot, 'tenant-1', target, 'register-remote-1'), true);
   assert.equal(isConfirmedOpenShiftForRegister(snapshot, 'tenant-1', target, 'register-remote-2'), false);
   assert.equal(isConfirmedOpenShiftForRegister({

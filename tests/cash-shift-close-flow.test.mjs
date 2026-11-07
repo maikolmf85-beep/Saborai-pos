@@ -57,7 +57,7 @@ test('una terminal previa activa no impide cerrar el mismo turno OPEN de su caja
     getPendingItems: async tenantId => { calls.push(['pending-items', tenantId]); return []; },
     flushCloudSync: async target => {
       calls.push(['flush-config', target]);
-      assert.deepEqual(target, { shiftId: 'shift-local-1', registerId: 'register-local-1' });
+      assert.deepEqual(target, { kind: 'shift', shiftId: 'shift-local-1', registerId: 'register-local-1' });
       assert.equal(isOnlyTerminalAssignmentConflictForRegister(
         migrationResult.conflicts,
         migrationResult.terminalAssignmentConflict,

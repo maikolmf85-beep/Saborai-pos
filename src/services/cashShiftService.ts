@@ -17,8 +17,8 @@ import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
 import type { CashControlMigrationResult } from './cashControlCloudService';
 import { deleteCashRegisterFromState } from './cashRegisterDeletion';
-import { commitAfterSuccessfulRemoteClose, isOnlyTerminalAssignmentConflictForRegister, shouldApplyCloudSnapshot } from './cashControlSync';
-import type { CashShiftCloseTarget } from './cashControlSync';
+import { commitAfterSuccessfulRemoteClose, isOnlyTerminalAssignmentConflictForDailyCash, isOnlyTerminalAssignmentConflictForRegister, shouldApplyCloudSnapshot } from './cashControlSync';
+import type { CashControlCloseTarget } from './cashControlSync';
 
 const TENANT_KEY_ACTIVE_SHIFTS_MAP = 'shifts_map';
 const TENANT_KEY_CURRENT_TERMINAL_ID = 'current_terminal_id';
@@ -546,7 +546,10 @@ class CashShiftService {
     }, delay);
   }
 
-  async flushCloudSync(closeShiftTarget?: CashShiftCloseTarget): Promise<CashControlMigrationResult | null> {
+  async flushCloudSync(closeTarget?: CashControlCloseTarget): Promise<CashControlMigrationResult | null> {
+    if (closeTarget?.kind === 'daily' && (!this.tenantId || closeTarget.tenantId !== this.tenantId)) {
+      throw new Error('El tenant del cierre diario no coincide con el tenant activo; no se cerró la caja del día.');
+    }
     if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
 
     let result: CashControlMigrationResult | null = null;
@@ -559,37 +562,57 @@ class CashShiftService {
       result = await this.syncToCloud();
     } while (this.cloudSyncRequested);
 
-    let terminalAssignmentConflictWasTolerated = false;
+    let toleratedConflictTarget: CashControlCloseTarget | null = null;
     if (result?.conflicts.length) {
       const conflict = result.terminalAssignmentConflict;
-      if (!closeShiftTarget || !conflict
-        || !isOnlyTerminalAssignmentConflictForRegister(result.conflicts, conflict, closeShiftTarget.registerId)) {
+      const isEligibleConflict = closeTarget?.kind === 'shift'
+        ? isOnlyTerminalAssignmentConflictForRegister(result.conflicts, conflict, closeTarget.registerId)
+        : closeTarget?.kind === 'daily'
+          ? isOnlyTerminalAssignmentConflictForDailyCash(result.conflicts, conflict, closeTarget, this.tenantId)
+          : false;
+      if (!closeTarget || !conflict || !isEligibleConflict) {
         throw new Error(result.conflicts.join(' '));
       }
 
+      if (closeTarget.kind === 'shift') {
+        try {
+          const confirmed = await cashControlCloudService.confirmsOpenShiftForRegister(
+            this.tenantId,
+            closeTarget,
+            conflict.registerId
+          );
+          if (!confirmed) {
+            throw new Error('El turno no figura abierto en la caja indicada para este tenant.');
+          }
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          throw new Error(`No se pudo confirmar el turno correcto en la nube; no se cerró el turno. ${reason}`);
+        }
+      }
+      toleratedConflictTarget = closeTarget;
+    }
+    await this.refreshFromCloud();
+    if (toleratedConflictTarget?.kind === 'shift') {
+      const refreshedShift = this.activeShiftsMap[toleratedConflictTarget.registerId];
+      if (!refreshedShift
+        || refreshedShift.id !== toleratedConflictTarget.shiftId
+        || refreshedShift.status !== 'OPEN'
+        || refreshedShift.cashRegisterId !== toleratedConflictTarget.registerId) {
+        throw new Error('No se pudo confirmar que el mismo turno siga abierto en la caja seleccionada. No se cerró el turno.');
+      }
+    }
+    if (toleratedConflictTarget?.kind === 'daily') {
       try {
-        const confirmed = await cashControlCloudService.confirmsOpenShiftForRegister(
-          this.tenantId,
-          closeShiftTarget,
-          conflict.registerId
+        const confirmed = await cashControlCloudService.confirmsOpenDailyCashForRegister(
+          this.tenantId!,
+          toleratedConflictTarget
         );
         if (!confirmed) {
-          throw new Error('El turno no figura abierto en la caja indicada para este tenant.');
+          throw new Error(`La apertura de la caja no sigue abierta para ${toleratedConflictTarget.businessDate}, o cambió la caja, fecha local o sucursal.`);
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`No se pudo confirmar el turno correcto en la nube; no se cerró el turno. ${reason}`);
-      }
-      terminalAssignmentConflictWasTolerated = true;
-    }
-    await this.refreshFromCloud();
-    if (terminalAssignmentConflictWasTolerated && closeShiftTarget) {
-      const refreshedShift = this.activeShiftsMap[closeShiftTarget.registerId];
-      if (!refreshedShift
-        || refreshedShift.id !== closeShiftTarget.shiftId
-        || refreshedShift.status !== 'OPEN'
-        || refreshedShift.cashRegisterId !== closeShiftTarget.registerId) {
-        throw new Error('No se pudo confirmar que el mismo turno siga abierto en la caja seleccionada. No se cerró el turno.');
+        throw new Error(`No se pudo confirmar en el servidor la apertura diaria correcta; no se cerró la caja del día. ${reason}`);
       }
     }
     return result;

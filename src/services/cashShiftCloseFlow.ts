@@ -30,7 +30,7 @@ export async function closeCashShiftAfterSync<T>(options: {
     throw new Error('Hay cobros pendientes de sincronizar. Conecta el dispositivo y sincronízalos antes de cerrar para conservar su atribución al turno.');
   }
 
-  const target = { shiftId: shift.id, registerId };
+  const target: CashShiftCloseTarget = { kind: 'shift', shiftId: shift.id, registerId };
   await options.flushCloudSync(target);
 
   const confirmedLocalShift = options.getActiveShift(registerId);

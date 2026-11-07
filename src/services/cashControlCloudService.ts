@@ -2,8 +2,8 @@ import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus }
 import { getTenantItem } from './tenantStorage';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
-import { attemptCashTerminalAssignment, isConfirmedOpenShiftForRegister, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
-import type { CashShiftCloseTarget } from './cashControlSync';
+import { attemptCashTerminalAssignment, confirmOpenDailyCashFromRemote, isConfirmedOpenShiftForRegister, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
+import type { CashShiftCloseTarget, DailyCashCloseTarget } from './cashControlSync';
 import { posCloudService } from './posCloudService';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
@@ -152,6 +152,14 @@ class CashControlCloudService {
   async confirmsOpenShiftForRegister(tenantId: string, target: CashShiftCloseTarget, remoteRegisterId: string): Promise<boolean> {
     const snapshot = await this.getCloudSnapshot(tenantId);
     return isConfirmedOpenShiftForRegister(snapshot, tenantId, target, remoteRegisterId);
+  }
+
+  async confirmsOpenDailyCashForRegister(tenantId: string, target: DailyCashCloseTarget): Promise<boolean> {
+    return confirmOpenDailyCashFromRemote(
+      tenantId,
+      target,
+      (requestTenantId, registerId) => this.getDailyCashStatus(requestTenantId, registerId)
+    );
   }
 
   async getDailyCashStatus(tenantId: string, registerId: string): Promise<DailyCashStatus> {

@@ -53,6 +53,7 @@ import { isOpenDiningTable } from '../services/cashClosureRules';
 import { localDB } from '../services/db';
 import { posCloudService } from '../services/posCloudService';
 import { closeCashShiftAfterSync } from '../services/cashShiftCloseFlow';
+import { closeDailyCashAfterSync } from '../services/dailyCashCloseFlow';
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -563,21 +564,31 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         throw new Error('Primero debe abrirse la caja del día antes de cerrarla.');
       }
       if (!localDB.isOnline()) throw new Error('El cierre diario requiere conexión para guardar y validar la caja en el servidor.');
-      await localDB.syncAllPending(tenant.id);
-      const pendingPayments = (await localDB.getPendingItems(tenant.id)).filter(item => item.action === 'PAYMENT');
-      if (pendingPayments.length > 0) {
-        throw new Error('Hay cobros pendientes de sincronizar. Sincronízalos antes de cerrar para incluir todas las operaciones del día.');
-      }
-      await cashShiftService.flushCloudSync();
-
-      const businessDate = dailyCashStatus.businessDate;
-      const operationId = `daily-cash-close:${tenant.id}:${selectedRegisterId}:${businessDate}`;
-      const result = await posCloudService.syncOperation<Record<string, any>>(
-        'CLOSE_DAILY_CASH',
-        { registerId: selectedRegisterId, businessDate },
-        tenant.id,
-        operationId
-      );
+      const businessDate = dailyCashStatus?.businessDate || '';
+      const result = await closeDailyCashAfterSync({
+        tenantId: tenant.id,
+        registerId: selectedRegisterId,
+        status: dailyCashStatus,
+        openTablesCount: tables.filter(isOpenDiningTable).length,
+        syncPending: tenantId => localDB.syncAllPending(tenantId),
+        getPendingItems: tenantId => localDB.getPendingItems(tenantId),
+        flushCloudSync: target => cashShiftService.flushCloudSync(target),
+        closeRemotely: target => posCloudService.syncOperation<Record<string, any>>(
+          'CLOSE_DAILY_CASH',
+          { registerId: target.registerId, businessDate: target.businessDate },
+          target.tenantId,
+          `daily-cash-close:${target.tenantId}:${target.registerId}:${target.businessDate}`
+        ),
+        commitLocally: remoteResult => {
+          const closedStatus: DailyCashStatus = {
+            ...dailyCashStatus!,
+            isClosed: true,
+            closedAt: String(remoteResult.closedAt || new Date().toISOString())
+          };
+          setDailyCashStatus(closedStatus);
+          cashControlCloudService.cacheDailyCashStatus(tenant.id, selectedRegisterId, closedStatus);
+        }
+      });
       const summary = result?.summary && typeof result.summary === 'object' ? result.summary : {};
       const amount = (key: string) => {
         const value = Number(summary[key]);
@@ -640,13 +651,6 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
           taxesNote: typeof summary.taxesNote === 'string' ? summary.taxesNote : 'Impuestos fuera de este cierre: no hay un desglose fiscal confiable asociado a la caja/turno.'
         }
       };
-      const closedStatus: DailyCashStatus = {
-        ...dailyCashStatus,
-        isClosed: true,
-        closedAt: String(result.closedAt || new Date().toISOString())
-      };
-      setDailyCashStatus(closedStatus);
-      cashControlCloudService.cacheDailyCashStatus(tenant.id, selectedRegisterId, closedStatus);
       setDailyCloseError(result.alreadyClosed === true
         ? 'Este cierre diario ya estaba guardado; se muestra el registro existente.'
         : null);
