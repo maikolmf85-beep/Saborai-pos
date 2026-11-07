@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  BETA_APPLICANT_FROM,
+  BETA_APPLICANT_REPLY_TO,
+  BETA_DOMAIN,
   BETA_FROM,
   BETA_RECIPIENT,
   createBetaSignupHandler as createBetaSignupHandlerCore,
@@ -68,7 +71,7 @@ function createMockResend({ domainStatus = 'verified', emailResponse = { id: 'mo
       return {
         ok: true,
         async json() {
-          return { data: [{ name: 'saborai.site', status: domainStatus }] };
+          return { data: [{ name: BETA_DOMAIN, status: domainStatus }] };
         },
       };
     }
@@ -164,25 +167,45 @@ test('requires the exact Resend domain status verified before attempting email s
   assert.equal(mock.calls[0].options.method, 'GET');
 });
 
-test('sends a plain-text notification to SaborAI with the applicant as reply-to only after mock acceptance', async () => {
+test('sends both plain-text emails through mocked Resend without enabling per-message tracking', async () => {
   const mock = createMockResend();
   const handler = createBetaSignupHandler({ getApiKey: () => 'test-key', fetchImpl: mock.fetchImpl });
   const response = await runHandler(handler);
 
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.body, { ok: true });
-  assert.equal(mock.calls.length, 2);
+  assert.equal(mock.calls.length, 3);
   assert.equal(mock.calls[0].url, 'https://api.resend.com/domains');
   assert.equal(mock.calls[0].options.headers.Authorization, 'Bearer test-key');
-  const emailRequest = mock.calls[1];
-  assert.equal(emailRequest.options.method, 'POST');
-  const payload = JSON.parse(emailRequest.options.body);
-  assert.equal(payload.from, BETA_FROM);
-  assert.deepEqual(payload.to, [BETA_RECIPIENT]);
-  assert.equal(payload.reply_to, validApplication.email);
-  assert.match(payload.text, /La Mesa Verde/u);
-  assert.match(payload.text, /\+506 8888-1234/u);
-  assert.equal('html' in payload, false);
+  const internalRequest = mock.calls[1];
+  const internalPayload = JSON.parse(internalRequest.options.body);
+  assert.equal(internalRequest.options.method, 'POST');
+  assert.equal(internalPayload.from, 'SaborAI Beta <beta@mail.saborai.site>');
+  assert.equal(BETA_FROM, internalPayload.from);
+  assert.deepEqual(internalPayload.to, [BETA_RECIPIENT]);
+  assert.equal(internalPayload.reply_to, validApplication.email);
+  assert.match(internalPayload.text, /La Mesa Verde/u);
+  assert.match(internalPayload.text, /\+506 8888-1234/u);
+  assert.equal('html' in internalPayload, false);
+
+  const applicantRequest = mock.calls[2];
+  const applicantPayload = JSON.parse(applicantRequest.options.body);
+  assert.equal(applicantRequest.options.method, 'POST');
+  assert.equal(applicantPayload.from, BETA_APPLICANT_FROM);
+  assert.equal(applicantPayload.from, 'beta@mail.saborai.site');
+  assert.deepEqual(applicantPayload.to, [validApplication.email]);
+  assert.equal(applicantPayload.reply_to, BETA_APPLICANT_REPLY_TO);
+  assert.equal(applicantPayload.reply_to, 'maikolr85@outlook.es');
+  assert.match(applicantPayload.text, /Recibimos tu postulación/u);
+  assert.match(applicantPayload.text, /no garantiza un cupo/u);
+  assert.match(applicantPayload.text, /si tu restaurante queda seleccionado.*correo electrónico/iu);
+  assert.doesNotMatch(applicantPayload.text, /Ana Pérez|La Mesa Verde|ana@example.com/u);
+  assert.equal('html' in applicantPayload, false);
+
+  for (const payload of [internalPayload, applicantPayload]) {
+    assert.equal(Object.hasOwn(payload, 'open_tracking'), false);
+    assert.equal(Object.hasOwn(payload, 'click_tracking'), false);
+  }
 });
 
 test('returns an error when the provider rejects the email and does not leak provider details', async () => {
@@ -190,7 +213,7 @@ test('returns an error when the provider rejects the email and does not leak pro
   mock.fetchImpl = async (url, options = {}) => {
     mock.calls.push({ url, options });
     if (url.endsWith('/domains')) {
-      return { ok: true, async json() { return { data: [{ name: 'saborai.site', status: 'verified' }] }; } };
+      return { ok: true, async json() { return { data: [{ name: BETA_DOMAIN, status: 'verified' }] }; } };
     }
     return { ok: false, async json() { return { error: 'private provider error text' }; } };
   };
@@ -211,12 +234,12 @@ test('limits repeated submissions per in-memory client key without persistent st
   const second = await runHandler(handler);
   assert.equal(first.statusCode, 200);
   assert.equal(second.statusCode, 429);
-  assert.equal(mock.calls.length, 2);
+  assert.equal(mock.calls.length, 3);
 
   time = 1001;
   const third = await runHandler(handler);
   assert.equal(third.statusCode, 200);
-  assert.equal(mock.calls.length, 4);
+  assert.equal(mock.calls.length, 6);
 });
 
 test('fails closed rather than evicting an active bucket when the in-memory limiter is full', () => {

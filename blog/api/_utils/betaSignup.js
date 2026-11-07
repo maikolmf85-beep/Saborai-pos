@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 
-export const BETA_DOMAIN = 'saborai.site';
+export const BETA_DOMAIN = 'mail.saborai.site';
 export const BETA_RECIPIENT = 'maikolr85@outlook.es';
-export const BETA_FROM = 'SaborAI Beta <beta@saborai.site>';
+export const BETA_FROM = 'SaborAI Beta <beta@mail.saborai.site>';
+export const BETA_APPLICANT_FROM = 'beta@mail.saborai.site';
+export const BETA_APPLICANT_REPLY_TO = 'maikolr85@outlook.es';
 export const BETA_MAX_BODY_BYTES = 8 * 1024;
 
 const PROVINCES = new Set([
@@ -184,6 +186,18 @@ function notificationText(application) {
   ].join('\n');
 }
 
+function applicantConfirmationText() {
+  return [
+    'Hola,',
+    '',
+    'Recibimos tu postulación a la beta de SaborAI POS. Muchas gracias por postular tu restaurante.',
+    '',
+    'Enviar una postulación no garantiza un cupo. Si tu restaurante queda seleccionado, nos pondremos en contacto contigo por correo electrónico.',
+    '',
+    'Gracias por tu interés en ayudarnos a mejorar SaborAI POS.',
+  ].join('\n');
+}
+
 function timeoutSignal() {
   const signal = globalThis.AbortSignal;
   return typeof signal?.timeout === 'function' ? signal.timeout(8000) : undefined;
@@ -216,23 +230,37 @@ export async function sendBetaApplication({ application, apiKey, fetchImpl = glo
       ));
     if (!verified) return { kind: 'domain_not_verified' };
 
-    const emailResponse = await fetchImpl('https://api.resend.com/emails', {
-      method: 'POST',
-      headers,
-      signal: timeoutSignal(),
-      body: JSON.stringify({
+    const emails = [
+      {
         from: BETA_FROM,
         to: [BETA_RECIPIENT],
         reply_to: application.email,
         subject: 'Nueva postulación a la beta de SaborAI POS',
         text: notificationText(application),
-      }),
-    });
-    if (!emailResponse.ok) return { kind: 'provider_error' };
+      },
+      {
+        from: BETA_APPLICANT_FROM,
+        to: [application.email],
+        reply_to: BETA_APPLICANT_REPLY_TO,
+        subject: 'Recibimos tu postulación a la beta de SaborAI POS',
+        text: applicantConfirmationText(),
+      },
+    ];
 
-    const result = await emailResponse.json();
-    if (typeof result?.id !== 'string' || !result.id.trim()) {
-      return { kind: 'provider_error' };
+    for (const email of emails) {
+      // Resend tracking is disabled in the verified domain settings; it is not a per-message API option.
+      const emailResponse = await fetchImpl('https://api.resend.com/emails', {
+        method: 'POST',
+        headers,
+        signal: timeoutSignal(),
+        body: JSON.stringify(email),
+      });
+      if (!emailResponse.ok) return { kind: 'provider_error' };
+
+      const result = await emailResponse.json();
+      if (typeof result?.id !== 'string' || !result.id.trim()) {
+        return { kind: 'provider_error' };
+      }
     }
     return { kind: 'sent' };
   } catch {
