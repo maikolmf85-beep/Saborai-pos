@@ -135,3 +135,4 @@ highlights:
 | Variable | Descripción |
 |----------|-------------|
 | `PUBLIC_GA_ID` | ID de Google Analytics 4 (opcional) |
+| `RESEND_API_KEY` | Clave de Resend usada únicamente por la función serverless del formulario beta. Si se configura para producción, debe estar en el entorno server-side del proyecto del blog; nunca como variable `PUBLIC_` o `VITE_`. La función verifica que `saborai.site` tenga estado `verified` antes de enviar. |
