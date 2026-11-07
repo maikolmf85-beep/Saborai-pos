@@ -183,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Header del Menú Desplegable */}
             <div className="flex items-center justify-between pb-3.5 mb-3.5 border-b border-stone-800">
               <div className="flex items-center gap-2.5">
-                <BrandLogo variant="isotype" size="sm" className="brightness-0 invert" />
+                <BrandLogo variant="isotype" size="sm" tone="light" />
                 <div>
                   <h3 className="font-black text-sm text-white">SaborAI POS</h3>
                   <p className="text-[11px] text-[#a9b994] font-medium truncate max-w-[170px]">{tenant.name}</p>
@@ -553,7 +553,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="SaborAI POS"
             >
               <div className="w-10 h-10 shrink-0 flex items-center justify-center">
-                <BrandLogo variant="isotype" size="sm" className="brightness-0 invert" />
+                <BrandLogo variant="isotype" size="sm" tone="light" />
               </div>
 
               <div className={`min-w-0 flex flex-col items-start overflow-hidden whitespace-nowrap transition-[width,margin,opacity] duration-[280ms] ease-[cubic-bezier(0.22,1,0.36,1)] delay-75 motion-reduce:transition-none ${isSidebarCollapsed ? 'ml-0 opacity-0 w-0' : 'ml-3 opacity-100 w-40'}`}>
