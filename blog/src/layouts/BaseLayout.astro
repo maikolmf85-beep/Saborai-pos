@@ -18,7 +18,7 @@ export interface Props {
 const {
   title,
   description,
-  image = '/assets/logos/saborai-logo.png',
+  image = '/assets/logos/brand/logo-horizontal-light.png',
   type = 'website',
   publishedTime,
   modifiedTime,
@@ -33,6 +33,8 @@ const siteTitle = 'SaborAI Blog';
 const fullTitle = title === siteTitle ? title : `${title} | ${siteTitle}`;
 const canonical = canonicalUrl || Astro.url.href;
 const ogImage = new URL(image, Astro.site).href;
+const brandLogoLight = '/assets/logos/brand/logo-horizontal-light.png';
+const brandLogoWhite = '/assets/logos/brand/logo-horizontal-white.png';
 const metaKeywords = [...keywords, ...tags];
 
 // Google Analytics Measurement ID - Replace with your actual GA4 ID
@@ -128,7 +130,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
       "@type": "Organization",
       "name": "SaborAI POS",
       "url": "https://saborai.site",
-      "logo": "https://blog.saborai.site/assets/logos/finales/Logotipoweb.png",
+      "logo": "https://blog.saborai.site/assets/logos/brand/logo-horizontal-light.png",
       "sameAs": [
         "https://twitter.com/SaboraiPOS"
       ],
@@ -152,7 +154,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
         "name": "SaborAI POS",
         "logo": {
           "@type": "ImageObject",
-          "url": "https://blog.saborai.site/assets/logos/finales/Logotipoweb.png"
+          "url": "https://blog.saborai.site/assets/logos/brand/logo-horizontal-light.png"
         }
       },
       "potentialAction": {
@@ -192,17 +194,13 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
           <!-- Logo -->
           <a href="/" class="flex items-center gap-3 group">
             <img
-              src="/assets/logos/finales/Isotipo.png"
-              alt="SaborAI"
-              class="h-9 w-auto rounded-xl shadow-sm group-hover:shadow-md transition-shadow"
-              width="39"
+              src={brandLogoLight}
+              alt="SaborAI Blog y Ayuda"
+              class="h-9 w-auto group-hover:opacity-80 transition-opacity"
+              width="146"
               height="36"
               loading="eager"
             />
-            <div class="flex flex-col">
-              <span class="text-lg font-black font-heading text-primary leading-tight">SaborAI</span>
-              <span class="text-[10px] font-bold text-accent uppercase tracking-widest -mt-0.5">Blog & Ayuda</span>
-            </div>
           </a>
 
           <!-- Desktop Nav -->
@@ -276,8 +274,7 @@ const GA_ID = import.meta.env.PUBLIC_GA_ID || 'G-XXXXXXXXXX';
           <!-- Brand -->
           <div class="md:col-span-1">
             <div class="flex items-center gap-2 mb-4">
-              <img src="/assets/logos/finales/Isotipo.png" alt="SaborAI" class="h-8 w-auto rounded-lg" width="34" height="32" />
-              <span class="text-lg font-black text-white font-heading">SaborAI</span>
+              <img src={brandLogoWhite} alt="SaborAI" class="h-8 w-auto" width="130" height="32" />
             </div>
             <p class="text-sm text-white/60 leading-relaxed">
               Software gastronómico inteligente con IA para restaurantes en Costa Rica.
