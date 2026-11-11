@@ -39,6 +39,7 @@ interface TableMapProps {
   onSelectTable: (table: Table) => void;
   onOpenOrder: (table: Table) => void;
   onSplitBill: (table: Table) => void;
+  onTransferTableAccount?: (sourceTable: Table, destinationTableId: string) => Promise<boolean>;
   isAdmin?: boolean;
   staffList?: UserProfile[];
   tenant: import('../types').TenantInfo;
@@ -51,6 +52,7 @@ interface TableMapProps {
   onCreateTableRequestHandled?: () => void;
   activeShiftZone?: string;
   activeShiftZones?: string[];
+  transferableZones?: string[];
   hasActiveShift?: boolean;
   onOpenCashShift?: (zone: string) => void;
   currentUser?: UserProfile | null;
@@ -63,6 +65,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   onSelectTable,
   onOpenOrder,
   onSplitBill,
+  onTransferTableAccount,
   isAdmin = true,
   staffList = [],
   tenant,
@@ -74,6 +77,7 @@ export const TableMap: React.FC<TableMapProps> = ({
   onCreateTableRequestHandled,
   activeShiftZone,
   activeShiftZones,
+  transferableZones = [],
   hasActiveShift = false,
   onOpenCashShift,
   currentUser,
@@ -144,6 +148,10 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [selectedTable, setSelectedTable] = useState<Table | null>(tables[0] || null);
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [isTransferAccountModalOpen, setIsTransferAccountModalOpen] = useState(false);
+  const [transferAccountTargetId, setTransferAccountTargetId] = useState('');
+  const [isTransferringAccount, setIsTransferringAccount] = useState(false);
+  const [transferAccountError, setTransferAccountError] = useState('');
   const [isReservationsOpen, setIsReservationsOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
@@ -154,6 +162,12 @@ export const TableMap: React.FC<TableMapProps> = ({
   const mobileControlsRef = useRef<HTMLElement | null>(null);
   const mobileControlsButtonRef = useRef<HTMLButtonElement | null>(null);
   const selectedZoneHasActiveShift = zoneHasActiveShift(selectedZone);
+  const transferAccountTargets = selectedTable?.activeOrder && transferableZones.includes(selectedTable.zone)
+    ? tables.filter(table => table.id !== selectedTable.id
+      && transferableZones.includes(table.zone)
+      && table.status === 'AVAILABLE'
+      && !table.activeOrder)
+    : [];
 
   // Sync selectedZone when activeShiftZones change or tenantZones update
   useEffect(() => {
@@ -649,6 +663,42 @@ export const TableMap: React.FC<TableMapProps> = ({
     setSelectedTable(updatedTbl);
     onOpenOrder(updatedTbl);
     setTableForPinAuth(null);
+  };
+
+  const openTransferAccountModal = () => {
+    setTransferAccountTargetId(transferAccountTargets[0]?.id || '');
+    setTransferAccountError('');
+    setIsTransferAccountModalOpen(true);
+  };
+
+  const handleConfirmTransferAccount = async () => {
+    if (!selectedTable?.activeOrder || !onTransferTableAccount) return;
+    const destination = transferAccountTargets.find(table => table.id === transferAccountTargetId);
+    if (!destination) {
+      setTransferAccountError('Selecciona una mesa disponible de un salón con turno activo en esta misma sucursal.');
+      return;
+    }
+
+    setIsTransferringAccount(true);
+    setTransferAccountError('');
+    try {
+      const moved = await onTransferTableAccount(selectedTable, destination.id);
+      if (!moved) {
+        setTransferAccountError('La cuenta cambió o la mesa destino ya no está disponible. Actualiza el mapa e inténtalo de nuevo.');
+        return;
+      }
+      setSelectedTable({
+        ...destination,
+        status: selectedTable.status,
+        activeOrder: selectedTable.activeOrder
+      });
+      setIsTransferAccountModalOpen(false);
+      setTransferAccountTargetId('');
+    } catch {
+      setTransferAccountError('No se pudo trasladar la cuenta. No se confirmó ningún cambio; inténtalo de nuevo.');
+    } finally {
+      setIsTransferringAccount(false);
+    }
   };
 
   // Helper to render chairs based on table shape
@@ -1403,12 +1453,109 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <span>Cobrar / Facturar Mesa</span>
                 </button>
               )}
+
+              {selectedTable.activeOrder && onTransferTableAccount && transferableZones.includes(selectedTable.zone) && (
+                <button
+                  type="button"
+                  onClick={openTransferAccountModal}
+                  className="w-full py-2.5 bg-white hover:bg-[#f3f6f0] text-stone-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border border-[#a9b994]"
+                >
+                  <Move className="w-3.5 h-3.5 text-[#588157]" />
+                  <span>Trasladar cuenta completa</span>
+                </button>
+              )}
             </div>
           )}
 
         </div>
 
       </div>
+
+      {isTransferAccountModalOpen && selectedTable?.activeOrder && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-stone-950/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-stone-200 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-stone-100">
+              <div>
+                <h3 className="text-base font-bold text-stone-900">Trasladar cuenta completa</h3>
+                <p className="mt-1 text-xs text-stone-500">Orden {selectedTable.activeOrder.orderNumber}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTransferAccountModalOpen(false)}
+                disabled={isTransferringAccount}
+                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 flex items-center justify-center disabled:opacity-50"
+                aria-label="Cerrar traslado de cuenta"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3.5 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Desde</span>
+                  <strong className="text-stone-900">{selectedTable.name} · {selectedTable.zone}</strong>
+                </div>
+                <Move className="h-4 w-4 shrink-0 text-[#588157]" />
+                <div className="text-right">
+                  <span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Hacia</span>
+                  <strong className="text-stone-900">
+                    {(() => {
+                      const target = transferAccountTargets.find(table => table.id === transferAccountTargetId);
+                      return target ? `${target.name} · ${target.zone}` : 'Selecciona una mesa';
+                    })()}
+                  </strong>
+                </div>
+              </div>
+              <p className="mt-2 border-t border-stone-200 pt-2 text-[11px] text-stone-600">
+                Se conservarán el número de orden, las subcuentas y los productos en su secuencia actual. No se mezclará con otra cuenta.
+              </p>
+            </div>
+
+            {transferAccountTargets.length > 0 ? (
+              <div>
+                <label htmlFor="transfer-account-destination" className="mb-1 block text-xs font-semibold text-stone-700">Mesa destino disponible</label>
+                <select
+                  id="transfer-account-destination"
+                  value={transferAccountTargetId}
+                  onChange={event => setTransferAccountTargetId(event.target.value)}
+                  disabled={isTransferringAccount}
+                  className="w-full rounded-xl border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#588157]/40 disabled:opacity-60"
+                >
+                  {transferAccountTargets.map(table => (
+                    <option key={table.id} value={table.id}>{table.name} · {table.zone}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                No hay mesas disponibles en los salones de esta sucursal con turno activo.
+              </p>
+            )}
+
+            {transferAccountError && <p role="alert" className="text-xs font-medium text-rose-700">{transferAccountError}</p>}
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+              <button
+                type="button"
+                onClick={() => setIsTransferAccountModalOpen(false)}
+                disabled={isTransferringAccount}
+                className="rounded-xl border border-stone-200 px-4 py-2.5 text-sm font-bold text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleConfirmTransferAccount()}
+                disabled={isTransferringAccount || transferAccountTargets.length === 0 || !transferAccountTargetId}
+                className="rounded-xl bg-stone-900 px-5 py-2.5 text-sm font-bold text-white hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
+              >
+                {isTransferringAccount ? 'Trasladando…' : 'Confirmar traslado'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Añadir Mesa al Mapa */}
       {showAddModal && (

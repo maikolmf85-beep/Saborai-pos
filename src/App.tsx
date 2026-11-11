@@ -52,6 +52,7 @@ import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
 import { restoreTablePositionsFromSnapshot } from './services/tableLayoutPersistence';
 import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
+import { getTransferableZonesForBranch, transferTableAccount } from './services/tableAccountTransfer';
 import { isReservationReminderDue } from './services/tableReservationLogic';
 import { loadTableReservations, subscribeToTableReservations } from './services/tableReservationService';
 import { supabaseClient } from './lib/supabaseClient';
@@ -1882,6 +1883,158 @@ export function App() {
     }
   };
 
+  const getActiveBranchTransferContext = () => {
+    const activeShift = cashShiftService.getActiveShift();
+    const registers = cashShiftService.getCashRegisters();
+    const activeRegister = registers.find(register => register.id === activeShift?.cashRegisterId);
+    if (!activeShift || !activeRegister?.branchCode) return { branchCode: '', zones: [] as string[] };
+    return {
+      branchCode: activeRegister.branchCode,
+      zones: getTransferableZonesForBranch(
+        registers,
+        Object.values(cashShiftService.getAllActiveShiftsMap()),
+        activeRegister.branchCode
+      )
+    };
+  };
+
+  const handleTransferTableAccount = async (sourceTable: Table, destinationTableId: string): Promise<boolean> => {
+    const currentTables = tablesRef.current;
+    const currentSource = currentTables.find(table => table.id === sourceTable.id);
+    const destination = currentTables.find(table => table.id === destinationTableId);
+    const transferContext = getActiveBranchTransferContext();
+    if (!currentSource?.activeOrder || !destination || !transferContext.branchCode
+      || !transferContext.zones.includes(currentSource.zone)
+      || !transferContext.zones.includes(destination.zone)) return false;
+
+    const currentKdsOrders = kdsOrders;
+    const result = transferTableAccount(
+      currentTables,
+      currentKdsOrders,
+      currentSource.id,
+      destination.id,
+      transferContext.zones
+    );
+    if (!result) return false;
+
+    handleUpdateTables(result.tables);
+    setSelectedTableForOrder(current => current?.id === currentSource.id ? result.destinationTable : current);
+    handleUpdateKdsOrdersRealtime(result.kdsOrders);
+    const rollbackTransfer = async () => {
+      handleUpdateTables(currentTables);
+      setSelectedTableForOrder(current => current?.id === destination.id ? currentSource : current);
+      handleUpdateKdsOrdersRealtime(currentKdsOrders);
+      await Promise.all([
+        localDB.saveItem('tables', currentSource),
+        localDB.saveItem('tables', destination)
+      ]);
+    };
+    try {
+      await Promise.all([
+        localDB.saveItem('tables', result.sourceTable),
+        localDB.saveItem('tables', result.destinationTable)
+      ]);
+    } catch {
+      await rollbackTransfer();
+      addNotification({
+        id: `table_account_transfer_local_error_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'Traslado no guardado',
+        message: 'No se pudo guardar el cambio en este dispositivo; las mesas permanecen como estaban.',
+        timestamp: new Date(),
+        station: 'General'
+      });
+      return false;
+    }
+
+    const operationId = `table_account_transfer_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+    const tableSnapshot = (table: Table) => ({
+      id: table.id,
+      number: table.number,
+      name: table.name,
+      zone: table.zone,
+      seats: table.seats,
+      shape: table.shape,
+      x: table.x,
+      y: table.y,
+      rotation: table.rotation
+    });
+    const transferPayload = {
+      branchCode: transferContext.branchCode,
+      orderNumber: currentSource.activeOrder.orderNumber,
+      sourceTable: tableSnapshot(currentSource),
+      destinationTable: tableSnapshot(destination)
+    };
+    const description = `Traslado de cuenta: ${currentSource.name} → ${destination.name}`;
+    let pendingSync = false;
+    if (localDB.isOnline()) {
+      try {
+        await posCloudService.syncOperation(
+          'TRANSFER_TABLE_ACCOUNT',
+          transferPayload,
+          tenant.id,
+          operationId
+        );
+      } catch (error) {
+        if (error instanceof PosCloudSyncError && error.code === 'TABLE_ACCOUNT_TRANSFER_REJECTED') {
+          await rollbackTransfer();
+          addNotification({
+            id: `table_account_transfer_rejected_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Traslado no aplicado',
+            message: error.message || 'La cuenta o las mesas cambiaron; actualiza el mapa antes de volver a intentarlo.',
+            timestamp: new Date(),
+            station: 'General'
+          });
+          return false;
+        }
+        try {
+          await localDB.enqueueOfflineAction('TRANSFER_TABLE_ACCOUNT', transferPayload, description, tenant.id, operationId);
+        } catch {
+          await rollbackTransfer();
+          addNotification({
+            id: `table_account_transfer_queue_error_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Traslado no guardado',
+            message: 'No se pudo guardar el traslado para sincronizar; las mesas permanecen como estaban.',
+            timestamp: new Date(),
+            station: 'General'
+          });
+          return false;
+        }
+        pendingSync = true;
+      }
+    } else {
+      try {
+        await localDB.enqueueOfflineAction('TRANSFER_TABLE_ACCOUNT', transferPayload, description, tenant.id, operationId);
+      } catch {
+        await rollbackTransfer();
+        addNotification({
+          id: `table_account_transfer_queue_error_${Date.now()}`,
+          type: 'SYNC_ERROR',
+          title: 'Traslado no guardado',
+          message: 'No se pudo guardar el traslado para sincronizar; las mesas permanecen como estaban.',
+          timestamp: new Date(),
+          station: 'General'
+        });
+        return false;
+      }
+      pendingSync = true;
+    }
+
+    addNotification({
+      id: `table_account_transfer_${Date.now()}`,
+      type: 'TABLE_UPDATE',
+      title: pendingSync ? 'Traslado guardado localmente' : 'Cuenta trasladada',
+      message: pendingSync
+        ? `La cuenta de ${currentSource.name} pasó a ${destination.name} y queda pendiente de sincronización.`
+        : `La cuenta completa pasó de ${currentSource.name} a ${destination.name}; conservó su número y contenido.`,
+      timestamp: new Date(),
+      station: 'General'
+    });
+    return true;
+  };
+
   const handleUpdateTenantStatus = (status: SubscriptionStatus, graceEnds?: string) => {
     setTenant(prev => ({
       ...prev,
@@ -2229,6 +2382,8 @@ export function App() {
                   tenant={tenant}
                   onUpdateTenant={handleUpdateTenant}
                   onUpdateTables={handleUpdateTables}
+                  onTransferTableAccount={handleTransferTableAccount}
+                  transferableZones={getActiveBranchTransferContext().zones}
                   onQuickTakeaway={handleQuickTakeaway}
                   openZoneManagerRequest={guideOpenZonesRequest}
                   onZoneManagerRequestHandled={() => setGuideOpenZonesRequest(0)}

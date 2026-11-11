@@ -10,7 +10,7 @@ import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
 import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ACCOUNT', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -209,6 +209,77 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
   });
 
   return { tableId: tableResult.data.id, orderId };
+}
+
+function rejectedTableAccountTransfer(message: string) {
+  return Object.assign(new Error(message), { code: 'TABLE_ACCOUNT_TRANSFER_REJECTED' });
+}
+
+function readTransferTableSnapshot(value: unknown, label: string) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw rejectedTableAccountTransfer(`${label} es inválida.`);
+  const table = value as Record<string, unknown>;
+  const id = typeof table.id === 'string' ? table.id.trim() : '';
+  const name = typeof table.name === 'string' ? table.name.trim() : '';
+  const zone = typeof table.zone === 'string' ? table.zone.trim() : '';
+  if (!id || id.length > 160 || !name || name.length > 120 || !zone || zone.length > 120
+    || !Number.isInteger(table.number) || Number(table.number) < 1
+    || !Number.isInteger(table.seats) || Number(table.seats) < 1) {
+    throw rejectedTableAccountTransfer(`${label} no tiene datos válidos.`);
+  }
+  const shape = table.shape === 'round' || table.shape === 'bar' ? table.shape : 'square';
+  return {
+    id,
+    number: Number(table.number),
+    name,
+    zone,
+    seats: Math.min(50, Number(table.seats)),
+    shape,
+    x: Math.max(0, Math.min(100, safeNumber(table.x, 0))),
+    y: Math.max(0, Math.min(100, safeNumber(table.y, 0))),
+    rotation: safeNumber(table.rotation, 0)
+  };
+}
+
+async function syncTableAccountTransfer(
+  tenantId: string,
+  userId: string,
+  employeeId: string | undefined,
+  operationId: string,
+  payload: any
+) {
+  const branchCode = typeof payload?.branchCode === 'string' ? payload.branchCode.trim() : '';
+  const orderNumber = typeof payload?.orderNumber === 'string' ? payload.orderNumber.trim() : '';
+  if (!/^\d{3}$/.test(branchCode) || !orderNumber || orderNumber.length > 80) {
+    throw rejectedTableAccountTransfer('La sucursal o la cuenta de origen no es válida.');
+  }
+  const sourceTable = readTransferTableSnapshot(payload?.sourceTable, 'La mesa origen');
+  const destinationTable = readTransferTableSnapshot(payload?.destinationTable, 'La mesa destino');
+  if (sourceTable.id === destinationTable.id) throw rejectedTableAccountTransfer('El destino debe ser una mesa distinta.');
+
+  const { data, error } = await supabaseAdmin.rpc('transfer_pos_table_account', {
+    p_tenant_id: tenantId,
+    p_operation_id: operationId,
+    p_actor_user_id: userId,
+    p_actor_employee_id: employeeId || null,
+    p_order_number: orderNumber,
+    p_branch_code: branchCode,
+    p_source_table: sourceTable,
+    p_destination_table: destinationTable
+  });
+  if (error) {
+    const code = ['22023', 'P0001', '23505', '40001'].includes(error.code || '')
+      ? 'TABLE_ACCOUNT_TRANSFER_REJECTED'
+      : error.code === 'PGRST202' ? 'TABLE_ACCOUNT_TRANSFER_NOT_READY' : undefined;
+    const transferError = new Error(code === 'TABLE_ACCOUNT_TRANSFER_REJECTED'
+      ? (error.message || 'La cuenta o la mesa destino cambiaron; el traslado no se aplicó.')
+      : code === 'TABLE_ACCOUNT_TRANSFER_NOT_READY'
+        ? 'El traslado de cuenta todavía no está habilitado en la base de datos.'
+        : 'No se pudo confirmar el traslado de la cuenta en la nube.');
+    if (code) Object.assign(transferError, { code });
+    throw transferError;
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('La nube no confirmó el traslado de la cuenta.');
+  return data;
 }
 
 async function syncEmployeeCredit(tenantId: string, userId: string, operationId: string, orderId: string, orderNumber: string, payload: any, amount: number) {
@@ -736,7 +807,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     let result: unknown;
-    if (action === 'PAYMENT') result = await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    if (action === 'TRANSFER_TABLE_ACCOUNT') result = await syncTableAccountTransfer(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    else if (action === 'PAYMENT') result = await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY') result = await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'SAVE_INVENTORY_CONFIG') result = await syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'LOAD_INVENTORY_CONFIG') result = await getInventoryConfig(tenantId, body.payload);

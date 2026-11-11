@@ -17,7 +17,7 @@ export interface TenantOfflineSnapshot {
 
 export interface OfflineSyncQueueItem {
   id: string;
-  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'PAYMENT';
+  action: 'CREATE_ORDER' | 'UPDATE_TABLE' | 'TRANSFER_TABLE_ACCOUNT' | 'EMIT_INVOICE' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'PAYMENT';
   payload: any;
   timestamp: string;
   tenantId?: string;
