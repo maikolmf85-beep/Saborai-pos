@@ -1,6 +1,7 @@
 import type { ElectronicInvoiceCR, Table } from '../types';
-import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems';
-import { getUndispatchedItems } from './inventoryDispatch';
+import { sanitizeFiscalInvoiceData } from '../utils/fiscalInvoiceItems.ts';
+import { getUndispatchedItems } from './inventoryDispatch.ts';
+import { isCloudTenantId } from './tenantStorage.ts';
 
 export type PosCloudAction = 'UPDATE_TABLE' | 'TRANSFER_TABLE_ACCOUNT' | 'PAYMENT' | 'DEDUCT_INVENTORY' | 'DISPATCH_INVENTORY' | 'SAVE_INVENTORY_CONFIG' | 'LOAD_INVENTORY_CONFIG' | 'ADJUST_INVENTORY' | 'EMIT_INVOICE' | 'CLOSE_CASH_SHIFT' | 'CLOSE_DAILY_CASH' | 'GET_DAILY_CASH_STATUS' | 'OPEN_DAILY_CASH' | 'IMPORT_CASH_SHIFT' | 'ASSIGN_CASH_TERMINAL' | 'REASSIGN_CASH_TERMINAL';
 
@@ -17,9 +18,14 @@ export interface SaleCloudPayload {
 }
 
 export class PosCloudSyncError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string) {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = 'PosCloudSyncError';
+    this.status = status;
+    this.code = code;
   }
 }
 
@@ -45,6 +51,33 @@ function getSessionActor(): { actorUserId: string; actorEmployeeId: string | nul
   return { actorUserId, actorEmployeeId: localStorage.getItem('saborai_employee_id') };
 }
 
+function localDemoResult(action: PosCloudAction, payload: Record<string, unknown>): unknown {
+  if (action === 'PAYMENT') return { paymentIds: [] };
+  if (action === 'OPEN_DAILY_CASH') {
+    const openedAt = new Date().toISOString();
+    return {
+      openingId: `demo_opening_${Date.now()}`,
+      cashRegisterId: String(payload.registerId || ''),
+      businessDate: openedAt.slice(0, 10),
+      timezone: 'America/Costa_Rica',
+      openedAt,
+      alreadyOpened: false
+    };
+  }
+  if (action === 'CLOSE_DAILY_CASH') {
+    return {
+      closureId: `demo_closure_${Date.now()}`,
+      cashRegisterId: String(payload.registerId || ''),
+      closedAt: new Date().toISOString(),
+      summary: {}
+    };
+  }
+  if (action === 'IMPORT_CASH_SHIFT') return { alreadyExists: false };
+  if (action === 'ASSIGN_CASH_TERMINAL') return { assigned: true, alreadyAssigned: false };
+  if (action === 'REASSIGN_CASH_TERMINAL') return { assigned: true, alreadyAssigned: false };
+  return {};
+}
+
 class PosCloudService {
   async syncOperation<T = unknown>(
     action: PosCloudAction,
@@ -53,6 +86,7 @@ class PosCloudService {
     operationId = createOperationId(action)
   ): Promise<T> {
     if (!tenantId) throw new Error('Tenant requerido para sincronizar la operación.');
+    if (!isCloudTenantId(tenantId)) return localDemoResult(action, payload) as T;
     const token = getToken();
     if (!token) throw new Error('No hay una sesión autenticada para sincronizar la operación.');
     const actor = getSessionActor();

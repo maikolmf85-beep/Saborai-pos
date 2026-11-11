@@ -12,7 +12,7 @@ import {
   CashShiftParticipant
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
-import { clearLegacyCashControlData, getTenantItem, removeTenantItem, setTenantItem } from './tenantStorage';
+import { clearLegacyCashControlData, getTenantItem, isLocalDemoTenantId, removeTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
 import type { CashControlMigrationResult } from './cashControlCloudService';
@@ -56,8 +56,8 @@ class CashShiftService {
     this.resetInMemoryState();
   }
 
-  setTenantContext(tenantId: string): void {
-    if (!tenantId || this.tenantId === tenantId) return;
+  setTenantContext(tenantId: string, forceLocalReload = false): void {
+    if (!tenantId || (this.tenantId === tenantId && !forceLocalReload)) return;
     this.tenantId = tenantId;
     if (this.cloudSyncTimer) {
       clearTimeout(this.cloudSyncTimer);
@@ -65,7 +65,14 @@ class CashShiftService {
     }
     this.cloudSyncRequested = false;
     this.localMutationRevision = 0;
-    if (cashControlCloudService.isAvailable()) {
+    this.cloudRealtimeUnsubscribe?.();
+    this.cloudRealtimeUnsubscribe = null;
+    if (forceLocalReload || isLocalDemoTenantId(tenantId)) {
+      this.resetInMemoryState();
+      this.loadFromStorage();
+      return;
+    }
+    if (cashControlCloudService.isAvailableForTenant(tenantId)) {
       // Supabase es la fuente de verdad. No reutilizar catálogos/turnos antiguos
       // que puedan volver a insertarse después de un Ctrl+Shift+R.
       this.registers = [];
@@ -80,11 +87,10 @@ class CashShiftService {
     } else {
       this.loadFromStorage();
     }
-    this.cloudRealtimeUnsubscribe?.();
     this.cloudRealtimeUnsubscribe = cashControlCloudService.subscribe(tenantId, () => {
       void this.refreshFromCloud();
     });
-    void this.reconcileWithCloud(tenantId);
+    if (cashControlCloudService.isAvailableForTenant(tenantId)) void this.reconcileWithCloud(tenantId);
   }
 
   private resetInMemoryState(): void {
@@ -145,7 +151,7 @@ class CashShiftService {
   // --- Cash Registers Management ---
 
   getCashRegisters(): CashRegister[] {
-    if (this.registers.length === 0 && !cashControlCloudService.isAvailable()) {
+    if (this.registers.length === 0 && !cashControlCloudService.isAvailableForTenant(this.tenantId)) {
       this.registers = [...DEFAULT_REGISTERS];
       this.saveToStorage();
     }
@@ -273,7 +279,7 @@ class CashShiftService {
       this.currentTerminalId,
       id,
       async () => {
-        if (tenantId && cashControlCloudService.isAvailable()) {
+        if (tenantId && cashControlCloudService.isAvailableForTenant(tenantId)) {
           await cashControlCloudService.deactivateCashRegister(tenantId, id);
         }
       }
@@ -354,7 +360,7 @@ class CashShiftService {
     linkedZone?: string,
     linkedZones?: string[]
   ): CashShift {
-    if (cashControlCloudService.isAvailable() && this.registers.length === 0) {
+    if (cashControlCloudService.isAvailableForTenant(this.tenantId) && this.registers.length === 0) {
       throw new Error('No hay cajas configuradas en la nube. Crea una caja antes de abrir un turno.');
     }
     const targetRegisterId = registerId || this.currentTerminalId || 'caja-01';
@@ -530,13 +536,13 @@ class CashShiftService {
   }
 
   private queueCloudSync(): void {
-    if (this.cloudHydrating || !this.tenantId || !cashControlCloudService.isAvailable()) return;
+    if (this.cloudHydrating || !this.tenantId || !cashControlCloudService.isAvailableForTenant(this.tenantId)) return;
     this.cloudSyncRequested = true;
     this.scheduleCloudSync(800);
   }
 
   private scheduleCloudSync(delay: number): void {
-    if (!this.tenantId || !cashControlCloudService.isAvailable()) return;
+    if (!this.tenantId || !cashControlCloudService.isAvailableForTenant(this.tenantId)) return;
     if (this.cloudSyncTimer) clearTimeout(this.cloudSyncTimer);
     this.cloudSyncTimer = setTimeout(() => {
       this.cloudSyncTimer = null;
@@ -550,7 +556,7 @@ class CashShiftService {
     if (closeTarget?.kind === 'daily' && (!this.tenantId || closeTarget.tenantId !== this.tenantId)) {
       throw new Error('El tenant del cierre diario no coincide con el tenant activo; no se cerró la caja del día.');
     }
-    if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
+    if (!this.tenantId || !cashControlCloudService.isAvailableForTenant(this.tenantId)) return null;
 
     let result: CashControlMigrationResult | null = null;
     do {
@@ -619,7 +625,7 @@ class CashShiftService {
   }
 
   private async syncToCloud(): Promise<CashControlMigrationResult | null> {
-    if (!this.tenantId || !cashControlCloudService.isAvailable()) return null;
+    if (!this.tenantId || !cashControlCloudService.isAvailableForTenant(this.tenantId)) return null;
     if (this.cloudSyncPromise) {
       this.cloudSyncRequested = true;
       return this.cloudSyncPromise;
@@ -645,7 +651,7 @@ class CashShiftService {
   }
 
   private async reconcileWithCloud(tenantId: string): Promise<void> {
-    if (!cashControlCloudService.isAvailable()) return;
+    if (!cashControlCloudService.isAvailableForTenant(tenantId)) return;
     try {
       // Al iniciar o cambiar de tenant, Supabase es la fuente de verdad.
       // La importación local solo debe ejecutarse por una acción explícita de migración;
@@ -658,7 +664,7 @@ class CashShiftService {
 
   private async refreshFromCloud(): Promise<void> {
     const refreshTenantId = this.tenantId;
-    if (!refreshTenantId || !cashControlCloudService.isAvailable()) return;
+    if (!refreshTenantId || !cashControlCloudService.isAvailableForTenant(refreshTenantId)) return;
     const startingRevision = this.localMutationRevision;
     try {
       const snapshot = await cashControlCloudService.getCloudSnapshot(refreshTenantId);
@@ -800,7 +806,7 @@ class CashShiftService {
       this.saveToStorage(false);
     };
 
-    if (cashControlCloudService.isAvailable()) {
+    if (cashControlCloudService.isAvailableForTenant(this.tenantId)) {
       if (!this.tenantId) throw new Error('No se pudo confirmar el restaurante para cerrar el turno.');
       await commitAfterSuccessfulRemoteClose(
         () => cashControlCloudService.closeShiftInCloud(this.tenantId!, shift.id, {

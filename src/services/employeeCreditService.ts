@@ -1,4 +1,4 @@
-import { getTenantItem, setTenantItem } from './tenantStorage.ts';
+import { getTenantItem, isLocalDemoTenantId, setTenantItem } from './tenantStorage.ts';
 import type { UserProfile } from '../types';
 import type { EmployeeCreditPeriodRange } from './employeeCreditPeriod.ts';
 
@@ -297,6 +297,7 @@ class EmployeeCreditService {
   }
 
   async refreshLedger(tenantId: string): Promise<EmployeeCreditLedger> {
+    if (isLocalDemoTenantId(tenantId)) return this.getLedger(tenantId);
     const token = currentToken();
     if (!token) throw new Error('No hay una sesión autenticada para consultar el registro de consumo.');
     const response = await fetch(`/api/employee-credit?tenantId=${encodeURIComponent(tenantId)}`, {
@@ -360,6 +361,39 @@ class EmployeeCreditService {
   }
 
   async getPeriodReport(tenantId: string, range: EmployeeCreditPeriodRange, employeeId?: string): Promise<EmployeeCreditPeriodReport> {
+    if (isLocalDemoTenantId(tenantId)) {
+      const fromTime = new Date(range.from).getTime();
+      const toTime = new Date(range.to).getTime();
+      const transactions = this.getLedger(tenantId).transactions.filter(transaction => {
+        const createdAt = new Date(transaction.createdAt).getTime();
+        return createdAt >= fromTime && createdAt < toTime && (!employeeId || transaction.employeeId === employeeId);
+      });
+      const summaries = new Map<string, EmployeeCreditPeriodEmployeeSummary>();
+      let chargeTotal = 0;
+      let paymentTotal = 0;
+      for (const transaction of transactions) {
+        const summary = summaries.get(transaction.employeeId) || {
+          employeeId: transaction.employeeId, employeeName: transaction.employeeName,
+          chargeTotal: 0, paymentTotal: 0, netTotal: 0, transactionCount: 0
+        };
+        summary.transactionCount += 1;
+        if (transaction.type === 'CHARGE') {
+          chargeTotal += transaction.amount;
+          summary.chargeTotal += transaction.amount;
+        } else if (transaction.type === 'PAYMENT') {
+          paymentTotal += transaction.amount;
+          summary.paymentTotal += transaction.amount;
+        }
+        summary.netTotal = summary.chargeTotal - summary.paymentTotal;
+        summaries.set(transaction.employeeId, summary);
+      }
+      return {
+        from: range.from, to: range.to, chargeTotal, paymentTotal, netTotal: chargeTotal - paymentTotal,
+        transactionCount: transactions.length,
+        employeeSummaries: [...summaries.values()].sort((left, right) => left.employeeName.localeCompare(right.employeeName, 'es')),
+        transactions, hasMoreTransactions: false
+      };
+    }
     const token = currentToken();
     if (!token) throw new Error('Conecta el dispositivo para consultar el informe de consumo.');
     const query = new URLSearchParams({ tenantId, from: range.from, to: range.to });
@@ -441,6 +475,37 @@ class EmployeeCreditService {
     reference?: string;
     idempotencyKey: string;
   }): Promise<EmployeeCreditTransaction> {
+    if (isLocalDemoTenantId(params.tenantId)) {
+      const amount = finiteAmount(params.amount);
+      if (!amount || !params.employeeId || !params.idempotencyKey) throw new Error('El abono no es válido.');
+      const ledger = this.getLedger(params.tenantId);
+      const previous = ledger.transactions.find(item => item.idempotencyKey === params.idempotencyKey);
+      if (previous) return { ...previous, alreadyApplied: true };
+      const account = ledger.accounts.find(item => item.employeeId === params.employeeId);
+      const employee = ledger.employees.find(item => item.id === params.employeeId);
+      const balanceBefore = account?.balance ?? ledger.transactions
+        .filter(item => item.employeeId === params.employeeId)
+        .reduce((balance, item) => balance + deltaFor(item), 0);
+      const transaction: EmployeeCreditTransaction = {
+        id: params.idempotencyKey, tenantId: params.tenantId, employeeId: params.employeeId,
+        employeeName: account?.employeeName || employee?.name || 'Colaborador', type: 'PAYMENT', amount,
+        balanceAfter: Math.max(0, balanceBefore - amount), reference: params.reference,
+        createdAt: new Date().toISOString(), idempotencyKey: params.idempotencyKey, pending: false
+      };
+      const nextAccount = {
+        employeeId: params.employeeId, employeeName: transaction.employeeName, status: 'ACTIVE',
+        balance: transaction.balanceAfter, updatedAt: transaction.createdAt
+      };
+      this.saveLedger(params.tenantId, {
+        ...ledger,
+        employees: mergeEmployee(ledger.employees, { id: params.employeeId, name: transaction.employeeName, active: true }),
+        accounts: account
+          ? ledger.accounts.map(item => item.employeeId === params.employeeId ? nextAccount : item)
+          : [...ledger.accounts, nextAccount],
+        transactions: [transaction, ...ledger.transactions]
+      });
+      return transaction;
+    }
     const token = currentToken();
     if (!token) throw new Error('No hay una sesión autenticada para registrar el abono.');
     const amount = finiteAmount(params.amount);

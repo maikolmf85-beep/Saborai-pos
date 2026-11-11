@@ -3,6 +3,7 @@ import { supabaseClient } from '../lib/supabaseClient';
 import { Table, KDSOrder, MenuItem } from '../types';
 import { canRespondToRealtimeSync, resolveRealtimeTablePayload } from '../services/tableSync';
 import { resolveRealtimeTenantZones } from '../services/tenantZones';
+import { isLocalDemoTenantId } from '../services/tenantStorage';
 
 function sendSyncRequest(channel: any) {
   void channel.send({ type: 'broadcast', event: 'request-sync', payload: {} });
@@ -33,7 +34,7 @@ export function useRealtimeSync(
 
   useEffect(() => {
     const client = supabaseClient;
-    if (!tenantId || !client) return;
+    if (!tenantId || !client || isLocalDemoTenantId(tenantId)) return;
 
     const channelName = `tenant-${tenantId}-sync`;
     const channel = client.channel(channelName, {
@@ -164,14 +165,14 @@ export function useRealtimeSync(
   // If the channel connected before IndexedDB/auth hydration finished, request
   // another exchange now that this client can safely apply table snapshots.
   useEffect(() => {
-    if (!tenantId || !tablesHydrated) return;
+    if (!tenantId || !tablesHydrated || isLocalDemoTenantId(tenantId)) return;
     const channel = channelRef.current;
     if (channel) sendSyncRequest(channel);
   }, [tenantId, tablesHydrated]);
 
   // Expose broadcast functions
   const broadcastTables = (newTables: Table[]) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-tables',
@@ -181,7 +182,7 @@ export function useRealtimeSync(
   };
 
   const broadcastKdsOrders = (newOrders: KDSOrder[]) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-kds',
@@ -191,7 +192,7 @@ export function useRealtimeSync(
   };
 
   const broadcastMenuItems = (newMenu: MenuItem[]) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-menu',
@@ -201,7 +202,7 @@ export function useRealtimeSync(
   };
 
   const broadcastShifts = (shiftsMap: any) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-shifts',
@@ -211,7 +212,7 @@ export function useRealtimeSync(
   };
 
   const broadcastTenant = (tenant: any) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-tenant',
@@ -221,7 +222,7 @@ export function useRealtimeSync(
   };
 
   const broadcastStaff = (staff: any[]) => {
-    if (channelRef.current) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
       const safeStaff = (staff || []).map(member => {
         const { pin: _pin, ...safeMember } = member;
         return safeMember;

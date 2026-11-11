@@ -1,4 +1,5 @@
 // IndexedDB Native Service for Offline-First POS Operation in Costa Rica
+import { isCloudTenantId, isLocalDemoTenantId } from './tenantStorage.ts';
 
 const DB_NAME = 'saborai_pos_local_db';
 const DB_VERSION = 3;
@@ -101,6 +102,55 @@ export class SaboraiLocalDB {
     void this.notifyActiveTenantCount();
   }
 
+  async clearDemoSessionData(): Promise<void> {
+    if (!this.db) await this.init();
+    if (!this.db) {
+      if (typeof window === 'undefined') return;
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (!key) continue;
+        if (key.startsWith('saborai_tenant_snapshots_tenant_demo')
+          || key.startsWith('saborai_tables_demo_')
+          || key.startsWith('saborai_menu_items_demo_')) {
+          localStorage.removeItem(key);
+          continue;
+        }
+        if (!key.startsWith('saborai_sync_queue_')) continue;
+        try {
+          const queued = JSON.parse(localStorage.getItem(key) || 'null');
+          if (isLocalDemoTenantId(queued?.tenantId)) localStorage.removeItem(key);
+        } catch {}
+      }
+      return;
+    }
+
+    const db = this.db;
+    const clearMatching = (storeName: string, shouldDelete: (item: any) => boolean, keyFor: (item: any) => IDBValidKey) => new Promise<void>(resolve => {
+      try {
+        const transaction = db!.transaction(storeName, 'readwrite');
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+        request.onsuccess = () => {
+          (request.result || []).forEach((item: any) => {
+            if (shouldDelete(item)) store.delete(keyFor(item));
+          });
+        };
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => resolve();
+        transaction.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
+
+    await Promise.all([
+      clearMatching('sync_queue', item => isLocalDemoTenantId(item?.tenantId), item => item.id),
+      clearMatching('tenant_snapshots', item => isLocalDemoTenantId(item?.tenantId), item => item.tenantId),
+      clearMatching('tables', item => typeof item?.id === 'string' && item.id.startsWith('demo_table_'), item => item.id),
+      clearMatching('menu_items', item => typeof item?.id === 'string' && item.id.startsWith('demo_menu_'), item => item.id)
+    ]);
+  }
+
   private async handleNetworkChange() {
     await this.notifyActiveTenantCount();
   }
@@ -192,6 +242,8 @@ export class SaboraiLocalDB {
   }
 
   async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string, operationId?: string): Promise<void> {
+    const scopedTenantId = tenantId || this.activeTenantId || (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') || undefined : undefined);
+    if (!isCloudTenantId(scopedTenantId)) return;
     const stableOperationId = operationId || `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
     const actorUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') || undefined : undefined;
     const actorEmployeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
@@ -261,13 +313,13 @@ export class SaboraiLocalDB {
   }
 
   async getPendingCount(tenantId = this.activeTenantId ?? ''): Promise<number> {
-    if (!tenantId) return 0;
+    if (!isCloudTenantId(tenantId)) return 0;
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
     return filterSyncableItemsForTenant(all, tenantId).length;
   }
 
   async getPendingItems(tenantId = this.activeTenantId ?? ''): Promise<OfflineSyncQueueItem[]> {
-    if (!tenantId) return [];
+    if (!isCloudTenantId(tenantId)) return [];
     const all = await this.getAllItems<OfflineSyncQueueItem>('sync_queue');
     return filterPendingItemsForTenant(all, tenantId);
   }
@@ -313,7 +365,7 @@ export class SaboraiLocalDB {
   }
 
   async syncAllPending(tenantId = this.activeTenantId ?? ''): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
-    if (!tenantId) return { syncedCount: 0, failedCount: 0, remainingCount: 0 };
+    if (!isCloudTenantId(tenantId)) return { syncedCount: 0, failedCount: 0, remainingCount: 0 };
     if (this.syncInFlight) {
       return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount(tenantId) };
     }

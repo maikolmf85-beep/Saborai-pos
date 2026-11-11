@@ -1,3 +1,5 @@
+import { createDemoSeed, DEMO_TENANT_ID, type DemoSeed } from './demoSeed.ts';
+
 const STORAGE_PREFIX = 'saborai:tenant:';
 
 const OPERATIONAL_KEYS = [
@@ -48,6 +50,15 @@ export type TenantStorageKey = typeof OPERATIONAL_KEYS[number] | string;
 
 function normalizeId(value: string): string {
   return value.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 120);
+}
+
+export function isLocalDemoTenantId(tenantId: string | null | undefined): boolean {
+  return typeof tenantId === 'string' && /^tenant_demo(?:_|$)/i.test(tenantId.trim());
+}
+
+export function isCloudTenantId(tenantId: string | null | undefined): boolean {
+  return typeof tenantId === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(tenantId.trim());
 }
 
 export function getStoredTenantId(): string | null {
@@ -110,6 +121,23 @@ export function clearTenantData(tenantId: string): void {
   OPERATIONAL_KEYS.forEach(key => localStorage.removeItem(`${STORAGE_PREFIX}${normalizedId}:${key}`));
 }
 
+function clearStoredDemoData(): void {
+  if (typeof window === 'undefined') return;
+  const demoScopedPrefix = `${STORAGE_PREFIX}tenant_demo`;
+  const demoOnlyPrefixes = [
+    'saborai_table_positions_tenant_demo',
+    'saborai_daily_cash_status:tenant_demo',
+    'saborai_cash_control_migration:tenant_demo',
+    'saborai_reservation_reminders_v1:tenant_demo'
+  ];
+  for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+    const key = localStorage.key(index);
+    if (key && (key.startsWith(demoScopedPrefix) || demoOnlyPrefixes.some(prefix => key.startsWith(prefix)))) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
 export function clearLegacyOperationalData(): void {
   if (typeof window === 'undefined') return;
   [
@@ -147,7 +175,7 @@ export function clearLegacyCashControlData(): void {
 
 /** Recupera datos previos solo cuando pertenecen al tenant autenticado. */
 export function migrateLegacyDataToTenant(tenantId: string): boolean {
-  if (typeof window === 'undefined' || !tenantId) return false;
+  if (typeof window === 'undefined' || !tenantId || isLocalDemoTenantId(tenantId)) return false;
 
   try {
     const legacyTenantRaw = localStorage.getItem('saborai_tenant');
@@ -170,8 +198,26 @@ export function migrateLegacyDataToTenant(tenantId: string): boolean {
   }
 }
 
-export function startCleanDemoSession(tenantId: string): void {
-  clearLegacyOperationalData();
-  clearTenantData(tenantId);
+/** Limpia exclusivamente el espacio Demo y vuelve a instalar su seed ficticia. */
+export function startCleanDemoSession(tenantId: string = DEMO_TENANT_ID): DemoSeed {
+  if (!isLocalDemoTenantId(tenantId)) {
+    throw new Error('La sesión de demostración requiere un tenant local tenant_demo.');
+  }
+
+  clearStoredDemoData();
   setActiveTenantId(tenantId);
+  const seed = createDemoSeed();
+  setTenantItem('zones', seed.zones, tenantId);
+  setTenantItem('tables', seed.tables, tenantId);
+  setTenantItem('menu', seed.menuItems, tenantId);
+  setTenantItem('cash_registers', seed.cashRegisters, tenantId);
+  setTenantItem('current_terminal_id', seed.cashRegisters[0]?.id || '', tenantId);
+  setTenantItem('shifts_map', {}, tenantId);
+  setTenantItem('shifts_history', [], tenantId);
+  setTenantItem('staff', [], tenantId);
+  setTenantItem('kds_orders', [], tenantId);
+  setTenantItem('table_reservations', [], tenantId);
+  setTenantItem('table_reservations_outbox', [], tenantId);
+  setTenantItem('audit_events', [], tenantId);
+  return seed;
 }

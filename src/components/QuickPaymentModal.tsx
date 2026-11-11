@@ -19,7 +19,7 @@ import { cashControlCloudService } from '../services/cashControlCloudService';
 import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
-import { getTenantItem } from '../services/tenantStorage';
+import { getTenantItem, isLocalDemoTenantId } from '../services/tenantStorage';
 import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService } from '../services/employeeCreditService';
 import { localDB } from '../services/db';
 import { shouldCloseOrderAfterPayment } from '../services/cashClosureRules';
@@ -52,6 +52,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   onNotify,
   staffList = []
 }) => {
+  const isLocalDemo = isLocalDemoTenantId(tenant.id);
   const currentRegister = cashShiftService.getCurrentRegister();
   const terminalCode = currentRegister.terminalCode || '00001';
   const branchCode = currentRegister.branchCode || '001';
@@ -94,6 +95,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
   // Opción de emitir a Hacienda (DGT) o solo ticket interno de caja
   const [emitToHacienda, setEmitToHacienda] = useState<boolean>(() => {
+    if (isLocalDemo) return false;
     if (tenant.taxRegime === 'SIMPLIFIED') return false;
     try {
       const saved = localStorage.getItem('saborai_pos_emit_hacienda');
@@ -103,6 +105,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   });
 
   const handleToggleHacienda = (val: boolean) => {
+    if (isLocalDemo) return;
     setEmitToHacienda(val);
     try {
       localStorage.setItem('saborai_pos_emit_hacienda', String(val));
@@ -125,7 +128,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setIsProcessing(false);
       setGeneratedXml('');
 
-      if (isSimplified) {
+      if (isLocalDemo || isSimplified) {
         setEmitToHacienda(false);
       } else {
         try {
@@ -135,16 +138,16 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       }
       
       // Fetch daily exchange rate from Hacienda API
-      fetch('https://api.hacienda.go.cr/indicadores/tc')
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.compra && data.compra.valor) {
-            setExchangeRate(data.compra.valor);
-          }
-        })
-        .catch(err => console.error("Error fetching TC", err));
+      if (!isLocalDemo) {
+        fetch('https://api.hacienda.go.cr/indicadores/tc')
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.compra && data.compra.valor) setExchangeRate(data.compra.valor);
+          })
+          .catch(err => console.error("Error fetching TC", err));
+      }
     }
-  }, [isOpen, total]);
+  }, [isOpen, total, isLocalDemo]);
 
   // Single cash calculations
   const singleCashGivenNum = parseFloat(cashReceived) || 0;
@@ -208,7 +211,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
     e.preventDefault();
     if (!canSubmit()) return;
 
-    const isOffline = !localDB.isOnline();
+    const isOffline = !isLocalDemo && !localDB.isOnline();
     const includesExternallyVerifiedMethod = paymentMode === 'single'
       ? singleMethod === 'Tarjeta' || singleMethod === 'SINPE Móvil'
       : mixedCard > 0 || mixedSinpe > 0;
@@ -278,14 +281,14 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       const saved = getTenantItem<any>('hacienda_config', tenant.id);
       if (saved) savedLocalHc = saved;
     } catch {}
-    const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
+    const effectiveCedula = isLocalDemo ? '' : savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
 
     const { clave: generatedClave, consecutivo: generatedConsecutivo } = buildClaveYConsecutivo({
       cedula: effectiveCedula,
       branchCode,
       terminalCode,
       tipo: docType,
-      numero: reserveConsecutivoNumber(branchCode, terminalCode, docType),
+      numero: isLocalDemo ? 1 : reserveConsecutivoNumber(branchCode, terminalCode, docType),
       fecha: emissionDate
     });
     setClave50Digitos(generatedClave);
@@ -393,7 +396,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         ].filter(payment => payment.amount > 0);
     const closeOrder = shouldCloseOrderAfterPayment(rawItems, subAccountId);
 
-    const shouldQueueInvoice = isOffline || isSimplified || !emitToHacienda;
+    const shouldQueueInvoice = isLocalDemo || isOffline || isSimplified || !emitToHacienda;
     const inventoryItems = items.filter(item => !item.inventoryDeductedAtDispatch).map(item => ({
       menuItemId: item.menuItemId,
       name: item.name,
@@ -450,7 +453,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       : Promise.resolve()
     ).then(() => localDB.syncAllPending(tenant.id));
     
-    if (emitToHacienda && !isSimplified) {
+    if (!isLocalDemo && emitToHacienda && !isSimplified) {
       const xml = generateHaciendaXmlV44(invoiceObj, tenant);
       invoiceObj.xmlContent = xml;
       setGeneratedXml(xml);
@@ -789,8 +792,10 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
                     </span>
                   </div>
                   <span className="text-[11px] text-stone-500 block mt-0.5">
-                    {emitToHacienda 
-                      ? 'Firma y transmite el Tiquete Electrónico oficial a Hacienda CR.' 
+                    {isLocalDemo
+                      ? 'Cobro ficticio guardado en esta Demo; no se envía a Hacienda.'
+                      : emitToHacienda
+                      ? 'Firma y transmite el Tiquete Electrónico oficial a Hacienda CR.'
                       : 'Cierre rápido local sin firma ni envío a Hacienda.'}
                   </span>
                 </div>
@@ -800,10 +805,11 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
               <button
                 type="button"
                 onClick={() => handleToggleHacienda(!emitToHacienda)}
+                disabled={isLocalDemo}
                 className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                   emitToHacienda ? 'bg-emerald-600' : 'bg-stone-300'
                 }`}
-                title={emitToHacienda ? 'Desactivar emisión a Hacienda' : 'Activar emisión a Hacienda'}
+                title={isLocalDemo ? 'La Demo local no emite comprobantes reales' : emitToHacienda ? 'Desactivar emisión a Hacienda' : 'Activar emisión a Hacienda'}
               >
                 <span
                   className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${

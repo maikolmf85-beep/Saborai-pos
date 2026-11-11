@@ -45,6 +45,7 @@ import {
 import { UserProfile, TenantInfo } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { cashControlCloudService } from '../services/cashControlCloudService';
+import { isLocalDemoTenantId } from '../services/tenantStorage';
 import { auditService, AuditEvent } from '../services/auditService';
 import { soundService } from '../services/soundEffects';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -218,7 +219,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setIsLoadingDailyCashStatus(true);
     setDailyCashError(null);
     try {
-      if (!localDB.isOnline()) throw new Error('Se requiere conexión para verificar la apertura diaria de caja.');
+      if (!isLocalDemoTenantId(tenant.id) && !localDB.isOnline()) throw new Error('Se requiere conexión para verificar la apertura diaria de caja.');
       const status = await cashControlCloudService.getDailyCashStatus(tenant.id, targetRegisterId);
       if (requestId === dailyCashStatusRequest.current) setDailyCashStatus(status);
     } catch (error: any) {
@@ -375,7 +376,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
 
     try {
-      if (!localDB.isOnline()) throw new Error('Conecta el dispositivo para verificar que la caja del día sigue abierta.');
+      if (!isLocalDemoTenantId(tenant.id) && !localDB.isOnline()) throw new Error('Conecta el dispositivo para verificar que la caja del día sigue abierta.');
       const latestDailyStatus = await cashControlCloudService.getDailyCashStatus(tenant.id, regIdToUse);
       setDailyCashStatus(latestDailyStatus);
       if (!latestDailyStatus.isOpen || latestDailyStatus.isClosed) {
@@ -507,7 +508,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setDailyCashError(null);
     setIsOpeningDailyCash(true);
     try {
-      if (!localDB.isOnline()) throw new Error('La apertura diaria requiere conexión para guardarse y validarse en el servidor.');
+      if (!isLocalDemoTenantId(tenant.id) && !localDB.isOnline()) throw new Error('La apertura diaria requiere conexión para guardarse y validarse en el servidor.');
       const result = await cashControlCloudService.openDailyCashInCloud(tenant.id, selectedRegisterId);
       if (!result?.openingId || !result.businessDate || !result.openedAt) {
         throw new Error('El servidor no confirmó todos los datos de la apertura diaria.');
@@ -563,7 +564,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       if (!dailyCashStatus?.isOpen || dailyCashStatus.isClosed) {
         throw new Error('Primero debe abrirse la caja del día antes de cerrarla.');
       }
-      if (!localDB.isOnline()) throw new Error('El cierre diario requiere conexión para guardar y validar la caja en el servidor.');
+      if (!isLocalDemoTenantId(tenant.id) && !localDB.isOnline()) throw new Error('El cierre diario requiere conexión para guardar y validar la caja en el servidor.');
       const businessDate = dailyCashStatus?.businessDate || '';
       const result = await closeDailyCashAfterSync({
         tenantId: tenant.id,

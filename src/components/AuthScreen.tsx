@@ -18,6 +18,9 @@ import {
 } from 'lucide-react';
 import { UserProfile, TenantInfo, UserRole } from '../types';
 import { notionService } from '../services/notionService';
+import { DEMO_TENANT_ID } from '../services/demoSeed';
+import { localDB } from '../services/db';
+import { setTenantItem, startCleanDemoSession } from '../services/tenantStorage';
 
 interface AuthScreenProps {
   onLoginSuccess: (user: UserProfile, tenant: TenantInfo) => void;
@@ -149,37 +152,45 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
     }, 600);
   };
 
-  const handleQuickDemoAccess = () => {
-    const demoUser: UserProfile = {
-      id: 'usr_demo_admin',
-      name: 'Administrador Demo',
-      email: 'admin@saborai.site',
-      phone: '',
-      restaurantName: 'Mi Restaurante',
-      role: 'ADMIN'
-    };
-
+  const activateLocalDemo = async (demoUser: UserProfile) => {
+    await localDB.clearDemoSessionData();
+    const seed = startCleanDemoSession(DEMO_TENANT_ID);
     const demoTenant: TenantInfo = {
-      id: 'tenant_demo',
-      name: 'Mi Restaurante',
+      id: DEMO_TENANT_ID,
+      name: 'SaborAI Demo',
       cedulaJuridica: '',
-      email: 'admin@saborai.site',
+      email: '',
       phone: '',
-      location: '',
+      location: 'Costa Rica',
       plan: 'pro',
       status: 'ACTIVE',
       currency: 'CRC',
       monthlyFee: 45000,
-      zones: [],
-      menuCategories: []
+      taxRegime: 'TRADITIONAL',
+      includeService10ByDefault: true,
+      zones: seed.zones,
+      menuCategories: [...new Set(seed.menuItems.map(item => item.category))]
     };
-
+    setTenantItem('tenant_profile', demoTenant, DEMO_TENANT_ID);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(demoUser));
       localStorage.setItem('saborai_tenant', JSON.stringify(demoTenant));
+      localStorage.removeItem('saborai_account_user_id');
+      localStorage.removeItem('saborai_employee_id');
     } catch {}
-
     onLoginSuccess(demoUser, demoTenant);
+  };
+
+  const handleQuickDemoAccess = () => {
+    void activateLocalDemo({
+      id: 'demo_admin',
+      name: 'Administrador Demo',
+      email: 'demo@saborai.local',
+      phone: '+506 0000-0000',
+      restaurantName: 'SaborAI Demo',
+      role: 'ADMIN',
+      active: true
+    });
   };
 
   return (
@@ -473,33 +484,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onOpenNo
                   type="button"
                   onClick={() => {
                     const demoUser: UserProfile = {
-                      id: `usr_demo_${d.id.toLowerCase()}`,
+                      id: `demo_${d.id.toLowerCase()}`,
                       name: d.name,
-                      email: `${d.id.toLowerCase()}@saborai.site`,
-                      phone: '',
-                      restaurantName: 'Mi Restaurante',
+                      email: `${d.id.toLowerCase()}@saborai.local`,
+                      phone: '+506 0000-0000',
+                      restaurantName: 'SaborAI Demo',
                       role: d.id,
                       active: true
                     };
-                    const demoTenant: TenantInfo = {
-                      id: 'tenant_demo',
-                      name: 'Mi Restaurante',
-                      cedulaJuridica: '',
-                      email: 'demo@saborai.site',
-                      phone: '',
-                      location: '',
-                      plan: 'pro',
-                      status: 'ACTIVE',
-                      currency: 'CRC',
-                      monthlyFee: 45000,
-                      zones: [],
-                      menuCategories: []
-                    };
-                    try {
-                      localStorage.setItem('saborai_user', JSON.stringify(demoUser));
-                      localStorage.setItem('saborai_tenant', JSON.stringify(demoTenant));
-                    } catch {}
-                    onLoginSuccess(demoUser, demoTenant);
+                    void activateLocalDemo(demoUser);
                   }}
                   className={`p-2 bg-stone-100 text-stone-800 rounded-xl text-[11px] font-bold transition-all flex flex-col items-center justify-center gap-1 border border-stone-200 ${d.bg}`}
                 >

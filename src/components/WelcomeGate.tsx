@@ -7,7 +7,9 @@ import {
 import { tilopayService } from '../services/tilopayService';
 import { UserProfile, TenantInfo } from '../types';
 import { notionService } from '../services/notionService';
-import { startCleanDemoSession } from '../services/tenantStorage';
+import { setTenantItem, startCleanDemoSession } from '../services/tenantStorage';
+import { DEMO_TENANT_ID } from '../services/demoSeed';
+import { localDB } from '../services/db';
 import { supabaseClient } from '../lib/supabaseClient';
 
 export interface SaboraiSubscription {
@@ -63,27 +65,31 @@ const CardWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 /* ─── Helper: create demo tenant & user ─────────────────────── */
-function buildDemoSession(email: string, restaurantName = 'Mi Restaurante Demo'): { user: UserProfile; tenant: TenantInfo } {
+function buildDemoSession(restaurantName = 'SaborAI Demo'): { user: UserProfile; tenant: TenantInfo } {
   const user: UserProfile = {
-    id: `usr_demo_${Date.now()}`,
+    id: 'demo_admin',
     name: 'Administrador Demo',
-    email: email.trim().toLowerCase(),
+    email: 'demo@saborai.local',
     phone: '+506 0000-0000',
     restaurantName,
     role: 'ADMIN',
     active: true,
   };
   const tenant: TenantInfo = {
-    id: `tenant_demo_${Date.now()}`,
+    id: DEMO_TENANT_ID,
     name: restaurantName,
-    cedulaJuridica: '3-101-000000',
-    email: email.trim().toLowerCase(),
+    cedulaJuridica: '',
+    email: '',
     phone: '+506 0000-0000',
     location: 'Costa Rica',
     plan: 'pro',
     status: 'ACTIVE',
     currency: 'CRC',
     monthlyFee: 45000,
+    taxRegime: 'TRADITIONAL',
+    includeService10ByDefault: true,
+    zones: ['Salón Principal', 'Terraza', 'Barra'],
+    menuCategories: ['Cocina', 'Bar', 'Postres'],
   };
   return { user, tenant };
 }
@@ -205,20 +211,32 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   /* ─────────────────────────────────────────────────────────── */
 
   /* Demo submit */
-  const handleDemoSubmit = (e: React.FormEvent) => {
+  const handleDemoSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!demoEmail.trim() || !demoEmail.includes('@')) {
       setError('Ingresa un correo electrónico válido.');
       return;
     }
-    const { user, tenant } = buildDemoSession(demoEmail.trim());
-    startCleanDemoSession(tenant.id);
+    setIsProcessing(true);
+    resetError();
     try {
+      await localDB.clearDemoSessionData();
+      const { user, tenant } = buildDemoSession();
+      const seed = startCleanDemoSession(tenant.id);
+      tenant.zones = seed.zones;
+      tenant.menuCategories = [...new Set(seed.menuItems.map(item => item.category))];
+      setTenantItem('tenant_profile', tenant, tenant.id);
       localStorage.setItem('saborai_user', JSON.stringify(user));
       localStorage.setItem('saborai_tenant', JSON.stringify(tenant));
-    } catch {}
-    const sub: SaboraiSubscription = { mode: 'DEMO', email: demoEmail.trim(), activatedAt: new Date().toISOString() };
-    onSubscriptionActivated(sub, user, tenant);
+      localStorage.removeItem('saborai_account_user_id');
+      localStorage.removeItem('saborai_employee_id');
+      const sub: SaboraiSubscription = { mode: 'DEMO', activatedAt: new Date().toISOString() };
+      onSubscriptionActivated(sub, user, tenant);
+    } catch (demoError) {
+      setError(demoError instanceof Error ? demoError.message : 'No se pudo iniciar la Demo local.');
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   /* Trial Step 1 */

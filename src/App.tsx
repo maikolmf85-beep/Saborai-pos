@@ -46,7 +46,8 @@ import { NotificationToastContainer, PosNotification } from './components/Notifi
 import { nyzaSelfHealing } from './services/nyzaSelfHealingService';
 import { validateNyzaAction } from './services/nyzaActionValidation';
 import { runTenantBoundToolSequence } from './services/nyzaToolSequence';
-import { getTenantItem, hasTenantItem, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
+import { getTenantItem, hasTenantItem, isLocalDemoTenantId, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
+import { DEMO_TENANT_ID } from './services/demoSeed';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
 import { restoreTablePositionsFromSnapshot } from './services/tableLayoutPersistence';
@@ -376,7 +377,7 @@ export function App() {
       setTenantItem('zones', updated.zones || [], updated.id);
       // Solo una edición local de la lista envía un PATCH; una hidratación remota
       // nunca reescribe una copia posiblemente obsoleta en el servidor.
-      if (shouldPersistZones) {
+      if (shouldPersistZones && !isLocalDemoTenantId(updated.id)) {
         void syncTenantZonesWithServer(updated.zones || []).catch(error => {
           console.warn('[SaborAI] No se pudieron guardar los salones:', error);
           addNotification({
@@ -388,7 +389,7 @@ export function App() {
           });
         });
       }
-      if (updated.haciendaConfig) {
+      if (updated.haciendaConfig && !isLocalDemoTenantId(updated.id)) {
         setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
     } catch {}
@@ -397,6 +398,7 @@ export function App() {
   const finishNyzaSetupGuide = async () => {
     handleUpdateTenant({ ...tenant, onboardingCompleted: true });
     setIsNyzaSetupGuideOpen(false);
+    if (isLocalDemoTenantId(tenant.id)) return;
 
     try {
       const token = localStorage.getItem('saborai_token');
@@ -476,6 +478,11 @@ export function App() {
   // JWT Token validation on load
   useEffect(() => {
     const validateSession = async () => {
+      const activeTenantId = localStorage.getItem('saborai_active_tenant_id');
+      if (isLocalDemoTenantId(activeTenantId)) {
+        setIsLoadingAuth(false);
+        return;
+      }
       const token = localStorage.getItem('saborai_token');
       if (!token) {
         setIsLoadingAuth(false);
@@ -1355,7 +1362,7 @@ export function App() {
     activeTenantIdRef.current = restoredTenant.id;
     setActiveTenantId(restoredTenant.id);
     migrateLegacyDataToTenant(restoredTenant.id);
-    cashShiftService.setTenantContext(restoredTenant.id);
+    cashShiftService.setTenantContext(restoredTenant.id, isLocalDemoTenantId(restoredTenant.id));
     printerService.setTenantContext(restoredTenant.id);
     setCurrentUser(user);
     setTenant(restoredTenant);
@@ -1399,7 +1406,7 @@ export function App() {
 
   const handleLogout = () => {
     try {
-      void supabaseClient?.auth.signOut().catch(() => {});
+      if (!isLocalDemoTenantId(tenant.id)) void supabaseClient?.auth.signOut().catch(() => {});
       localStorage.removeItem('saborai_user');
       localStorage.removeItem('saborai_token');
       localStorage.removeItem('saborai_tenant');
@@ -1409,30 +1416,34 @@ export function App() {
     setCurrentUser(null);
   };
 
-  const handleStartDemo = (plan: SubscriptionPlan) => {
-    const demoTenantId = `tenant_demo_${Date.now()}`;
+  const handleStartDemo = async (plan: SubscriptionPlan) => {
+    await localDB.clearDemoSessionData();
+    const demoTenantId = DEMO_TENANT_ID;
+    const demoSeed = startCleanDemoSession(demoTenantId);
     activeTenantIdRef.current = demoTenantId;
-    startCleanDemoSession(demoTenantId);
     localStorage.removeItem('saborai_account_user_id');
     localStorage.removeItem('saborai_employee_id');
-    cashShiftService.setTenantContext(demoTenantId);
+    cashShiftService.setTenantContext(demoTenantId, true);
     printerService.setTenantContext(demoTenantId);
-    setMenuItems([]);
-    setTables([]);
+    setMenuItems(demoSeed.menuItems);
+    setTables(normalizeTablePositions(demoSeed.tables));
     setStaffList([]);
     setKdsOrders([]);
     setSelectedTableForOrder(null);
     const updatedTenant: TenantInfo = {
-      ...tenant,
       id: demoTenantId,
       name: 'SaborAI Demo',
+      cedulaJuridica: '',
       email: '',
       phone: '',
-      location: '',
-      zones: [],
-      menuCategories: [],
-      plan: plan,
+      location: 'Costa Rica',
+      plan,
       status: 'ACTIVE',
+      currency: 'CRC',
+      zones: demoSeed.zones,
+      menuCategories: [...new Set(demoSeed.menuItems.map(item => item.category))],
+      taxRegime: 'TRADITIONAL',
+      includeService10ByDefault: true,
       monthlyFee: plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000,
       onboardingCompleted: true
     };
@@ -1456,11 +1467,11 @@ export function App() {
 
     // Set a fake demo user so we skip WelcomeGate entirely
     const demoUser: UserProfile = {
-      id: `demo_${Date.now()}`,
+      id: 'demo_admin',
       name: 'Usuario Demo',
-      email: 'demo@saborai.site',
-      phone: '88888888',
-      restaurantName: 'Saborai Demo',
+      email: 'demo@saborai.local',
+      phone: '+506 0000-0000',
+      restaurantName: 'SaborAI Demo',
       role: 'ADMIN',
       active: true
     };

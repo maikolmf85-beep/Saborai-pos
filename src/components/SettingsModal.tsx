@@ -30,6 +30,7 @@ import { CashRegister } from '../types/cashShift';
 import { haciendaService } from '../services/haciendaService';
 import { ConfirmDialog } from './ConfirmDialog';
 import { cashControlCloudService, CashControlMigrationPreview, CashTerminalAssignmentConflict } from '../services/cashControlCloudService';
+import { isLocalDemoTenantId } from '../services/tenantStorage';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -176,9 +177,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setIsCreatingReg(false);
       setNewRegName('');
       setNewRegTerminalCode('');
-      setSavedRegFeedback(cashControlCloudService.isAvailable()
+      setSavedRegFeedback(cashControlCloudService.isAvailableForTenant(tenant.id)
         ? '✓ Nueva caja registrada y confirmada en la nube'
-        : '✓ Nueva caja registrada en este dispositivo; nube no configurada');
+        : isLocalDemoTenantId(tenant.id)
+          ? '✓ Nueva caja guardada solo en esta Demo local'
+          : '✓ Nueva caja registrada en este dispositivo; nube no configurada');
     } catch (error: any) {
       setRegistersList(cashShiftService.getCashRegisters());
       setSavedRegFeedback(createdLocally
@@ -853,7 +856,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <button
                       type="button"
                       onClick={handlePreviewCloudMigration}
-                      disabled={cloudMigrationBusy || !cashControlCloudService.isAvailable()}
+                      disabled={cloudMigrationBusy || !cashControlCloudService.isAvailableForTenant(tenant.id)}
                       className="px-3 py-2 rounded-xl bg-sky-700 hover:bg-sky-800 disabled:bg-sky-300 text-white text-xs font-bold transition-colors"
                     >
                       {cloudMigrationBusy ? 'Consultando…' : 'Revisar migración'}
@@ -861,7 +864,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   )}
                 </div>
 
-                {!cashControlCloudService.isAvailable() && (
+                {isLocalDemoTenantId(tenant.id) && (
+                  <p className="text-xs text-sky-900 bg-sky-100 border border-sky-200 rounded-lg px-3 py-2">
+                    Esta sesión de demostración es local. Las cajas y los turnos no se importan ni se sincronizan con Supabase.
+                  </p>
+                )}
+                {!isLocalDemoTenantId(tenant.id) && !cashControlCloudService.isAvailableForTenant(tenant.id) && (
                   <p className="text-xs text-amber-800 bg-amber-100 border border-amber-200 rounded-lg px-3 py-2">
                     Supabase no está configurado en este dispositivo. La operación local seguirá disponible.
                   </p>

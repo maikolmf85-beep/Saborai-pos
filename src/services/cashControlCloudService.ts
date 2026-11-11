@@ -1,10 +1,10 @@
 import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus } from '../types/cashShift';
-import { getTenantItem } from './tenantStorage';
-import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient';
-import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion';
-import { attemptCashTerminalAssignment, confirmOpenDailyCashFromRemote, isConfirmedOpenShiftForRegister, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync';
-import type { CashShiftCloseTarget, DailyCashCloseTarget } from './cashControlSync';
-import { posCloudService } from './posCloudService';
+import { getTenantItem, isCloudTenantId } from './tenantStorage.ts';
+import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient.ts';
+import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion.ts';
+import { attemptCashTerminalAssignment, confirmOpenDailyCashFromRemote, isConfirmedOpenShiftForRegister, isUnrelatedRegisterCodeMatch, updateClosedShiftIfNeeded } from './cashControlSync.ts';
+import type { CashShiftCloseTarget, DailyCashCloseTarget } from './cashControlSync.ts';
+import { posCloudService } from './posCloudService.ts';
 
 const DEVICE_KEY_STORAGE = 'saborai_cash_control_device_key';
 const MIGRATION_MARKER_PREFIX = 'saborai_cash_control_migration:';
@@ -119,6 +119,14 @@ function asArray<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
+function costaRicaBusinessDate(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Costa_Rica', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function uniqueShifts(activeMap: Record<string, CashShift> | null, history: CashShift[]): CashShift[] {
   const byId = new Map<string, CashShift>();
   Object.values(activeMap || {}).forEach(shift => {
@@ -139,8 +147,19 @@ class CashControlCloudService {
     return Boolean(isSupabaseConfigured && supabaseClient);
   }
 
+  isAvailableForTenant(tenantId: string | null | undefined): boolean {
+    return isCloudTenantId(tenantId) && this.isAvailable();
+  }
+
+  private assertCloudTenant(tenantId: string): void {
+    if (!isCloudTenantId(tenantId)) {
+      throw new Error('La sesión es local; esta operación no se sincroniza con Supabase.');
+    }
+  }
+
   async closeShiftInCloud(tenantId: string, shiftId: string, closure: Record<string, unknown>): Promise<Record<string, any>> {
-    if (!this.isAvailable()) throw new Error('El cierre de turno requiere conexión con la nube.');
+    this.assertCloudTenant(tenantId);
+    if (!this.isAvailableForTenant(tenantId)) throw new Error('El cierre de turno requiere conexión con la nube.');
     return posCloudService.syncOperation<Record<string, any>>(
       'CLOSE_CASH_SHIFT',
       { shiftId, closure },
@@ -163,6 +182,21 @@ class CashControlCloudService {
   }
 
   async getDailyCashStatus(tenantId: string, registerId: string): Promise<DailyCashStatus> {
+    if (!isCloudTenantId(tenantId)) {
+      const cached = this.getCachedDailyCashStatus(tenantId, registerId);
+      if (cached && this.isDailyCashStatusForCurrentDate(cached)) return cached;
+      const registers = getTenantItem<CashRegister[]>('cash_registers', tenantId) || [];
+      const status: DailyCashStatus = {
+        registerId,
+        registerName: registers.find(register => register.id === registerId)?.name || 'Caja Demo',
+        businessDate: costaRicaBusinessDate(),
+        timezone: 'America/Costa_Rica',
+        isOpen: false,
+        isClosed: false
+      };
+      this.cacheDailyCashStatus(tenantId, registerId, status);
+      return status;
+    }
     const status = await posCloudService.syncOperation<DailyCashStatus>(
       'GET_DAILY_CASH_STATUS',
       { registerId },
@@ -212,6 +246,21 @@ class CashControlCloudService {
   }
 
   async openDailyCashInCloud(tenantId: string, registerId: string): Promise<DailyCashOpeningResult> {
+    if (!isCloudTenantId(tenantId)) {
+      const current = await this.getDailyCashStatus(tenantId, registerId);
+      if (current.isClosed) throw new Error('La caja Demo ya tiene cierre diario para la fecha local actual.');
+      const openedAt = current.openedAt || new Date().toISOString();
+      const status: DailyCashStatus = { ...current, isOpen: true, isClosed: false, openedAt };
+      this.cacheDailyCashStatus(tenantId, registerId, status);
+      return {
+        openingId: `demo_opening_${tenantId}_${registerId}_${status.businessDate}`,
+        cashRegisterId: registerId,
+        businessDate: status.businessDate,
+        timezone: status.timezone,
+        openedAt,
+        alreadyOpened: Boolean(current.isOpen)
+      };
+    }
     return posCloudService.syncOperation<DailyCashOpeningResult>(
       'OPEN_DAILY_CASH',
       { registerId },
@@ -231,6 +280,7 @@ class CashControlCloudService {
   }
 
   async deactivateCashRegister(tenantId: string, localRegisterId: string): Promise<void> {
+    this.assertCloudTenant(tenantId);
     if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
     const client = supabaseClient;
     await archiveCashRegisterInCloud(tenantId, localRegisterId, {
@@ -269,6 +319,7 @@ class CashControlCloudService {
   }
 
   async getCloudSnapshot(tenantId: string): Promise<CashControlCloudSnapshot> {
+    this.assertCloudTenant(tenantId);
     if (!tenantId) throw new Error('Tenant ID es requerido para cargar cajas y turnos.');
     if (!supabaseClient) throw new Error('Supabase no está configurado en este dispositivo.');
 
@@ -381,6 +432,7 @@ class CashControlCloudService {
   }
 
   async previewLocalMigration(tenantId: string): Promise<CashControlMigrationPreview> {
+    this.assertCloudTenant(tenantId);
     const localRegisters = getTenantItem<CashRegister[]>('cash_registers', tenantId) || [];
     const activeMap = getTenantItem<Record<string, CashShift>>('shifts_map', tenantId) || {};
     const localActiveShifts = Object.values(activeMap).filter(Boolean);
@@ -418,6 +470,7 @@ class CashControlCloudService {
   }
 
   async importLocalConfiguration(tenantId: string, options: { deviceName?: string; overwriteExisting?: boolean } = {}): Promise<CashControlMigrationResult> {
+    this.assertCloudTenant(tenantId);
     const client = supabaseClient;
     if (!client) throw new Error('Supabase no está configurado en este dispositivo.');
     const preview = await this.previewLocalMigration(tenantId);
@@ -567,6 +620,7 @@ class CashControlCloudService {
   }
 
   async reassignTerminal(tenantId: string, conflict: CashTerminalAssignmentConflict): Promise<{ terminalId: string; deactivatedTerminalId: string; registerId: string; assigned: true; alreadyAssigned: boolean }> {
+    this.assertCloudTenant(tenantId);
     const deviceName = typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 120) : 'Dispositivo POS';
     return posCloudService.syncOperation('REASSIGN_CASH_TERMINAL', {
       previousTerminalId: conflict.terminalId,
@@ -584,6 +638,7 @@ class CashControlCloudService {
     deviceKey: string,
     overwriteExisting: boolean
   ): Promise<{ branch: CloudBranch; register: CloudRegister; created: boolean; updated: boolean }> {
+    this.assertCloudTenant(tenantId);
     if (typeof window === 'undefined' || typeof fetch !== 'function') {
       throw new Error('La creación de la sucursal y la caja requiere una sesión activa en línea.');
     }
@@ -641,7 +696,7 @@ class CashControlCloudService {
   }
 
   subscribe(tenantId: string, onChange: () => void): () => void {
-    if (!supabaseClient || !tenantId) return () => undefined;
+    if (!supabaseClient || !isCloudTenantId(tenantId)) return () => undefined;
     const channel = supabaseClient
       .channel(`tenant-${tenantId}-cash-control`, { config: { private: true } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pos_cash_registers', filter: `tenant_id=eq.${tenantId}` }, onChange)
