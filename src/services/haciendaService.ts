@@ -8,6 +8,7 @@ import {
   reserveConsecutivoNumber 
 } from './haciendaXml';
 import { getTenantItem, setTenantItem } from './tenantStorage';
+import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../utils/haciendaP12Pin';
 
 class HaciendaService {
   private invoices: ElectronicInvoiceCR[] = [];
@@ -171,12 +172,11 @@ class HaciendaService {
       } else {
         return { 
           success: false, 
-          message: data?.error || data?.message || 'Error al conectar con Hacienda ATV.', 
-          details: data 
+          message: data?.error || data?.message || 'Error al conectar con Hacienda ATV.'
         };
       }
-    } catch (err: any) {
-      return { success: false, message: `Error de red: ${err.message}` };
+    } catch {
+      return { success: false, message: 'Error de red: no se pudo comunicar con Hacienda.' };
     }
   }
 
@@ -204,6 +204,12 @@ class HaciendaService {
     if (preflightError) {
       this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO', undefined, preflightError);
       if (onStatusChange) onStatusChange('RECHAZADO', preflightError);
+      return;
+    }
+
+    if (activeConfig?.p12Base64 && !isValidHaciendaP12Pin(activeConfig.pinP12)) {
+      this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO', undefined, HACIENDA_P12_PIN_FORMAT_ERROR);
+      if (onStatusChange) onStatusChange('RECHAZADO', HACIENDA_P12_PIN_FORMAT_ERROR);
       return;
     }
 
@@ -258,17 +264,21 @@ class HaciendaService {
         // 202: Hacienda recibió el comprobante; la validación es asíncrona. Consultamos el resultado real.
         this.updateInvoiceStatus(invoice.clave50Digitos, 'PROCESANDO', data.signedXmlBase64);
         if (onStatusChange) onStatusChange('PROCESANDO', 'Recibido por Hacienda. Esperando validación...');
-        this.pollStatus(invoice.clave50Digitos, credentials, onStatusChange);
+        this.pollStatus(invoice.clave50Digitos, {
+          atvUsername: credentials.atvUsername,
+          atvPassword: credentials.atvPassword,
+          environment: credentials.environment
+        }, onStatusChange);
       } else {
         const reason = data.error || data.message || 'Rechazado por Hacienda.';
         this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO', data.signedXmlBase64, reason);
         if (onStatusChange) onStatusChange('RECHAZADO', reason);
-        console.error('Hacienda API Error:', data);
+        console.error('Hacienda API request failed.');
       }
     })
-    .catch(err => {
-      console.error('Hacienda Network Error:', err);
-      const reason = `Error de conexión: ${err.message}`;
+    .catch(() => {
+      console.error('Hacienda network request failed.');
+      const reason = 'Error de conexión: no se pudo comunicar con Hacienda.';
       this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO', undefined, reason);
       if (onStatusChange) onStatusChange('RECHAZADO', reason);
     });
@@ -300,11 +310,11 @@ class HaciendaService {
           const reason = data?.detalle || 'Comprobante rechazado por Hacienda (sin detalle).';
           this.updateInvoiceStatus(clave, 'RECHAZADO', undefined, reason);
           if (onStatusChange) onStatusChange('RECHAZADO', reason);
-          console.error('Hacienda rechazó el comprobante:', data);
+          console.error('Hacienda rechazó el comprobante.');
           return;
         }
-      } catch (err) {
-        console.warn('Consulta de estado falló, reintentando...', err);
+      } catch {
+        console.warn('Consulta de estado falló; se reintentará.');
       }
 
       if (attempt < MAX_ATTEMPTS) {

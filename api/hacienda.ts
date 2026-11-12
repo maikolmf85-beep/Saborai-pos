@@ -6,6 +6,7 @@ import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 import { parseFiscalInvoiceIssuedAt } from './_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
+import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../src/utils/haciendaP12Pin.js';
 
 const require = createRequire(import.meta.url);
 
@@ -54,7 +55,7 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   const cleanBase64 = p12Base64.includes(',') ? p12Base64.split(',')[1].replace(/\s+/g, '') : p12Base64.replace(/\s+/g, '');
   const der = forge.util.decode64(cleanBase64);
   const asn = forge.asn1.fromDer(der);
-  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin.trim());
+  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin);
   
   // Buscar certificado en certBag
   let cert: any = null;
@@ -153,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const atvUsername = (reqAtvUser || process.env.HACIENDA_USER || '').trim(); 
     const atvPassword = (reqAtvPass || process.env.HACIENDA_PASSWORD || '').trim();
     const rawP12 = reqP12 || process.env.HACIENDA_P12_BASE64;
-    const p12Pin = (reqPin || process.env.HACIENDA_PIN || '').trim();
+    const p12Pin = reqPin || process.env.HACIENDA_PIN || '';
     const environment: 'sandbox' | 'production' = (reqEnv === 'production' || process.env.HACIENDA_ENV === 'production') ? 'production' : 'sandbox';
     const endpoints = HACIENDA_ENV[environment];
 
@@ -170,6 +171,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } = { tokenOk: false, certOk: false };
 
       // 1. Validar Llave Criptográfica (.p12) y PIN si se proporcionaron
+      if (p12Pin && !isValidHaciendaP12Pin(p12Pin)) {
+        return res.status(400).json({ success: false, error: HACIENDA_P12_PIN_FORMAT_ERROR });
+      }
       if (rawP12 && p12Pin) {
         try {
           const certValidation = parseAndVerifyP12(rawP12, p12Pin);
@@ -179,12 +183,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         } catch (certErr: any) {
           const msg = certErr.message?.includes('MAC could not be verified') 
-            ? 'El PIN de 4 dígitos es incorrecto para este archivo .p12'
-            : certErr.message || 'Error procesando certificado .p12';
+            ? 'El PIN o contraseña no es correcto para este archivo .p12.'
+            : 'No se pudo validar la llave .p12. Verifica el archivo y el PIN o contraseña.';
           return res.status(400).json({ 
             success: false, 
-            error: msg, 
-            details: certErr.message 
+            error: msg
           });
         }
       }
@@ -209,7 +212,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(401).json({
             success: false,
             error: `Error de autenticación con Hacienda (${environment.toUpperCase()}): ${desc}`,
-            details: tokenData,
             environment
           });
         }
@@ -315,9 +317,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!rawXml && xmlBase64) {
       try {
         rawXml = Buffer.from(xmlBase64, 'base64').toString('utf-8');
-      } catch (e) {
+      } catch {
         // Ignorar si ya era binario
       }
+    }
+
+    if (rawP12 && p12Pin && rawXml && !isValidHaciendaP12Pin(p12Pin)) {
+      return res.status(400).json({ error: HACIENDA_P12_PIN_FORMAT_ERROR });
     }
 
     // 1. FIRMA DIGITAL XAdES-EPES CON LA LLAVE .P12
@@ -335,17 +341,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               error: `El certificado .p12 no pertenece al emisor (cédula ${emisorId}). Sujeto del certificado: ${info.subjectText}. Suba el .p12 correcto de esa cédula en Configuración.`
             });
           }
-        } catch (pe: any) {
-          console.warn('No se pudo inspeccionar el certificado:', pe.message);
+        } catch {
+          console.warn('No se pudo inspeccionar el certificado .p12.');
         }
-        console.log('=== [HACIENDA v4.4 API] XML RECIBIDO PREVIO A FIRMA XAdES-EPES ===\n' + rawXml);
         // signer.sign devuelve el XML firmado convertido directamente a Base64
-        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin.trim());
-      } catch (signError: any) {
-        console.error('Error firmando XML XAdES-EPES:', signError);
+        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin);
+      } catch {
+        console.error('Error firmando XML XAdES-EPES.');
         return res.status(400).json({
-          error: `Error al firmar digitalmente el XML con la llave .p12: ${signError.message || 'Error desconocido'}`,
-          message: signError.message
+          error: 'No se pudo firmar el XML con la llave .p12. Verifica el archivo y el PIN o contraseña.'
         });
       }
     } else if (!finalXmlBase64) {
@@ -460,7 +464,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const rawBody = await recepcionRes.text().catch(() => '');
       let recepcionData: any = null;
       try { recepcionData = rawBody ? JSON.parse(rawBody) : null; } catch { recepcionData = { raw: rawBody }; }
-      console.error('Rechazo Hacienda:', recepcionRes.status, errorCause, recepcionData);
+      console.error('Rechazo Hacienda:', recepcionRes.status);
       const reason = errorCause || recepcionData?.message || recepcionData?.error_description || recepcionData?.raw || `HTTP ${recepcionRes.status}`;
       const branch = await supabaseAdmin
         .from('pos_branches')
@@ -495,9 +499,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-  } catch (error: any) {
-    console.error('Error interno Facturación:', error);
-    return res.status(500).json({ error: 'Error interno del servidor', message: error.message });
+  } catch {
+    console.error('Error interno Facturación.');
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 }
 

@@ -22,6 +22,7 @@ import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
 import { getTenantItem } from '../services/tenantStorage';
+import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../utils/haciendaP12Pin';
 
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
@@ -48,6 +49,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const [showPassword, setShowPassword] = useState(false);
   const [pinP12, setPinP12] = useState(initialConfig?.pinP12 || '');
   const [showPin, setShowPin] = useState(false);
+  const [pinValidationError, setPinValidationError] = useState<string | null>(null);
   
   const [p12FileName, setP12FileName] = useState(initialConfig?.p12FileName || '');
   const [p12Base64, setP12Base64] = useState(initialConfig?.p12Base64 || '');
@@ -115,7 +117,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       environment,
       atvUsername: atvUsername.trim(),
       atvPassword: atvPassword.trim(),
-      pinP12: pinP12.trim(),
+      pinP12,
       p12FileName,
       p12Base64,
       cedulaEmisor: cedulaEmisor.trim(),
@@ -228,6 +230,13 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       return;
     }
 
+    if ((pinP12.length > 0 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
+      setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
+      setTestResult({ success: false, message: HACIENDA_P12_PIN_FORMAT_ERROR });
+      return;
+    }
+    setPinValidationError(null);
+
     setIsTesting(true);
     setTestResult(null);
 
@@ -235,7 +244,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       environment,
       atvUsername: trimmedUser,
       atvPassword: trimmedPass,
-      pinP12: pinP12.trim(),
+      pinP12,
       p12FileName,
       p12Base64,
       tipoIdentificacion,
@@ -273,6 +282,11 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
   const handleSaveConfig = (e: React.FormEvent) => {
     e.preventDefault();
+    if ((pinP12.length > 0 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
+      setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
+      return;
+    }
+    setPinValidationError(null);
     persistConfig();
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -363,7 +377,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
             const hasAct = /^\d{6}$/.test(codigoActividad.trim());
             const hasUbi = !!(provincia && canton && distrito);
             const hasCred = !!(atvUsername.trim() && atvPassword.trim());
-            const hasCert = !!(p12Base64 && pinP12.trim());
+            const hasCert = !!(p12Base64 && isValidHaciendaP12Pin(pinP12));
             const hasTerm = !!(sucursal && terminal);
 
             const checks = [
@@ -816,20 +830,25 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 </label>
               </div>
 
-              {/* PIN de la llave */}
+              {/* PIN o contraseña de la llave */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-stone-700">PIN de 4 dígitos del Certificado</label>
+                <label className="text-xs font-semibold text-stone-700">PIN o contraseña de la llave .p12</label>
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
-                    maxLength={8}
                     value={pinP12}
                     onChange={(e) => {
                       setPinP12(e.target.value);
                       setIsValidated(false);
+                      setPinValidationError(null);
                     }}
-                    onBlur={() => persistConfig()}
-                    placeholder="1234"
+                    onBlur={() => {
+                      if ((pinP12.length > 0 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
+                        setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
+                      }
+                      persistConfig();
+                    }}
+                    placeholder="PIN de 4 dígitos o clave larga"
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono tracking-widest"
                   />
                   <button
@@ -840,7 +859,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <span className="text-[11px] text-stone-400">PIN de 4 dígitos definido al descargar la llave en ATV.</span>
+                <span className="text-[11px] text-stone-400">Acepta el PIN legacy de 4 dígitos o una contraseña de al menos 15 caracteres con mayúscula, número y símbolo. Se conserva exactamente como se ingresa.</span>
+                {pinValidationError && <span role="alert" className="block text-[11px] text-rose-600">{pinValidationError}</span>}
               </div>
             </div>
 
@@ -900,7 +920,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-stone-200">
           <div className="flex items-center gap-2 text-xs text-stone-500">
             <Info className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>Los datos se guardan cifrados localmente y se usan exclusivamente para la emisión fiscal.</span>
+            <span>Los datos se guardan localmente en este navegador y se usan exclusivamente para la emisión fiscal.</span>
           </div>
 
           <div className="flex items-center gap-3">
