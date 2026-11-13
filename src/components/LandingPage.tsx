@@ -824,6 +824,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           <a href="/terms-of-service" className="hover:underline">Condiciones de Servicio</a>
         </div>
         <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
+        <p className="mt-2 text-xs text-[#a9b994]">Propiedad de Maikol Rafael Matamoros Fernández</p>
       </footer>
       
       {/* MODAL TILOPAY DIRECTO */}
