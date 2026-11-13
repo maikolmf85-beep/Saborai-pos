@@ -69,6 +69,10 @@ test('merge conserva literalmente credenciales/PIN válidos y permite reemplazo 
   const replacement = mergeHaciendaConfig(updated, { atvPassword: ' new secret ' });
   assert.equal(replacement.atvPassword, ' new secret ');
 
+  const replacementPin = ' A!bc123$xyZ9 ';
+  const withNewPin = mergeHaciendaConfig(updated, { pinP12: replacementPin });
+  assert.equal(withNewPin.pinP12, replacementPin);
+
   const removed = mergeHaciendaConfig(replacement, {}, { removeCertificate: true });
   assert.equal(removed.pinP12, '');
   assert.equal(removed.p12Base64, '');

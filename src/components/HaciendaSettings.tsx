@@ -879,7 +879,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <span className="text-[11px] text-stone-400">Debe ser exactamente de 4 o 14 dígitos numéricos; se conserva exactamente como la escribiste, sin recortarlo.</span>
+                <span className="text-[11px] text-stone-400">Usa 4 dígitos numéricos para un PIN legacy o 14 caracteres para la contraseña nueva; letras, números, signos y espacios cuentan y se conservan tal como los escribiste.</span>
                 {pinValidationError && <span role="alert" className="block text-[11px] text-rose-600">{pinValidationError}</span>}
               </div>
             </div>
