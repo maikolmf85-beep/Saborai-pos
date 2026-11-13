@@ -11,6 +11,31 @@ try {
 const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_API_VERSION || 'v26.0';
 const processedMessageIds = new Set<string>();
 
+type WebhookLogEvent =
+  | 'verification_accepted'
+  | 'verification_rejected'
+  | 'method_rejected'
+  | 'post_received'
+  | 'signature_rejected'
+  | 'event_ignored'
+  | 'duplicate_ignored'
+  | 'message_accepted'
+  | 'reply_generated'
+  | 'reply_sent'
+  | 'reply_generation_failed'
+  | 'reply_send_failed';
+
+function logWebhook(event: WebhookLogEvent, level: 'info' | 'error' = 'info', statusCode?: number): void {
+  const entry: { component: 'whatsapp-webhook'; event: WebhookLogEvent; statusCode?: number } = {
+    component: 'whatsapp-webhook',
+    event
+  };
+  if (statusCode !== undefined) entry.statusCode = statusCode;
+  const line = JSON.stringify(entry);
+  if (level === 'error') console.error(line);
+  else console.info(line);
+}
+
 function getTextMessage(body: any): { from: string; text: string; messageId: string } | null {
   const change = body?.entry?.[0]?.changes?.[0]?.value;
   const message = change?.messages?.[0];
@@ -39,7 +64,6 @@ Pregunta del usuario:
 ${userText}`;
 
   const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
-  let lastError: unknown;
   for (const model of models) {
     try {
       const response = await ai.models.generateContent({
@@ -48,13 +72,18 @@ ${userText}`;
       });
       const text = response.text?.trim();
       if (text) return text.slice(0, 3500);
-    } catch (error) {
-      lastError = error;
-    }
+    } catch {}
   }
 
-  console.error('[WhatsApp] Gemini no pudo responder:', lastError);
+  logWebhook('reply_generation_failed', 'error');
   return 'Recibí tu mensaje, pero Nyza está temporalmente ocupada. Intenta nuevamente en unos minutos o deja el detalle del problema para que soporte humano lo revise.';
+}
+
+class WhatsAppGraphApiError extends Error {
+  constructor(readonly statusCode: number) {
+    super('WhatsApp Graph API request failed.');
+    this.name = 'WhatsAppGraphApiError';
+  }
 }
 
 async function sendWhatsAppText(to: string, text: string): Promise<void> {
@@ -79,10 +108,7 @@ async function sendWhatsAppText(to: string, text: string): Promise<void> {
     })
   });
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`WhatsApp Graph API ${response.status}: ${detail.slice(0, 500)}`);
-  }
+  if (!response.ok) throw new WhatsAppGraphApiError(response.status);
 }
 
 function hasValidMetaSignature(req: VercelRequest): boolean {
@@ -105,34 +131,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const token = String(req.query['hub.verify_token'] || '');
     const challenge = String(req.query['hub.challenge'] || '');
     if (mode === 'subscribe' && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+      logWebhook('verification_accepted');
       return res.status(200).send(challenge);
     }
+    logWebhook('verification_rejected', 'error');
     return res.status(403).send('Verificación de webhook rechazada.');
   }
 
   if (req.method !== 'POST') {
+    logWebhook('method_rejected');
     return res.status(405).json({ error: 'Método no permitido.' });
   }
 
+  logWebhook('post_received');
   if (!hasValidMetaSignature(req)) {
+    logWebhook('signature_rejected', 'error');
     return res.status(401).json({ error: 'Firma de Meta inválida.' });
   }
 
   // Meta espera una respuesta rápida; el procesamiento continúa antes de cerrar
   // la solicitud para conservar compatibilidad con funciones serverless sencillas.
   const message = getTextMessage(req.body);
-  if (!message) return res.status(200).json({ received: true, ignored: true });
+  if (!message) {
+    logWebhook('event_ignored');
+    return res.status(200).json({ received: true, ignored: true });
+  }
   if (message.messageId && processedMessageIds.has(message.messageId)) {
+    logWebhook('duplicate_ignored');
     return res.status(200).json({ received: true, duplicate: true });
   }
   if (message.messageId) processedMessageIds.add(message.messageId);
 
+  logWebhook('message_accepted');
+  let stage: 'generation' | 'send' = 'generation';
   try {
     const reply = await generateSupportReply(message.text);
+    logWebhook('reply_generated');
+    stage = 'send';
     await sendWhatsAppText(message.from, reply);
+    logWebhook('reply_sent');
     return res.status(200).json({ received: true, replied: true });
-  } catch (error: any) {
-    console.error('[WhatsApp] Error procesando mensaje:', error?.message || error);
+  } catch (error: unknown) {
+    if (stage === 'generation') {
+      logWebhook('reply_generation_failed', 'error');
+    } else {
+      const statusCode = error instanceof WhatsAppGraphApiError ? error.statusCode : undefined;
+      logWebhook('reply_send_failed', 'error', statusCode);
+    }
     return res.status(200).json({ received: true, replied: false });
   }
 }
