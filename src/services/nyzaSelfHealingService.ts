@@ -1,5 +1,4 @@
 import { printerService } from './printerService';
-import { haciendaService } from './haciendaService';
 import { localDB } from './db';
 import { nyzaLearningService } from './nyzaLearningService';
 
@@ -251,25 +250,12 @@ export class NyzaSelfHealingService {
       if (reason_code !== '02') {
         return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'Solo está permitida la clave de contingencia 02.', timestamp, data: { changed: false } };
       }
-      const config = haciendaService.getConfig();
-      if (!config) {
-        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'No hay una configuración de Hacienda existente; no se creó una nueva configuración vacía.', timestamp, data: { changed: false } };
-      }
-
-      if (!isTenantActive()) {
-        return { tool: 'tool_enable_contingency_mode', status: 'ERROR', message: 'No se cambió la configuración: el restaurante de la aprobación ya no está activo.', timestamp, data: { changed: false } };
-      }
-      // Establecer modo contingencia en la configuración
-      (config as any).modoContingencia = true;
-      (config as any).codigoContingencia = reason_code; // 02 = Servicios DGT no disponibles
-      haciendaService.saveConfig(config);
-
       return {
         tool: 'tool_enable_contingency_mode',
-        status: 'OK',
-        message: 'La configuración local de contingencia (clave 02) fue guardada. No se verificó una emisión ni conexión con Hacienda.',
+        status: 'ERROR',
+        message: 'No se cambió la configuración: NYZA no puede actualizar Hacienda sin el tenant y la sucursal seleccionados. Ajusta el modo de contingencia desde la configuración de Hacienda de esa sucursal.',
         timestamp,
-        data: { contingency: true, reason_code }
+        data: { changed: false, reason_code }
       };
     } catch (err: any) {
       return {

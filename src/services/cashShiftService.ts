@@ -484,15 +484,24 @@ class CashShiftService {
     tax?: number;
     service10?: number;
     registerId?: string;
+    shiftId?: string;
     tenantId?: string;
     actor?: UserProfile | { id?: string; name?: string; role?: string };
     reference?: string;
   }): void {
     const targetRegisterId = params.registerId || this.currentTerminalId;
-    const shift = this.activeShiftsMap[targetRegisterId];
+    const activeShift = this.activeShiftsMap[targetRegisterId];
+    const shift = params.shiftId
+      ? activeShift?.id === params.shiftId
+        ? activeShift
+        : this.shiftsHistory.find(item => item.id === params.shiftId)
+      : activeShift;
 
-    if (!shift || shift.status !== 'OPEN') {
-      return; // No active shift to accumulate
+    const validShiftStatus = params.shiftId
+      ? ['OPEN', 'CLOSED'].includes(shift?.status || '')
+      : shift?.status === 'OPEN';
+    if (!shift || shift.cashRegisterId !== targetRegisterId || !validShiftStatus) {
+      return; // No se reasigna un pago a otro turno si el original no está disponible.
     }
 
     const s = shift.systemSummary;

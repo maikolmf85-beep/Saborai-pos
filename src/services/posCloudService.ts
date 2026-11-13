@@ -7,6 +7,7 @@ export type PosCloudAction = 'UPDATE_TABLE' | 'TRANSFER_TABLE_ACCOUNT' | 'PAYMEN
 
 export interface SaleCloudPayload {
   table: Table;
+  tableBeforePayment?: Table;
   invoice: ElectronicInvoiceCR;
   paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
   total: number;
@@ -16,6 +17,11 @@ export interface SaleCloudPayload {
   occurredAt?: string;
   items: Array<{ name: string; quantity: number; menuItemId?: string; inventoryDeductedAtDispatch?: boolean }>;
 }
+
+export type SaleRegistrationResult = {
+  status: 'CONFIRMED' | 'QUEUED' | 'REJECTED';
+  message?: string;
+};
 
 export class PosCloudSyncError extends Error {
   readonly status: number;
@@ -117,7 +123,9 @@ class PosCloudService {
 
     const operationPrefix = `sale:${tenantId}:${sale.invoice.clave50Digitos || orderNumber}`;
     const paymentOperationId = salePaymentOperationId(tenantId, sale);
-    await this.syncOperation('UPDATE_TABLE', sale.table as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order`);
+    const tableBeforePayment = sale.tableBeforePayment || sale.table;
+    const preparedTable: Table = { ...tableBeforePayment, status: 'OCCUPIED' };
+    await this.syncOperation('UPDATE_TABLE', preparedTable as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order:prepare`);
     const paymentResult = await this.syncOperation<{ paymentIds?: string[] }>('PAYMENT', {
       orderNumber,
       payments: [{
@@ -146,6 +154,10 @@ class PosCloudService {
         items: undispatchedItems
       }, tenantId, `${operationPrefix}:inventory`);
     }
+    const completedTable: Table = sale.closeOrder
+      ? { ...sale.table, status: 'AVAILABLE', activeOrder: undefined }
+      : sale.table;
+    await this.syncOperation('UPDATE_TABLE', completedTable as unknown as Record<string, unknown>, tenantId, `${operationPrefix}:order:complete`);
     await this.syncOperation('EMIT_INVOICE', {
       orderNumber,
       paymentId: paymentResult.paymentIds?.length === 1 ? paymentResult.paymentIds[0] : undefined,

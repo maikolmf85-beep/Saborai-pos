@@ -2,11 +2,25 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import forge from 'node-forge';
 import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
+import { handleHaciendaConfigRequest } from './_utils/haciendaConfigHandler.js';
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 import { parseFiscalInvoiceIssuedAt } from './_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
 import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../src/utils/haciendaP12Pin.js';
+import { validateHaciendaXmlDocumentAgainstBranchProfile } from './_utils/haciendaXmlValidation.js';
+import { classifyHaciendaStatusQuery, isConfirmedHaciendaRejection } from './_utils/haciendaStatus.js';
+import { canReserveHaciendaSubmission, claimHaciendaOperationLock, finishHaciendaOperationLock, updateHaciendaInvoiceIfSnapshot, type HaciendaInvoiceSnapshot } from './_utils/haciendaInvoiceConcurrency.js';
+import { createHaciendaOperationLockToken, isHaciendaOperationLock, isHaciendaOperationLockStale } from './_utils/haciendaOperationLock.js';
+import {
+  decryptHaciendaConfig,
+  encryptHaciendaConfig,
+  mergeHaciendaConfig,
+  normalizeHaciendaBranchCode,
+  publicHaciendaConfig,
+  type EncryptedHaciendaConfig,
+  type HaciendaBranchConfig
+} from './_utils/haciendaConfig.js';
 
 const require = createRequire(import.meta.url);
 
@@ -37,6 +51,156 @@ const HACIENDA_ENV = {
     clientId: 'api-prod'
   }
 };
+
+class HaciendaStorageUnavailableError extends Error {}
+
+async function loadBranchConfig(tenantId: string, requestedBranchCode: unknown) {
+  const branchCode = normalizeHaciendaBranchCode(requestedBranchCode);
+  if (!branchCode) return null;
+  const { data: branch, error: branchError } = await supabaseAdmin
+    .from('pos_branches')
+    .select('id, code')
+    .eq('tenant_id', tenantId)
+    .eq('code', branchCode)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (branchError || !branch) return null;
+
+  const { data: record, error } = await supabaseAdmin
+    .from('pos_hacienda_configs')
+    .select('encrypted_config')
+    .eq('tenant_id', tenantId)
+    .eq('branch_code', branchCode)
+    .maybeSingle();
+  if (error) throw new HaciendaStorageUnavailableError();
+  if (!record) return { branch, branchCode, config: null };
+  try {
+    return {
+      branch,
+      branchCode,
+      config: decryptHaciendaConfig(record.encrypted_config as EncryptedHaciendaConfig, tenantId, branchCode)
+    };
+  } catch {
+    throw new HaciendaStorageUnavailableError();
+  }
+}
+
+async function requestHaciendaStatus(apiUrl: string, token: string, clave: string) {
+  const response = await fetch(`${apiUrl}/${clave}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  const responseText = await response.text().catch(() => '');
+  let data: any = null;
+  try { data = responseText ? JSON.parse(responseText) : null; } catch { data = null; }
+  const indicator = String(data?.['ind-estado'] || '').trim().toLowerCase();
+  let detail: string | undefined;
+  const responseXml = data?.['respuesta-xml'];
+  if (response.ok && responseXml) {
+    try {
+      const decoded = Buffer.from(responseXml, 'base64').toString('utf-8');
+      const message = decoded.match(/<Mensaje>([\s\S]*?)<\/Mensaje>/i)?.[1];
+      const description = decoded.match(/<DetalleMensaje>([\s\S]*?)<\/DetalleMensaje>/i)?.[1];
+      detail = [message, description].filter(Boolean).join(' - ').trim().slice(0, 500) || undefined;
+    } catch { /* ignore malformed provider detail */ }
+  }
+  return {
+    response,
+    indicator,
+    detail,
+    classification: classifyHaciendaStatusQuery(response.ok, indicator)
+  };
+}
+
+function invoiceSnapshot(tenantId: string, branchId: string, clave: string, row: any): HaciendaInvoiceSnapshot {
+  return {
+    tenantId,
+    branchId,
+    clave,
+    haciendaStatus: String(row?.hacienda_status || 'PENDING'),
+    errorMessage: typeof row?.error_message === 'string' ? row.error_message : null
+  };
+}
+
+async function reserveHaciendaSubmission(
+  snapshot: HaciendaInvoiceSnapshot | null,
+  lockToken: string,
+  invoiceRecord: Record<string, unknown>
+): Promise<{ lockToken: string | null; busy: boolean; error: boolean }> {
+  if (snapshot && (snapshot.haciendaStatus === 'PROCESSING' || isHaciendaOperationLock(snapshot.errorMessage))) {
+    return { lockToken: null, busy: true, error: false };
+  }
+  const lockedRecord = {
+    ...invoiceRecord,
+    hacienda_status: 'PROCESSING',
+    error_message: lockToken,
+    accepted_at: null
+  };
+
+  if (snapshot) {
+    const claimed = await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, snapshot, lockedRecord);
+    if (claimed.updated) return { lockToken, busy: false, error: false };
+    const current = await supabaseAdmin.from('pos_invoices')
+      .select('branch_id, hacienda_status, error_message')
+      .eq('tenant_id', snapshot.tenantId)
+      .eq('clave', snapshot.clave)
+      .maybeSingle();
+    if (!current.error && current.data?.branch_id === snapshot.branchId &&
+        current.data.hacienda_status === 'PROCESSING' && current.data.error_message === lockToken) {
+      return { lockToken, busy: false, error: false };
+    }
+    return { lockToken: null, busy: !claimed.error, error: Boolean(claimed.error || current.error) };
+  }
+
+  const inserted = await supabaseAdmin.from('pos_invoices').insert(lockedRecord).select('clave').maybeSingle();
+  if (!inserted.error && inserted.data) return { lockToken, busy: false, error: false };
+
+  // An insert response can be lost after the unique reservation committed. Re-read before deciding.
+  const current = await supabaseAdmin.from('pos_invoices')
+    .select('branch_id, hacienda_status, error_message')
+    .eq('tenant_id', String(invoiceRecord.tenant_id))
+    .eq('clave', String(invoiceRecord.clave))
+    .maybeSingle();
+  if (current.error) return { lockToken: null, busy: false, error: true };
+  if (current.data?.branch_id === invoiceRecord.branch_id && current.data.hacienda_status === 'PROCESSING' &&
+      current.data.error_message === lockToken) {
+    return { lockToken, busy: false, error: false };
+  }
+  if (current.data) {
+    if (current.data.branch_id !== invoiceRecord.branch_id || current.data.hacienda_status !== 'PENDING' ||
+        isHaciendaOperationLock(current.data.error_message)) {
+      return { lockToken: null, busy: true, error: false };
+    }
+    const pendingSnapshot = invoiceSnapshot(String(invoiceRecord.tenant_id), String(invoiceRecord.branch_id),
+      String(invoiceRecord.clave), current.data);
+    const claimed = await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, pendingSnapshot, lockedRecord);
+    if (claimed.updated) return { lockToken, busy: false, error: false };
+    const afterClaim = await supabaseAdmin.from('pos_invoices')
+      .select('branch_id, hacienda_status, error_message')
+      .eq('tenant_id', pendingSnapshot.tenantId)
+      .eq('clave', pendingSnapshot.clave)
+      .maybeSingle();
+    if (!afterClaim.error && afterClaim.data?.branch_id === pendingSnapshot.branchId &&
+        afterClaim.data.hacienda_status === 'PROCESSING' && afterClaim.data.error_message === lockToken) {
+      return { lockToken, busy: false, error: false };
+    }
+    return { lockToken: null, busy: !claimed.error, error: Boolean(claimed.error || afterClaim.error) };
+  }
+
+  if (inserted.error?.code === '23505') {
+    const consecutive = await supabaseAdmin.from('pos_invoices')
+      .select('id')
+      .eq('tenant_id', String(invoiceRecord.tenant_id))
+      .eq('consecutivo', String(invoiceRecord.consecutivo))
+      .maybeSingle();
+    if (consecutive.error) return { lockToken: null, busy: false, error: true };
+    if (consecutive.data) return { lockToken: null, busy: true, error: false };
+  }
+  return { lockToken: null, busy: false, error: true };
+}
 
 function getCostaRicaIsoDate(d = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
@@ -102,15 +266,35 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   };
 }
 
+function validateXmlAgainstBranchProfile(
+  rawXml: string,
+  config: HaciendaBranchConfig,
+  expectedClave: string,
+  expectedConsecutivo: string
+): string | null {
+  try {
+    const document = new xmldom.DOMParser().parseFromString(rawXml, 'application/xml');
+    return validateHaciendaXmlDocumentAgainstBranchProfile(document, config, expectedClave, expectedConsecutivo);
+  } catch {
+    return 'No se pudo leer el XML del comprobante para validar su perfil fiscal.';
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
 
+  if (req.method === 'GET' || req.method === 'PUT') {
+    return handleHaciendaConfigRequest(req, res);
+  }
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   const action = typeof req.body?.action === 'string' ? req.body.action : 'emit';
+  if (!['test-connection', 'consultar-estado', 'emit', 'resend'].includes(action)) {
+    return res.status(400).json({ error: 'Acción de Hacienda no válida.' });
+  }
   const allowedRoles = action === 'test-connection'
     ? ROLE_PERMISSIONS.haciendaSettings
     : ROLE_PERMISSIONS.haciendaOperations;
@@ -119,16 +303,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const tenantId = auth.tenantId;
   if (!tenantId) return res.status(403).json({ error: 'La sesión no tiene un restaurante asociado.' });
 
+  let providerSubmissionAttempted = false;
+  let statusQuerySnapshot: HaciendaInvoiceSnapshot | null = null;
   try {
-    const { 
-      xmlString, 
-      xmlBase64, 
-      clave, 
+    const {
+      xmlString,
+      xmlBase64,
+      clave,
       consecutivo,
       documentType,
       total,
-      fecha, 
-      emisor, 
+      fecha,
+      emisor,
       receptor,
       codigoActividadReceptor,
       condicionVenta,
@@ -142,93 +328,118 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       iva4,
       iva2,
       iva1,
-      servicio10,
-      atvUsername: reqAtvUser,
-      atvPassword: reqAtvPass,
-      p12Base64: reqP12,
-      p12Pin: reqPin,
-      environment: reqEnv
-    } = req.body;
+      servicio10
+    } = req.body || {};
+    let branchCode = normalizeHaciendaBranchCode(req.body?.branchCode || emisor?.sucursal);
+    let branchId: string | undefined;
+    let haciendaConfig: HaciendaBranchConfig | null = null;
 
-    // Determinar credenciales: primero desde el request (Tenant), luego desde variables de entorno
-    const atvUsername = (reqAtvUser || process.env.HACIENDA_USER || '').trim(); 
-    const atvPassword = (reqAtvPass || process.env.HACIENDA_PASSWORD || '').trim();
-    const rawP12 = reqP12 || process.env.HACIENDA_P12_BASE64;
-    const p12Pin = reqPin || process.env.HACIENDA_PIN || '';
-    const environment: 'sandbox' | 'production' = (reqEnv === 'production' || process.env.HACIENDA_ENV === 'production') ? 'production' : 'sandbox';
+    if (action === 'consultar-estado') {
+      if (!/^\d{50}$/.test(String(clave || ''))) return res.status(400).json({ error: 'La clave debe contener exactamente 50 dígitos para consultar.' });
+      const { data: invoiceRow, error: invoiceError } = await supabaseAdmin
+        .from('pos_invoices')
+        .select('branch_id, hacienda_status, error_message')
+        .eq('tenant_id', tenantId)
+        .eq('clave', clave)
+        .maybeSingle();
+      if (invoiceError || !invoiceRow?.branch_id) return res.status(404).json({ error: 'No se encontró el comprobante en este restaurante.' });
+      const { data: branch, error: branchError } = await supabaseAdmin
+        .from('pos_branches')
+        .select('id, code')
+        .eq('tenant_id', tenantId)
+        .eq('id', invoiceRow.branch_id)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (branchError || !branch) return res.status(404).json({ error: 'La sucursal del comprobante no está disponible.' });
+      if (branchCode && branchCode !== branch.code) return res.status(403).json({ error: 'El comprobante no pertenece a la sucursal indicada.' });
+      branchCode = branch.code;
+      branchId = branch.id;
+      statusQuerySnapshot = invoiceSnapshot(tenantId, branchId, String(clave), invoiceRow);
+      if (isHaciendaOperationLock(statusQuerySnapshot.errorMessage) &&
+          !isHaciendaOperationLockStale(statusQuerySnapshot.errorMessage)) {
+        return res.status(200).json({
+          success: true,
+          estado: 'procesando',
+          clave,
+          detalle: 'Hay una operación de Hacienda en curso; se consultará de nuevo al completarse.'
+        });
+      }
+    }
+
+    if (!branchCode) return res.status(400).json({ error: 'Selecciona una sucursal válida para Hacienda.' });
+    const branchConfig = await loadBranchConfig(tenantId, branchCode);
+    if (!branchConfig) return res.status(409).json({ error: 'La sucursal no tiene un perfil de Hacienda disponible o no se pudo leer el almacenamiento seguro.' });
+    branchId = branchConfig.branch.id;
+    if (action === 'test-connection') {
+      haciendaConfig = mergeHaciendaConfig(branchConfig.config, req.body?.config, {
+        removeCertificate: req.body?.removeCertificate === true,
+        clearAtvCredentials: req.body?.clearAtvCredentials === true
+      });
+    } else {
+      if (!branchConfig.config) return res.status(409).json({ error: 'Esta sucursal no tiene una configuración segura de Hacienda disponible.' });
+      haciendaConfig = branchConfig.config;
+    }
+    if (!haciendaConfig) return res.status(409).json({ error: 'No se pudo cargar el perfil de Hacienda de esta sucursal.' });
+    const atvUsername = haciendaConfig.atvUsername || '';
+    const atvPassword = haciendaConfig.atvPassword || '';
+    const rawP12 = haciendaConfig.p12Base64 || '';
+    const p12Pin = haciendaConfig.pinP12 || '';
+    const environment = haciendaConfig.environment || 'sandbox';
     const endpoints = HACIENDA_ENV[environment];
 
     // ==========================================
     // ACCIÓN: TEST DE CONEXIÓN Y CERTIFICADO
     // ==========================================
     if (action === 'test-connection') {
-      const results: {
-        tokenOk: boolean;
-        certOk: boolean;
-        expiresOn?: string;
-        message?: string;
-        tokenDetails?: any;
-      } = { tokenOk: false, certOk: false };
-
-      // 1. Validar Llave Criptográfica (.p12) y PIN si se proporcionaron
-      if (p12Pin && !isValidHaciendaP12Pin(p12Pin)) {
-        return res.status(400).json({ success: false, error: HACIENDA_P12_PIN_FORMAT_ERROR });
+      if (!atvUsername || !atvPassword || !rawP12 || !p12Pin) {
+        return res.status(400).json({ error: 'Completa el usuario, contraseña y llave .p12 de esta sucursal antes de probar.' });
       }
-      if (rawP12 && p12Pin) {
-        try {
-          const certValidation = parseAndVerifyP12(rawP12, p12Pin);
-          if (certValidation && certValidation.isValid) {
-            results.certOk = true;
-            results.expiresOn = certValidation.expiresOn;
-          }
-        } catch (certErr: any) {
-          const msg = certErr.message?.includes('MAC could not be verified') 
-            ? 'El PIN o contraseña no es correcto para este archivo .p12.'
-            : 'No se pudo validar la llave .p12. Verifica el archivo y el PIN o contraseña.';
-          return res.status(400).json({ 
-            success: false, 
-            error: msg
-          });
-        }
+      if (!isValidHaciendaP12Pin(p12Pin)) {
+        return res.status(400).json({ error: HACIENDA_P12_PIN_FORMAT_ERROR });
+      }
+      let certValidation;
+      try {
+        certValidation = parseAndVerifyP12(rawP12, p12Pin);
+      } catch {
+        return res.status(400).json({ error: 'No se pudo validar la llave .p12; verifica el archivo y su PIN o contraseña.' });
       }
 
-      // 2. Validar Credenciales ATV con el IDP de Hacienda
-      if (atvUsername && atvPassword) {
-        const tokenParams = new URLSearchParams();
-        tokenParams.append('client_id', endpoints.clientId);
-        tokenParams.append('grant_type', 'password');
-        tokenParams.append('username', atvUsername);
-        tokenParams.append('password', atvPassword);
-
-        const tokenRes = await fetch(endpoints.token, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: tokenParams
-        });
-
-        const tokenData = (await tokenRes.json().catch(() => null)) as any;
-        if (!tokenRes.ok || !tokenData?.access_token) {
-          const desc = tokenData?.error_description || tokenData?.error || 'Credenciales ATV no autorizadas';
-          return res.status(401).json({
-            success: false,
-            error: `Error de autenticación con Hacienda (${environment.toUpperCase()}): ${desc}`,
-            environment
-          });
-        }
-        results.tokenOk = true;
-      } else {
-        return res.status(400).json({
-          success: false,
-          error: 'Faltan credenciales ATV (usuario o contraseña) para probar conexión.'
-        });
+      try {
+        await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
+      } catch {
+        return res.status(401).json({ error: `No se pudo autenticar con Hacienda en el ambiente ${environment.toUpperCase()}.` });
       }
-
-      const certText = results.certOk ? ` y Llave Criptográfica .p12 válida (expira: ${results.expiresOn?.split('T')[0]})` : '';
+      const testedAt = new Date().toISOString();
+      haciendaConfig.isValidated = true;
+      haciendaConfig.certExpiresOn = certValidation.expiresOn;
+      haciendaConfig.lastTestedAt = testedAt;
+      let encryptedConfig: EncryptedHaciendaConfig;
+      try {
+        encryptedConfig = encryptHaciendaConfig(haciendaConfig, tenantId, branchCode);
+      } catch {
+        return res.status(503).json({ error: 'El almacenamiento seguro de Hacienda no está disponible. Revisa la clave de cifrado del servidor.' });
+      }
+      const { error: updateError } = await supabaseAdmin
+        .from('pos_hacienda_configs')
+        .upsert({
+          tenant_id: tenantId,
+          branch_code: branchCode,
+          environment,
+          encrypted_config: encryptedConfig,
+          is_validated: true,
+          cert_expires_on: certValidation.expiresOn || null,
+          last_tested_at: testedAt,
+          updated_at: testedAt
+        }, { onConflict: 'tenant_id,branch_code' });
+      if (updateError) return res.status(500).json({ error: 'La conexión se validó, pero no se pudo guardar el resultado.' });
       return res.status(200).json({
         success: true,
         environment,
-        ...results,
-        message: `¡Conexión exitosa con Ministerio de Hacienda CR (${environment.toUpperCase()})! Usuario ATV autenticado${certText}.`
+        tokenOk: true,
+        certOk: true,
+        expiresOn: certValidation.expiresOn,
+        config: publicHaciendaConfig(haciendaConfig),
+        message: `Conexión con Hacienda validada para la sucursal ${branchCode} (${environment.toUpperCase()}).`
       });
     }
 
@@ -236,54 +447,94 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ACCIÓN: CONSULTAR ESTADO DE COMPROBANTE
     // ==========================================
     if (action === 'consultar-estado') {
-      if (!clave) {
-        return res.status(400).json({ error: 'La clave de 50 dígitos es requerida para consultar.' });
+      if (!/^\d{50}$/.test(String(clave || ''))) {
+        return res.status(400).json({ error: 'La clave debe contener exactamente 50 dígitos para consultar.' });
       }
 
-      if (!atvUsername || !atvPassword) {
-        return res.status(400).json({ error: 'Credenciales ATV no configuradas para consulta.' });
+      if (!statusQuerySnapshot || !branchId) {
+        return res.status(404).json({ error: 'No se encontró el comprobante en este restaurante.' });
       }
-
-      // Obtener Token
-      const token = await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
-
-      const statusRes = await fetch(`${endpoints.api}/${clave}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const statusLockToken = createHaciendaOperationLockToken();
+      const lockClaim = await claimHaciendaOperationLock(supabaseAdmin, statusQuerySnapshot, statusLockToken);
+      if (lockClaim.error) return res.status(500).json({ error: 'No se pudo reservar la consulta de estado.' });
+      if (!lockClaim.updated) {
+        return res.status(200).json({
+          success: true,
+          estado: 'procesando',
+          clave,
+          detalle: 'Otra operación de Hacienda está consultando esta clave; se actualizará al completarse.'
+        });
+      }
+      const finishStatusQuery = (updates: Record<string, unknown>) => finishHaciendaOperationLock(
+        supabaseAdmin, tenantId, branchId!, String(clave), statusLockToken, updates
+      );
+      const markStatusUnconfirmed = (message: string) => finishStatusQuery({
+        hacienda_status: 'PROCESSING',
+        error_message: message,
+        accepted_at: null
       });
 
-      const statusText = await statusRes.text().catch(() => '');
-      let statusData: any = null;
-      try { statusData = statusText ? JSON.parse(statusText) : null; } catch { statusData = { raw: statusText }; }
-
-      const indEstado: string = String(statusData?.['ind-estado'] || '').toLowerCase();
-      let detalle: string | undefined;
-      const respuestaXml = statusData?.['respuesta-xml'];
-      if (respuestaXml) {
-        try {
-          const decoded = Buffer.from(respuestaXml, 'base64').toString('utf-8');
-          const msg = decoded.match(/<Mensaje>([\s\S]*?)<\/Mensaje>/i)?.[1];
-          const det = decoded.match(/<DetalleMensaje>([\s\S]*?)<\/DetalleMensaje>/i)?.[1];
-          detalle = [msg, det].filter(Boolean).join(' - ').trim() || decoded.slice(0, 1500);
-        } catch { /* ignore */ }
+      if (!atvUsername || !atvPassword) {
+        const saved = await markStatusUnconfirmed('No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.');
+        if (saved.error || !saved.updated) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras faltar credenciales de consulta.' });
+        }
+        return res.status(502).json({ success: false, code: 'STATUS_QUERY_FAILED', error: 'No se pudo consultar el estado con las credenciales ATV de esta sucursal.' });
       }
-      const errorCause = statusRes.headers.get('x-error-cause') || undefined;
-      const normalizedStatus = indEstado === 'aceptado' ? 'ACCEPTED' : indEstado === 'rechazado' ? 'REJECTED' : 'PROCESSING';
-      await supabaseAdmin.from('pos_invoices').update({
+
+      let token: string;
+      try {
+        token = await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
+      } catch {
+        const saved = await markStatusUnconfirmed('No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.');
+        if (saved.error || !saved.updated) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras fallar la autenticación con Hacienda.' });
+        }
+        return res.status(502).json({ success: false, code: 'STATUS_QUERY_FAILED', error: 'No se pudo obtener acceso para consultar el estado; el comprobante no se reenvió.' });
+      }
+
+      let statusResult: Awaited<ReturnType<typeof requestHaciendaStatus>>;
+      try {
+        statusResult = await requestHaciendaStatus(endpoints.api, token, String(clave));
+      } catch {
+        const saved = await markStatusUnconfirmed('No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.');
+        if (saved.error || !saved.updated) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras fallar la consulta DGT.' });
+        }
+        return res.status(502).json({ success: false, code: 'STATUS_QUERY_FAILED', error: 'Falló la consulta del estado con Hacienda; no se reenvió el comprobante.' });
+      }
+      if (!statusResult.response.ok) {
+        const saved = await markStatusUnconfirmed('No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.');
+        if (saved.error || !saved.updated) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras una consulta HTTP fallida.' });
+        }
+        return res.status(502).json({
+          success: false,
+          code: 'STATUS_QUERY_FAILED',
+          httpStatus: statusResult.response.status,
+          error: 'No se pudo confirmar el estado del comprobante con Hacienda.'
+        });
+      }
+      const normalizedStatus = statusResult.classification.status;
+      const statusUpdate = await finishStatusQuery({
         hacienda_status: normalizedStatus,
-        error_message: normalizedStatus === 'REJECTED' ? (detalle || null) : null,
+        error_message: normalizedStatus === 'REJECTED' ? (statusResult.detail || null) : null,
         accepted_at: normalizedStatus === 'ACCEPTED' ? new Date().toISOString() : null
-      }).eq('tenant_id', tenantId).eq('clave', clave);
+      });
+      if (statusUpdate.error) return res.status(500).json({ error: 'No se pudo actualizar el estado del comprobante.' });
+      if (!statusUpdate.updated) {
+        return res.status(409).json({
+          success: false,
+          code: 'RESEND_ALREADY_CLAIMED',
+          error: 'El estado cambió durante la consulta; se consultará de nuevo antes de cualquier reenvío.'
+        });
+      }
 
       return res.status(200).json({
-        success: statusRes.ok,
-        httpStatus: statusRes.status,
-        estado: indEstado || undefined, // procesando | aceptado | rechazado
-        detalle: detalle || errorCause,
-        data: statusData
+        success: true,
+        httpStatus: statusResult.response.status,
+        estado: statusResult.indicator || undefined,
+        detalle: statusResult.detail
       });
     }
 
@@ -293,13 +544,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!clave || !emisor) {
       return res.status(400).json({ error: 'Faltan datos requeridos (clave, emisor)' });
     }
+    const documentTypeCodes: Record<string, string> = { FE: '01', ND: '02', NC: '03', TE: '04' };
+    const expectedDocumentCode = documentTypeCodes[String(documentType || 'TE')];
+    if (!/^\d{50}$/.test(String(clave)) || !/^\d{20}$/.test(String(consecutivo || '')) || String(clave).slice(21, 41) !== String(consecutivo)) {
+      return res.status(400).json({ error: 'La clave y el consecutivo del comprobante no tienen el formato oficial esperado.' });
+    }
+    if (String(consecutivo).slice(0, 3) !== branchCode || String(consecutivo).slice(8, 10) !== expectedDocumentCode) {
+      return res.status(400).json({ error: 'La sucursal o el tipo documental del consecutivo no coincide con la configuración seleccionada.' });
+    }
+    const requestedTerminal = String(emisor?.terminal || '').replace(/\D/g, '').padStart(5, '0').slice(-5);
+    if (!requestedTerminal || String(consecutivo).slice(3, 8) !== requestedTerminal) {
+      return res.status(400).json({ error: 'El terminal del emisor no coincide con el consecutivo del comprobante.' });
+    }
+    if (!atvUsername || !atvPassword || !rawP12 || !p12Pin) {
+      return res.status(409).json({ error: 'Configura usuario, contraseña y llave digital para esta sucursal antes de emitir.' });
+    }
+    if (!haciendaConfig.isValidated) {
+      return res.status(409).json({ error: 'Prueba y valida primero las credenciales de Hacienda de esta sucursal.' });
+    }
+    if (!haciendaConfig.codigoActividad || !haciendaConfig.provincia || !haciendaConfig.canton ||
+        !haciendaConfig.distrito || !haciendaConfig.otrasSenas?.trim()) {
+      return res.status(409).json({ error: 'Completa la actividad económica y ubicación fiscal real de esta sucursal antes de emitir.' });
+    }
+    const savedIssuerId = String(haciendaConfig?.cedulaEmisor || '').replace(/\D/g, '').replace(/^0+/, '');
+    const requestIssuerId = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/\D/g, '').replace(/^0+/, '');
+    if (!savedIssuerId || !requestIssuerId || savedIssuerId !== requestIssuerId) {
+      return res.status(400).json({ error: 'La cédula del emisor del comprobante no coincide con la configuración de esta sucursal.' });
+    }
+    const issuerInClave = String(haciendaConfig?.cedulaEmisor || '').replace(/\D/g, '').padStart(12, '0').slice(-12);
+    if (String(clave).slice(9, 21) !== issuerInClave) {
+      return res.status(400).json({ error: 'La identificación incluida en la clave no coincide con el emisor de esta sucursal.' });
+    }
+    if (normalizeHaciendaBranchCode(emisor?.sucursal) !== branchCode) {
+      return res.status(400).json({ error: 'La sucursal del comprobante no coincide con la configuración seleccionada.' });
+    }
 
+    let rejectionConfirmedForResend = false;
     const existingInvoice = await supabaseAdmin
       .from('pos_invoices')
-      .select('hacienda_status, signed_xml_content, error_message')
+      .select('branch_id, hacienda_status, signed_xml_content, error_message')
       .eq('tenant_id', tenantId)
       .eq('clave', clave)
       .maybeSingle();
+    if (existingInvoice.error) return res.status(500).json({ error: 'No se pudo verificar el historial del comprobante.' });
+    if (existingInvoice.data && existingInvoice.data.branch_id !== branchId) {
+      return res.status(403).json({ error: 'El comprobante pertenece a otra sucursal.' });
+    }
+    const existingInvoiceSnapshot = existingInvoice.data
+      ? invoiceSnapshot(tenantId, String(branchId), String(clave), existingInvoice.data)
+      : null;
     if (existingInvoice.data && ['PROCESSING', 'ACCEPTED'].includes(existingInvoice.data.hacienda_status)) {
       return res.status(200).json({
         success: true,
@@ -307,6 +600,91 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         clave,
         signedXmlBase64: existingInvoice.data.signed_xml_content || undefined,
         mensaje: 'Este comprobante ya fue recibido anteriormente; no se reenvía para evitar duplicarlo.'
+      });
+    }
+    if (action === 'resend') {
+      if (!existingInvoice.data || existingInvoice.data.hacienda_status !== 'REJECTED') {
+        return res.status(409).json({
+          success: false,
+          code: 'RESEND_NOT_CONFIRMED',
+          error: 'No se reenvió: el comprobante no tiene un rechazo confirmado en el historial de esta sucursal.'
+        });
+      }
+      let statusToken: string;
+      try {
+        statusToken = await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
+      } catch {
+        const saved = existingInvoiceSnapshot && await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, existingInvoiceSnapshot, {
+          hacienda_status: 'PROCESSING',
+          error_message: 'No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.',
+          accepted_at: null
+        });
+        if (!saved || saved.error) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras fallar la autenticación con Hacienda.' });
+        }
+        if (!saved.updated) return res.status(409).json({ success: false, code: 'RESEND_ALREADY_CLAIMED', error: 'El estado cambió durante la consulta; se consultará de nuevo antes de cualquier reenvío.' });
+        return res.status(502).json({ success: false, code: 'STATUS_QUERY_FAILED', error: 'No se pudo consultar DGT para confirmar el rechazo; no se reenvió el comprobante.' });
+      }
+      let statusResult: Awaited<ReturnType<typeof requestHaciendaStatus>>;
+      try {
+        statusResult = await requestHaciendaStatus(endpoints.api, statusToken, String(clave));
+      } catch {
+        const saved = existingInvoiceSnapshot && await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, existingInvoiceSnapshot, {
+          hacienda_status: 'PROCESSING',
+          error_message: 'No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.',
+          accepted_at: null
+        });
+        if (!saved || saved.error) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras fallar la consulta DGT.' });
+        }
+        if (!saved.updated) return res.status(409).json({ success: false, code: 'RESEND_ALREADY_CLAIMED', error: 'El estado cambió durante la consulta; se consultará de nuevo antes de cualquier reenvío.' });
+        return res.status(502).json({ success: false, code: 'STATUS_QUERY_FAILED', error: 'Falló la consulta del estado con Hacienda; no se reenvió el comprobante.' });
+      }
+      if (!statusResult.response.ok) {
+        const saved = existingInvoiceSnapshot && await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, existingInvoiceSnapshot, {
+          hacienda_status: 'PROCESSING',
+          error_message: 'No se pudo confirmar el estado actual con Hacienda; consulte de nuevo por clave.',
+          accepted_at: null
+        });
+        if (!saved || saved.error) {
+          return res.status(500).json({ error: 'No se pudo guardar el estado pendiente tras una consulta HTTP fallida.' });
+        }
+        if (!saved.updated) return res.status(409).json({ success: false, code: 'RESEND_ALREADY_CLAIMED', error: 'El estado cambió durante la consulta; se consultará de nuevo antes de cualquier reenvío.' });
+        return res.status(502).json({
+          success: false,
+          code: 'STATUS_QUERY_FAILED',
+          httpStatus: statusResult.response.status,
+          error: 'No se pudo confirmar el rechazo actual con Hacienda; no se reenvió el comprobante.'
+        });
+      }
+      if (!isConfirmedHaciendaRejection(statusResult.classification)) {
+        const statusUpdate = existingInvoiceSnapshot && await updateHaciendaInvoiceIfSnapshot(supabaseAdmin, existingInvoiceSnapshot, {
+          hacienda_status: statusResult.classification.status,
+          error_message: statusResult.classification.status === 'REJECTED' ? (statusResult.detail || null) : null,
+          accepted_at: statusResult.classification.status === 'ACCEPTED' ? new Date().toISOString() : null
+        });
+        if (!statusUpdate || statusUpdate.error) return res.status(500).json({ error: 'No se pudo actualizar el estado consultado.' });
+        if (!statusUpdate.updated) return res.status(409).json({ success: false, code: 'RESEND_ALREADY_CLAIMED', error: 'El estado cambió durante la consulta; no se reenvió el comprobante.' });
+        return res.status(200).json({
+          success: true,
+          estado: statusResult.classification.status === 'ACCEPTED' ? 'ACEPTADO' : 'PROCESANDO',
+          clave,
+          signedXmlBase64: existingInvoice.data.signed_xml_content || undefined,
+          mensaje: 'La consulta actual no confirmó un rechazo; no se reenvió el comprobante.'
+        });
+      }
+      rejectionConfirmedForResend = true;
+    } else if (existingInvoice.data?.hacienda_status === 'REJECTED') {
+      return res.status(409).json({
+        success: false,
+        code: 'STATUS_QUERY_REQUIRED',
+        error: 'El comprobante ya existe y está rechazado; verifica su estado actual antes de solicitar un reenvío.'
+      });
+    } else if (existingInvoice.data && existingInvoice.data.hacienda_status !== 'PENDING') {
+      return res.status(409).json({
+        success: false,
+        code: 'STATUS_QUERY_REQUIRED',
+        error: 'Este comprobante ya tiene un registro; consulta su estado antes de cualquier nueva emisión.'
       });
     }
 
@@ -325,43 +703,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (rawP12 && p12Pin && rawXml && !isValidHaciendaP12Pin(p12Pin)) {
       return res.status(400).json({ error: HACIENDA_P12_PIN_FORMAT_ERROR });
     }
+    if (rawXml) {
+      const profileError = validateXmlAgainstBranchProfile(rawXml, haciendaConfig, String(clave), String(consecutivo || ''));
+      if (profileError) return res.status(400).json({ error: profileError });
+    }
 
     // 1. FIRMA DIGITAL XAdES-EPES CON LA LLAVE .P12
-    if (rawP12 && p12Pin && rawXml) {
+    if (rawXml) {
       try {
         const cleanP12 = rawP12.includes(',') ? rawP12.split(',')[1].replace(/\s+/g, '') : rawP12.replace(/\s+/g, '');
         // Verificar que el certificado pertenezca al emisor (evita error -60 de Hacienda)
-        try {
-          const info = parseAndVerifyP12(rawP12, p12Pin);
-          const emisorId = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/\D/g, '').replace(/^0+/, '');
-          console.log('Certificado .p12 sujeto:', info.subjectText, '| Emisor:', emisorId);
-          const matches = !emisorId || info.subjectDigits.some((d: string) => d.length >= 6 && (d === emisorId || d.endsWith(emisorId) || emisorId.endsWith(d)));
-          if (!matches) {
-            return res.status(400).json({
-              error: `El certificado .p12 no pertenece al emisor (cédula ${emisorId}). Sujeto del certificado: ${info.subjectText}. Suba el .p12 correcto de esa cédula en Configuración.`
-            });
-          }
-        } catch {
-          console.warn('No se pudo inspeccionar el certificado .p12.');
-        }
+        const info = parseAndVerifyP12(rawP12, p12Pin);
+        const matches = info.subjectDigits.some((digit: string) => digit.length >= 6 && (digit === savedIssuerId || digit.endsWith(savedIssuerId) || savedIssuerId.endsWith(digit)));
+        if (!matches) return res.status(400).json({ error: 'La llave .p12 no corresponde a la cédula configurada para esta sucursal.' });
         // signer.sign devuelve el XML firmado convertido directamente a Base64
         finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin);
       } catch {
-        console.error('Error firmando XML XAdES-EPES.');
+        console.error('[Hacienda] No se pudo validar o firmar el comprobante.');
         return res.status(400).json({
-          error: 'No se pudo firmar el XML con la llave .p12. Verifica el archivo y el PIN o contraseña.'
+          error: 'No se pudo validar o firmar el XML con la llave .p12. Revisa el archivo y su PIN o contraseña.'
         });
       }
     } else if (!finalXmlBase64) {
       return res.status(400).json({ 
         error: 'XML no proporcionado o imposible de firmar (se requiere archivo .p12 y PIN, o xmlBase64 ya firmado)' 
-      });
-    }
-
-    if (!atvUsername || !atvPassword) {
-      return res.status(500).json({ 
-        error: 'Credenciales ATV no configuradas',
-        message: 'Configure sus credenciales del Ministerio de Hacienda (ATV) en Configuración.'
       });
     }
 
@@ -372,15 +737,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const emisorIdRaw = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/[^0-9]/g, '');
     if (!emisorIdRaw) {
       return res.status(400).json({
-        error: 'Falta la cédula del emisor. Configúrela en Configuración → Hacienda → "Cédula del Emisor".'
+      error: 'Falta la cédula del emisor en la configuración de Hacienda de esta sucursal.'
       });
     }
     const payload: any = {
       clave: clave,
       fecha: fecha || getCostaRicaIsoDate(),
       emisor: {
-        tipoIdentificacion: String(emisor.tipoIdentificacion || '02').substring(0, 2),
-        numeroIdentificacion: (() => { const d = String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, ''); return d.length === 10 && d.startsWith('0') ? d.slice(1) : d; })()
+        tipoIdentificacion: String(haciendaConfig?.tipoIdentificacion || emisor.tipoIdentificacion || '02').substring(0, 2),
+        numeroIdentificacion: savedIssuerId
       },
       comprobanteXml: finalXmlBase64
     };
@@ -415,42 +780,85 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       consecutivo: String(consecutivo || clave).slice(0, 20)
     });
     const issuedAt = parseFiscalInvoiceIssuedAt(invoiceData.fechaEmision);
+    const payloadBody = JSON.stringify(payload);
+    const submissionLockToken = createHaciendaOperationLockToken();
+    const invoiceRecord = {
+      tenant_id: tenantId,
+      branch_id: branchId,
+      clave,
+      consecutivo: String(consecutivo || clave).slice(0, 20),
+      document_type: String(documentType || 'TE').slice(0, 2),
+      total: Number(total || 0),
+      ...(issuedAt ? { issued_at: issuedAt } : {}),
+      invoice_data: invoiceData,
+      xml_content: rawXml || null,
+      signed_xml_content: finalXmlBase64
+    };
+    if (!canReserveHaciendaSubmission(existingInvoiceSnapshot, action === 'resend' ? 'resend' : 'emit', rejectionConfirmedForResend)) {
+      return res.status(409).json({
+        success: false,
+        submitted: false,
+        code: 'RESEND_ALREADY_CLAIMED',
+        error: 'El estado actual no permite una nueva emisión; se consultará la clave antes de cualquier reenvío.'
+      });
+    }
+    const reservation = await reserveHaciendaSubmission(existingInvoiceSnapshot, submissionLockToken, invoiceRecord);
+    if (!reservation.lockToken) {
+      return res.status(reservation.error ? 503 : 409).json({
+        success: false,
+        submitted: false,
+        code: 'RESEND_ALREADY_CLAIMED',
+        error: reservation.error
+          ? 'No se pudo confirmar la reserva de emisión; se consultará la clave antes de intentar otra transmisión.'
+          : 'Otra solicitud reservó este comprobante; se consultará la clave antes de cualquier reenvío.'
+      });
+    }
 
     // 4. Enviar a Recepción de Hacienda
-    const recepcionRes = await fetch(endpoints.api, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(payload)
-    });
+    providerSubmissionAttempted = true;
+    let recepcionRes: Response;
+    try {
+      recepcionRes = await fetch(endpoints.api, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: payloadBody
+      });
+    } catch {
+      const saved = await finishHaciendaOperationLock(supabaseAdmin, tenantId, String(branchId), String(clave), submissionLockToken, {
+        ...invoiceRecord,
+        hacienda_status: 'PROCESSING',
+        submitted_at: new Date().toISOString(),
+        error_message: 'Se perdió la respuesta de recepción; consulte el estado por clave antes de cualquier reenvío.'
+      });
+      if (saved.error || !saved.updated) console.error('[Hacienda] No se pudo finalizar el lock tras perder la respuesta.');
+      return res.status(502).json({
+        success: false,
+        submitted: true,
+        code: 'SUBMISSION_UNCONFIRMED',
+        error: saved.error || !saved.updated
+          ? 'Se perdió la respuesta y no se pudo guardar su resultado; la clave quedó reservada para impedir duplicados. Consulte más tarde.'
+          : 'Se perdió la respuesta de recepción. El resultado es incierto y debe consultarse por clave antes de reenviar.'
+      });
+    }
 
     if (recepcionRes.status === 202) {
-      const branch = await supabaseAdmin
-        .from('pos_branches')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (branch.data) {
-        const invoiceRecord = await supabaseAdmin.from('pos_invoices').upsert({
-          tenant_id: tenantId,
-          branch_id: branch.data.id,
-          clave,
-          consecutivo: String(consecutivo || clave).slice(0, 20),
-          document_type: String(documentType || 'TE').slice(0, 2),
-          hacienda_status: 'PROCESSING',
-          total: Number(total || 0),
-          ...(issuedAt ? { issued_at: issuedAt } : {}),
-          invoice_data: invoiceData,
-          xml_content: rawXml || null,
-          signed_xml_content: finalXmlBase64,
-          submitted_at: new Date().toISOString()
-        }, { onConflict: 'tenant_id,clave' });
-        if (invoiceRecord.error) console.warn('[Hacienda] No se pudo persistir el comprobante:', invoiceRecord.error.message);
+      const saved = await finishHaciendaOperationLock(supabaseAdmin, tenantId, String(branchId), String(clave), submissionLockToken, {
+        ...invoiceRecord,
+        hacienda_status: 'PROCESSING',
+        submitted_at: new Date().toISOString(),
+        error_message: null
+      });
+      if (saved.error || !saved.updated) {
+        console.error('[Hacienda] No se pudo persistir un comprobante recibido.');
+        return res.status(502).json({
+          success: false,
+          submitted: true,
+          code: 'SUBMISSION_UNCONFIRMED',
+          error: 'Hacienda recibió la solicitud, pero no se pudo finalizar su estado local. La clave permanece reservada; consulte más tarde.'
+        });
       }
       return res.status(200).json({ 
         success: true, 
@@ -460,48 +868,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         signedXmlBase64: finalXmlBase64
       });
     } else {
-      const errorCause = recepcionRes.headers.get('x-error-cause');
-      const rawBody = await recepcionRes.text().catch(() => '');
-      let recepcionData: any = null;
-      try { recepcionData = rawBody ? JSON.parse(rawBody) : null; } catch { recepcionData = { raw: rawBody }; }
-      console.error('Rechazo Hacienda:', recepcionRes.status);
-      const reason = errorCause || recepcionData?.message || recepcionData?.error_description || recepcionData?.raw || `HTTP ${recepcionRes.status}`;
-      const branch = await supabaseAdmin
-        .from('pos_branches')
-        .select('id')
-        .eq('tenant_id', tenantId)
-        .eq('is_active', true)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (branch.data) {
-        await supabaseAdmin.from('pos_invoices').upsert({
-          tenant_id: tenantId,
-          branch_id: branch.data.id,
-          clave,
-          consecutivo: String(consecutivo || clave).slice(0, 20),
-          document_type: String(documentType || 'TE').slice(0, 2),
-          hacienda_status: 'REJECTED',
-          total: Number(total || 0),
-          ...(issuedAt ? { issued_at: issuedAt } : {}),
-          invoice_data: invoiceData,
-          xml_content: rawXml || null,
-          signed_xml_content: finalXmlBase64,
-          error_message: String(reason).slice(0, 4000)
-        }, { onConflict: 'tenant_id,clave' });
+      console.warn('[Hacienda] La respuesta de recepción no confirmó el estado del comprobante.', recepcionRes.status);
+      const saved = await finishHaciendaOperationLock(supabaseAdmin, tenantId, String(branchId), String(clave), submissionLockToken, {
+        ...invoiceRecord,
+        hacienda_status: 'PROCESSING',
+        submitted_at: new Date().toISOString(),
+        error_message: 'La recepción no confirmó el estado; consulte el comprobante por clave.'
+      });
+      if (saved.error || !saved.updated) {
+        console.error('[Hacienda] No se pudo persistir el estado pendiente de un comprobante.');
+        return res.status(502).json({
+          success: false,
+          submitted: true,
+          code: 'SUBMISSION_UNCONFIRMED',
+          error: 'La recepción no confirmó el estado y tampoco se pudo guardar el resultado. La clave permanece reservada; consulte más tarde.',
+          status: recepcionRes.status
+        });
       }
-      return res.status(400).json({ 
-        error: `Hacienda rechazó la recepción (${recepcionRes.status}): ${reason}`, 
+      return res.status(502).json({
+        success: false,
+        submitted: true,
+        code: 'SUBMISSION_UNCONFIRMED',
+        error: 'No se confirmó la recepción con Hacienda; se consultará por clave antes de permitir cualquier reenvío.',
         status: recepcionRes.status,
-        errorCause,
-        details: recepcionData,
         signedXmlBase64: finalXmlBase64
       });
     }
 
-  } catch {
-    console.error('Error interno Facturación.');
-    return res.status(500).json({ error: 'Error interno del servidor' });
+  } catch (error) {
+    if (error instanceof HaciendaStorageUnavailableError) {
+      return res.status(503).json({
+        success: false,
+        submitted: providerSubmissionAttempted,
+        code: providerSubmissionAttempted ? 'SUBMISSION_UNCONFIRMED' : 'NOT_SUBMITTED',
+        error: 'El almacenamiento seguro de Hacienda no está disponible. Verifica la clave de cifrado del servidor y el acceso al almacenamiento.'
+      });
+    }
+    console.error('[Hacienda] Error interno procesando la solicitud.');
+    return res.status(500).json({
+      success: false,
+      submitted: providerSubmissionAttempted,
+      code: providerSubmissionAttempted ? 'SUBMISSION_UNCONFIRMED' : 'NOT_SUBMITTED',
+      error: providerSubmissionAttempted
+        ? 'No se confirmó la respuesta de Hacienda; consulte el estado por clave antes de reenviar.'
+        : 'La operación no se transmitió a Hacienda; corrija el problema y vuelva a intentarlo.'
+    });
   }
 }
 
@@ -521,7 +932,7 @@ async function getHaciendaToken(tokenUrl: string, clientId: string, user: string
 
   const tokenData = (await tokenRes.json().catch(() => null)) as any;
   if (!tokenRes.ok || !tokenData?.access_token) {
-    throw new Error(`Error autenticando con IDP Hacienda ATV: ${tokenData?.error_description || tokenData?.error || 'Token no generado'}`);
+    throw new Error('No se pudo autenticar con Hacienda; revisa las credenciales de esta sucursal.');
   }
 
   return tokenData.access_token;

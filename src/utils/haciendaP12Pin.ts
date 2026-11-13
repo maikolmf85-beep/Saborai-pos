@@ -1,17 +1,15 @@
 export const HACIENDA_P12_PIN_FORMAT_ERROR =
-  'Usa un PIN numérico de 4 dígitos o una contraseña de al menos 15 caracteres con una mayúscula, un número y un símbolo.';
+  'Usa exactamente 4 o 14 dígitos numéricos para el PIN de la llave .p12.';
 
 /**
- * Accepts the legacy four-digit PIN or the reported long .p12 passphrase format.
+ * Accepts the legacy four-digit PIN or the current fourteen-digit numeric PIN.
  * It deliberately does not trim, case-fold, normalize, or otherwise rewrite input.
  */
 export function isValidHaciendaP12Pin(value: unknown): value is string {
   if (typeof value !== 'string') return false;
-  if (/^[0-9]{4}$/.test(value)) return true;
+  return /^[0-9]{4}$/.test(value) || /^[0-9]{14}$/.test(value);
+}
 
-  const characterCount = Array.from(value).length;
-  return characterCount >= 15
-    && /\p{Lu}/u.test(value)
-    && /\p{N}/u.test(value)
-    && /[\p{P}\p{S}]/u.test(value);
+export function isValidHaciendaP12PinInput(value: unknown): boolean {
+  return value === '' || isValidHaciendaP12Pin(value);
 }

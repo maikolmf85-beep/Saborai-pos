@@ -79,7 +79,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ tenant }) =>
   }, [activeShift, history, dateRange]);
 
   // 2. Filter Invoices according to range
-  const allInvoices = haciendaService.getInvoices();
+  const allInvoices = haciendaService.getInvoices(tenant.id);
   const filteredInvoices = useMemo(() => {
     return allInvoices.filter(inv => isWithinRange(inv.fechaEmision, dateRange));
   }, [allInvoices, dateRange]);

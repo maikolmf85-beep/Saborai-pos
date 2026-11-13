@@ -3,6 +3,7 @@ import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
+import { publicHaciendaErrorMessage } from './_utils/haciendaOperationLock.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
@@ -39,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       invoiceData: sanitizeFiscalInvoiceData(row.invoice_data),
       xmlContent: row.xml_content || undefined,
       signedXmlContent: row.signed_xml_content || undefined,
-      errorMessage: row.error_message || undefined,
+      errorMessage: publicHaciendaErrorMessage(row.error_message),
       submittedAt: row.submitted_at || undefined,
       acceptedAt: row.accepted_at || undefined,
       createdAt: row.created_at

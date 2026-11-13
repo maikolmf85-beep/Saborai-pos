@@ -27,7 +27,6 @@ import { HaciendaSettings } from './HaciendaSettings';
 import { TenantInfo, SubscriptionStatus, TaxRegime } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
 import { CashRegister } from '../types/cashShift';
-import { haciendaService } from '../services/haciendaService';
 import { ConfirmDialog } from './ConfirmDialog';
 import { cashControlCloudService, CashControlMigrationPreview, CashTerminalAssignmentConflict } from '../services/cashControlCloudService';
 import { isLocalDemoTenantId } from '../services/tenantStorage';
@@ -264,7 +263,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       location,
       taxRegime: selectedRegime,
       includeService10ByDefault: includeService10,
-      haciendaConfig: tenant.haciendaConfig || haciendaService.getConfig() || undefined
+      haciendaConfig: tenant.haciendaConfig
+        ? {
+            ...tenant.haciendaConfig,
+            atvUsername: undefined,
+            atvPassword: undefined,
+            pinP12: undefined,
+            p12Base64: undefined
+          }
+        : undefined
     };
 
     onUpdateTenant(updated);

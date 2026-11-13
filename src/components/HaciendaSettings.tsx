@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
+import { cashShiftService } from '../services/cashShiftService';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
-import { getTenantItem } from '../services/tenantStorage';
 import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../utils/haciendaP12Pin';
 
 interface HaciendaSettingsProps {
@@ -30,37 +30,33 @@ interface HaciendaSettingsProps {
 }
 
 export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUpdateTenant }) => {
-  // Load initial config from service, localStorage, or tenant
-  const getInitialConfig = (): HaciendaConfig | null => {
-    const fromService = haciendaService.getConfig();
-    if (fromService) return fromService;
-    try {
-      const fromLocal = getTenantItem<HaciendaConfig>('hacienda_config', tenant.id);
-      if (fromLocal) return fromLocal;
-    } catch {}
-    return tenant.haciendaConfig || null;
-  };
+  const currentRegister = cashShiftService.getCurrentRegister();
+  const defaultBranchCode = (currentRegister.branchCode || '001').replace(/\D/g, '').padStart(3, '0').slice(-3);
+  const [branches, setBranches] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [branchesReady, setBranchesReady] = useState(false);
+  const [branchLoadError, setBranchLoadError] = useState('');
 
-  const initialConfig = getInitialConfig();
-
-  const [environment, setEnvironment] = useState<'sandbox' | 'production'>(initialConfig?.environment || 'sandbox');
-  const [atvUsername, setAtvUsername] = useState(initialConfig?.atvUsername || '');
-  const [atvPassword, setAtvPassword] = useState(initialConfig?.atvPassword || '');
+  const [environment, setEnvironment] = useState<'sandbox' | 'production'>('sandbox');
+  const [atvUsername, setAtvUsername] = useState('');
+  const [atvPassword, setAtvPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [pinP12, setPinP12] = useState(initialConfig?.pinP12 || '');
+  const [pinP12, setPinP12] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [pinValidationError, setPinValidationError] = useState<string | null>(null);
+  const [atvUsernameConfigured, setAtvUsernameConfigured] = useState(false);
+  const [atvPasswordConfigured, setAtvPasswordConfigured] = useState(false);
+  const [certificateConfigured, setCertificateConfigured] = useState(false);
   
-  const [p12FileName, setP12FileName] = useState(initialConfig?.p12FileName || '');
-  const [p12Base64, setP12Base64] = useState(initialConfig?.p12Base64 || '');
+  const [p12FileName, setP12FileName] = useState('');
+  const [p12Base64, setP12Base64] = useState('');
   
-  const [tipoIdentificacion, setTipoIdentificacion] = useState<'01' | '02' | '03' | '04'>(initialConfig?.tipoIdentificacion || '02');
+  const [tipoIdentificacion, setTipoIdentificacion] = useState<'01' | '02' | '03' | '04'>('02');
   const [cedulaEmisor, setCedulaEmisor] = useState(tenant.cedulaJuridica || '');
-  const [codigoActividad, setCodigoActividad] = useState(initialConfig?.codigoActividad || '561001');
-  const [provincia, setProvincia] = useState(initialConfig?.provincia || '1');
-  const [canton, setCanton] = useState(initialConfig?.canton || '01');
-  const [distrito, setDistrito] = useState(initialConfig?.distrito || '01');
-  const [otrasSenas, setOtrasSenas] = useState(initialConfig?.otrasSenas || tenant.location || '');
+  const [codigoActividad, setCodigoActividad] = useState('');
+  const [provincia, setProvincia] = useState('');
+  const [canton, setCanton] = useState('');
+  const [distrito, setDistrito] = useState('');
+  const [otrasSenas, setOtrasSenas] = useState('');
   const [actividadesAtv, setActividadesAtv] = useState<{ codigo: string; descripcion: string; estado: string; tipo?: string }[]>([]);
   const [lookupMsg, setLookupMsg] = useState('');
 
@@ -94,12 +90,12 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       setLookupMsg('No se pudo consultar Hacienda para esa cédula (verifique su número o conexión).');
     }
   };
-  const [sucursal, setSucursal] = useState(initialConfig?.sucursal || '001');
-  const [terminal, setTerminal] = useState(initialConfig?.terminal || '00001');
-  const [proveedorSistemas, setProveedorSistemas] = useState(initialConfig?.proveedorSistemas || '');
-  const [isValidated, setIsValidated] = useState<boolean>(initialConfig?.isValidated || false);
-  const [certExpiresOn, setCertExpiresOn] = useState<string | undefined>(initialConfig?.certExpiresOn);
-  const [lastTestedAt, setLastTestedAt] = useState<string | undefined>(initialConfig?.lastTestedAt);
+  const [sucursal, setSucursal] = useState(defaultBranchCode);
+  const terminal = currentRegister.terminalCode || '00001';
+  const [proveedorSistemas, setProveedorSistemas] = useState('');
+  const [isValidated, setIsValidated] = useState(false);
+  const [certExpiresOn, setCertExpiresOn] = useState<string | undefined>(undefined);
+  const [lastTestedAt, setLastTestedAt] = useState<string | undefined>(undefined);
 
   // Test state
   const [isTesting, setIsTesting] = useState(false);
@@ -110,16 +106,19 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   } | null>(null);
 
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [removeCertificate, setRemoveCertificate] = useState(false);
 
-  // Función universal para persistir cambios inmediatamente
+  // Construye el formulario; los secretos solo salen del navegador al guardar o probar.
   const persistConfig = (overrides?: Partial<HaciendaConfig>) => {
-    const configToSave: HaciendaConfig = {
+    return {
       environment,
-      atvUsername: atvUsername.trim(),
-      atvPassword: atvPassword.trim(),
-      pinP12,
+      atvUsername: atvUsername.trim() || undefined,
+      atvPassword: atvPassword || undefined,
+      pinP12: pinP12 || undefined,
       p12FileName,
-      p12Base64,
+      p12Base64: p12Base64 || undefined,
       cedulaEmisor: cedulaEmisor.trim(),
       tipoIdentificacion,
       codigoActividad,
@@ -135,52 +134,72 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       lastTestedAt,
       ...overrides
     };
-
-    haciendaService.saveConfig(configToSave);
-
-    if (onUpdateTenant) {
-      onUpdateTenant({
-        ...tenant,
-        cedulaJuridica: cedulaEmisor.trim(),
-        haciendaConfig: configToSave
-      });
-    }
-
-    return configToSave;
   };
 
-  // Re-sincronizar si tenant cambia externamente
+  const applyConfig = (cfg: HaciendaConfig | null, branchCode: string) => {
+    const selected = cfg;
+    setEnvironment(selected?.environment || 'sandbox');
+    setAtvUsername(selected?.atvUsername || '');
+    setAtvPassword(selected?.atvPassword || '');
+    setPinP12(selected?.pinP12 || '');
+    setP12FileName(selected?.p12FileName || '');
+    setP12Base64(selected?.p12Base64 || '');
+    setAtvUsernameConfigured(Boolean(selected?.atvUsernameConfigured || selected?.atvUsername));
+    setAtvPasswordConfigured(Boolean(selected?.atvPasswordConfigured || selected?.atvPassword));
+    setCertificateConfigured(Boolean(selected?.certificateConfigured || (selected?.p12Base64 && selected?.pinP12)));
+    const ced = selected?.cedulaEmisor || tenant.cedulaJuridica || '';
+    if (ced) setCedulaEmisor(ced);
+    setTipoIdentificacion(selected?.tipoIdentificacion || '02');
+    setCodigoActividad(selected?.codigoActividad || '');
+    setProvincia(selected?.provincia || '');
+    setCanton(selected?.canton || '');
+    setDistrito(selected?.distrito || '');
+    setOtrasSenas(selected?.otrasSenas || '');
+    setSucursal(branchCode);
+    setProveedorSistemas(selected?.proveedorSistemas || '');
+    setIsValidated(Boolean(selected?.isValidated));
+    setCertExpiresOn(selected?.certExpiresOn);
+    setLastTestedAt(selected?.lastTestedAt);
+  };
+
+  // Cargar sucursales reales del tenant y después su perfil fiscal aislado.
   useEffect(() => {
-    const cfg = getInitialConfig();
-    if (cfg) {
-      setEnvironment(cfg.environment || 'sandbox');
-      setAtvUsername(cfg.atvUsername || '');
-      setAtvPassword(cfg.atvPassword || '');
-      setPinP12(cfg.pinP12 || '');
-      setP12FileName(cfg.p12FileName || '');
-      setP12Base64(cfg.p12Base64 || '');
-      const ced = cfg.cedulaEmisor || tenant.cedulaJuridica || '';
-      if (ced) setCedulaEmisor(ced);
-      setTipoIdentificacion(cfg.tipoIdentificacion || '02');
-      setCodigoActividad(cfg.codigoActividad || '561001');
-      setProvincia(cfg.provincia || '1');
-      setCanton(cfg.canton || '01');
-      setDistrito(cfg.distrito || '01');
-      setOtrasSenas(cfg.otrasSenas || tenant.location || '');
-      setSucursal(cfg.sucursal || '001');
-      setTerminal(cfg.terminal || '00001');
-      setProveedorSistemas(cfg.proveedorSistemas || '');
-      setIsValidated(cfg.isValidated || false);
-      setCertExpiresOn(cfg.certExpiresOn);
-      setLastTestedAt(cfg.lastTestedAt);
+    let active = true;
+    setBranchesReady(false);
+    setBranchLoadError('');
+    haciendaService.listBranches(tenant.id).then(list => {
+      if (!active) return;
+      setBranches(list);
+      const target = list.find(branch => branch.code === defaultBranchCode)?.code || list[0]?.code || defaultBranchCode;
+      setSucursal(target);
+      setBranchesReady(true);
+    }).catch(error => {
+      if (!active) return;
+      setBranches([]);
+      setBranchesReady(true);
+      setBranchLoadError(error?.message || 'No se pudieron cargar las sucursales.');
+    });
+    return () => { active = false; };
+  }, [tenant.id, defaultBranchCode]);
 
-      if (normalizeCedula(ced).length >= 9) {
-        handleLookupActividades(ced);
+  useEffect(() => {
+    if (!branchesReady || !sucursal || !branches.some(branch => branch.code === sucursal)) return;
+    let active = true;
+    setBranchLoadError('');
+    applyConfig(null, sucursal);
+    haciendaService.loadConfigWithLegacyMigration(tenant.id, sucursal).then(result => {
+      if (active) {
+        setBranchLoadError(result.migrationError || '');
+        applyConfig(result.config, sucursal);
       }
-    }
-  }, [tenant.id]);
+    }).catch(error => {
+      if (!active) return;
+      setBranchLoadError(error?.message || 'No se pudo cargar la configuración de esta sucursal.');
+    });
+    return () => { active = false; };
+  }, [tenant.id, sucursal, branchesReady, branches]);
 
-  // Handle .p12 file upload y guardado inmediato
+  // El certificado se conserva solo en memoria hasta que el administrador guarde.
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -197,6 +216,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
         const base64Data = result.includes(',') ? result.split(',')[1].replace(/\s+/g, '') : result.replace(/\s+/g, '');
         setP12Base64(base64Data);
         setP12FileName(file.name);
+        setCertificateConfigured(false);
+        setRemoveCertificate(false);
         persistConfig({
           p12Base64: base64Data,
           p12FileName: file.name
@@ -209,6 +230,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const handleRemoveFile = () => {
     setP12Base64('');
     setP12FileName('');
+    setCertificateConfigured(false);
+    setRemoveCertificate(true);
     persistConfig({
       p12Base64: '',
       p12FileName: '',
@@ -219,14 +242,12 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
   const handleEnvironmentChange = (newEnv: 'sandbox' | 'production') => {
     setEnvironment(newEnv);
     persistConfig({ environment: newEnv, isValidated: false });
+    setIsValidated(false);
   };
 
   const handleTestConnection = async () => {
-    const trimmedUser = atvUsername.trim();
-    const trimmedPass = atvPassword.trim();
-
-    if (!trimmedUser || !trimmedPass) {
-      alert('Debes ingresar el usuario y contraseña de ATV para realizar la prueba.');
+    if (!sucursal || !branches.some(branch => branch.code === sucursal)) {
+      setTestResult({ success: false, message: 'Selecciona una sucursal activa sincronizada con el POS.' });
       return;
     }
 
@@ -239,21 +260,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
     setIsTesting(true);
     setTestResult(null);
-
-    const testConfig: HaciendaConfig = {
-      environment,
-      atvUsername: trimmedUser,
-      atvPassword: trimmedPass,
-      pinP12,
-      p12FileName,
-      p12Base64,
-      tipoIdentificacion,
-      codigoActividad,
-      sucursal,
-      terminal
-    };
-
-    const res = await haciendaService.testConnection(testConfig);
+    setSaveError('');
+    const res = await haciendaService.testConnection(tenant.id, sucursal, persistConfig(), { removeCertificate });
     setIsTesting(false);
     setTestResult(res);
 
@@ -261,35 +269,60 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       const now = new Date().toISOString();
       const expires = res.details?.expiresOn || certExpiresOn;
       setIsValidated(true);
+      setAtvUsernameConfigured(true);
+      setAtvPasswordConfigured(true);
+      setCertificateConfigured(true);
+      setAtvUsername('');
+      setAtvPassword('');
+      setPinP12('');
+      setP12Base64('');
+      setRemoveCertificate(false);
       setCertExpiresOn(expires);
       setLastTestedAt(now);
-
-      // GUARDADO AUTOMÁTICO INMEDIATO TRAS PRUEBA EXITOSA
-      persistConfig({
-        ...testConfig,
-        isValidated: true,
-        certExpiresOn: expires,
-        lastTestedAt: now
-      });
-
-      // Consultar y auto-asignar actividades registradas en ATV
-      handleLookupActividades(cedulaEmisor);
-
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
     }
   };
 
-  const handleSaveConfig = (e: React.FormEvent) => {
+  const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((pinP12.length > 0 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
+    if ((pinP12 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
       setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
       return;
     }
     setPinValidationError(null);
-    persistConfig();
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
+    setIsSaving(true);
+    setSaveError('');
+    setTestResult(null);
+    try {
+      const saved = await haciendaService.saveConfig(tenant.id, sucursal, persistConfig(), { removeCertificate });
+      setAtvUsernameConfigured(Boolean(saved.atvUsernameConfigured));
+      setAtvPasswordConfigured(Boolean(saved.atvPasswordConfigured));
+      setCertificateConfigured(Boolean(saved.certificateConfigured));
+      setAtvUsername('');
+      setAtvPassword('');
+      setPinP12('');
+      setP12Base64('');
+      setRemoveCertificate(false);
+      setIsValidated(Boolean(saved.isValidated));
+      setCertExpiresOn(saved.certExpiresOn);
+      if (onUpdateTenant) {
+        const safeConfig: HaciendaConfig = {
+          ...saved,
+          atvUsername: undefined,
+          atvPassword: undefined,
+          pinP12: undefined,
+          p12Base64: undefined
+        };
+        onUpdateTenant({ ...tenant, cedulaJuridica: cedulaEmisor.trim(), haciendaConfig: safeConfig });
+      }
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error: any) {
+      setSaveError(error?.message || 'No se pudo guardar la configuración de esta sucursal.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -322,7 +355,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       Registrado y Verificado ante Hacienda ATV
                     </span>
-                  ) : atvUsername ? (
+                  ) : atvUsernameConfigured || atvUsername ? (
                     <span className="flex items-center gap-1.5 text-amber-300 font-medium">
                       <Info className="w-3.5 h-3.5" />
                       Credenciales guardadas (Pendiente de prueba en vivo)
@@ -371,14 +404,38 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
             </div>
           </div>
 
+          <div className="mt-5 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+            <div>
+              <label className="text-xs font-semibold text-stone-200">Sucursal con esta configuración de Hacienda</label>
+              <select
+                value={sucursal}
+                onChange={(e) => { setSucursal(e.target.value); setIsValidated(false); setTestResult(null); }}
+                disabled={!branchesReady || branches.length === 0}
+                className="w-full mt-1 px-3 py-2.5 text-xs rounded-xl border border-stone-600 bg-stone-950 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-60"
+              >
+                {branches.length === 0 && <option value={sucursal}>{branchesReady ? 'No hay sucursales disponibles' : 'Cargando sucursales…'}</option>}
+                {branches.map(branch => <option key={branch.id} value={branch.code}>{branch.name} · {branch.code}</option>)}
+              </select>
+              <span className="text-[11px] text-stone-400 block mt-1">Cada cliente configura sus propias credenciales y cada sucursal conserva un perfil fiscal separado.</span>
+            </div>
+            <div className="text-[11px] text-stone-300 border border-stone-700 rounded-xl px-3 py-2.5">
+              Terminal de esta caja: <strong className="font-mono text-white">{terminal}</strong>
+            </div>
+          </div>
+          {(branchLoadError || (branchesReady && branches.length === 0)) && (
+            <div className="mt-3 p-3 rounded-xl border border-amber-300/30 bg-amber-950/40 text-[11px] text-amber-100">
+              {branchLoadError || 'No hay sucursales sincronizadas para este restaurante. Sincroniza la configuración de cajas y sucursales antes de guardar Hacienda.'}
+            </div>
+          )}
+
           {/* Barra de Cumplimiento 100% Hacienda v4.4 */}
           {(() => {
             const hasEmisor = !!cedulaEmisor.replace(/\D/g, '');
             const hasAct = /^\d{6}$/.test(codigoActividad.trim());
-            const hasUbi = !!(provincia && canton && distrito);
-            const hasCred = !!(atvUsername.trim() && atvPassword.trim());
-            const hasCert = !!(p12Base64 && isValidHaciendaP12Pin(pinP12));
-            const hasTerm = !!(sucursal && terminal);
+            const hasUbi = !!(provincia && canton && distrito && otrasSenas.trim());
+            const hasCred = !!((atvUsername.trim() || atvUsernameConfigured) && (atvPassword || atvPasswordConfigured));
+            const hasCert = !!((p12Base64 && isValidHaciendaP12Pin(pinP12)) || certificateConfigured);
+            const hasTerm = !!(branches.some(branch => branch.code === sucursal) && terminal);
 
             const checks = [
               { label: 'Cédula Emisor', ok: hasEmisor },
@@ -450,22 +507,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               const xml = generateHaciendaXmlV44(sampleInvoice, {
                 ...tenant,
                 cedulaJuridica: cedulaEmisor || '3101123456',
-                haciendaConfig: {
-                  environment,
-                  atvUsername,
-                  atvPassword,
-                  pinP12,
-                  tipoIdentificacion,
-                  codigoActividad,
-                  provincia,
-                  canton,
-                  distrito,
-                  otrasSenas,
-                  proveedorSistemas,
-                  sucursal,
-                  terminal
-                }
-              });
+                haciendaConfig: { environment, tipoIdentificacion, codigoActividad, provincia, canton, distrito, otrasSenas, proveedorSistemas }
+              }, { environment, tipoIdentificacion, cedulaEmisor, codigoActividad, provincia, canton, distrito, otrasSenas, proveedorSistemas });
 
               downloadXmlFile(xml, `FacturaElectronica_Prueba_v4.4_${consecutivo}.xml`);
             };
@@ -572,7 +615,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   setIsValidated(false);
                 }}
                 onBlur={() => persistConfig()}
-                placeholder={environment === 'sandbox' ? 'cpf-01-0000-0000@stag.comprobanteselectronicos.go.cr' : 'cpf-01-0000-0000@comprobanteselectronicos.go.cr'}
+                placeholder={atvUsernameConfigured ? 'Usuario guardado de forma segura; escribe aquí solo para reemplazarlo' : (environment === 'sandbox' ? 'cpf-01-0000-0000@stag.comprobanteselectronicos.go.cr' : 'cpf-01-0000-0000@comprobanteselectronicos.go.cr')}
                 className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
               />
               <span className="text-[11px] text-stone-400">Comienza usualmente con cpf-... o cpj-...</span>
@@ -589,7 +632,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     setIsValidated(false);
                   }}
                   onBlur={() => persistConfig()}
-                  placeholder="••••••••••••••••"
+                  placeholder={atvPasswordConfigured ? 'Contraseña guardada de forma segura; escribe aquí solo para reemplazarla' : 'Contraseña generada en ATV'}
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 pr-10 font-mono"
                 />
                 <button
@@ -600,7 +643,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <span className="text-[11px] text-stone-400">Contraseña generada en ATV (no la contraseña del sitio web).</span>
+                <span className="text-[11px] text-stone-400">Contraseña generada en ATV. Al editar un perfil, deja el campo vacío para conservar la contraseña guardada.</span>
             </div>
 
             {/* Actividad Económica & Datos Tributarios */}
@@ -729,32 +772,8 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
             </div>
 
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3">
               <div>
-                <label className="text-xs font-semibold text-stone-700">Sucursal (3 dgt)</label>
-                <input
-                  type="text"
-                  maxLength={3}
-                  value={sucursal}
-                  onChange={(e) => setSucursal(e.target.value)}
-                  onBlur={() => persistConfig()}
-                  placeholder="001"
-                  className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-stone-700">Punto de Venta (5 dgt)</label>
-                <input
-                  type="text"
-                  maxLength={5}
-                  value={terminal}
-                  onChange={(e) => setTerminal(e.target.value)}
-                  onBlur={() => persistConfig()}
-                  placeholder="00001"
-                  className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
-                />
-              </div>
-              <div className="col-span-2">
                 <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (12 dígitos numéricos - v4.4)</label>
                 <input
                   type="text"
@@ -765,7 +784,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   placeholder={cedulaEmisor.replace(/\D/g, '').padStart(12, '0') || '310100000000'}
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
-                <span className="text-[11px] text-stone-400">En v4.4 es obligatorio informar el proveedor de software (12 dígitos con ceros). Si se deja vacío se usará la cédula del emisor.</span>
+                <span className="text-[11px] text-stone-400">Si se deja vacío, se utilizará la cédula del emisor de este cliente; no se comparte un identificador de proveedor entre clientes.</span>
               </div>
             </div>
           </div>
@@ -786,7 +805,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-stone-700">Archivo de Llave Criptográfica (.p12 / .pfx)</label>
                 <label className={`border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center cursor-pointer transition-all relative ${
-                  p12Base64 
+                  (p12Base64 || certificateConfigured)
                     ? 'border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50/70' 
                     : 'border-stone-300 hover:border-stone-400 bg-stone-50/50 hover:bg-stone-50'
                 }`}>
@@ -796,15 +815,17 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     onChange={handleFileUpload}
                     className="hidden"
                   />
-                  {p12Base64 ? (
+                  {(p12Base64 || certificateConfigured) ? (
                     <div className="text-center w-full">
                       <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2">
                         <FileCheck className="w-5 h-5" />
                       </div>
                       <span className="text-xs font-bold text-stone-900 block truncate max-w-[240px] mx-auto">
-                        {p12FileName || 'Llave Criptográfica Cargada'}
+                        {p12FileName || 'Llave criptográfica guardada de forma segura'}
                       </span>
-                      <span className="text-[11px] text-emerald-600 font-semibold block mt-0.5">✓ Certificado registrado en memoria</span>
+                      <span className="text-[11px] text-emerald-700 font-semibold block mt-0.5">
+                        {p12Base64 ? '✓ Archivo seleccionado; se cifrará al guardar' : '✓ Certificado guardado cifrado en el servidor'}
+                      </span>
                       
                       <button
                         type="button"
@@ -832,10 +853,11 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
               {/* PIN o contraseña de la llave */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-stone-700">PIN o contraseña de la llave .p12</label>
+                <label className="text-xs font-semibold text-stone-700">PIN o contraseña de la llave (.p12)</label>
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
+                    maxLength={256}
                     value={pinP12}
                     onChange={(e) => {
                       setPinP12(e.target.value);
@@ -843,12 +865,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                       setPinValidationError(null);
                     }}
                     onBlur={() => {
-                      if ((pinP12.length > 0 && !isValidHaciendaP12Pin(pinP12)) || (p12Base64 && !isValidHaciendaP12Pin(pinP12))) {
-                        setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
-                      }
-                      persistConfig();
+                      if (pinP12 && !isValidHaciendaP12Pin(pinP12)) setPinValidationError(HACIENDA_P12_PIN_FORMAT_ERROR);
+                      else setPinValidationError(null);
                     }}
-                    placeholder="PIN de 4 dígitos o clave larga"
+                    placeholder={certificateConfigured ? 'Llave guardada; escribe aquí solo para cambiar el PIN' : 'PIN o contraseña exacta de la llave'}
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono tracking-widest"
                   />
                   <button
@@ -859,7 +879,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <span className="text-[11px] text-stone-400">Acepta el PIN legacy de 4 dígitos o una contraseña de al menos 15 caracteres con mayúscula, número y símbolo. Se conserva exactamente como se ingresa.</span>
+                <span className="text-[11px] text-stone-400">Debe ser exactamente de 4 o 14 dígitos numéricos; se conserva exactamente como la escribiste, sin recortarlo.</span>
                 {pinValidationError && <span role="alert" className="block text-[11px] text-rose-600">{pinValidationError}</span>}
               </div>
             </div>
@@ -869,7 +889,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
               <button
                 type="button"
                 onClick={handleTestConnection}
-                disabled={isTesting || !atvUsername || !atvPassword}
+                disabled={isTesting || isSaving || !branches.some(branch => branch.code === sucursal) || !((atvUsername && atvPassword) || (atvUsernameConfigured && atvPasswordConfigured)) || !((p12Base64 && pinP12) || (certificateConfigured && !removeCertificate))}
                 className="w-full py-2.5 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 disabled:opacity-50 text-stone-800 text-xs font-bold flex items-center justify-center gap-2 transition-all border border-stone-300 shadow-xs"
               >
                 {isTesting ? (
@@ -917,10 +937,15 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
         )}
 
         {/* Botón Guardar Cambios */}
+        {saveError && (
+          <div role="alert" className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-800">
+            {saveError}
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 border-t border-stone-200">
           <div className="flex items-center gap-2 text-xs text-stone-500">
             <Info className="w-4 h-4 text-stone-400 shrink-0" />
-            <span>Los datos se guardan localmente en este navegador y se usan exclusivamente para la emisión fiscal.</span>
+            <span>Las credenciales y el certificado se guardan cifrados en el servidor para este cliente y sucursal; no se vuelven a mostrar.</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -933,10 +958,11 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
             <button
               type="submit"
-              className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+              disabled={isSaving || !branches.some(branch => branch.code === sucursal)}
+              className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-400 disabled:text-white text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
             >
-              <Check className="w-4 h-4 text-amber-400" />
-              <span>Guardar Configuración de Hacienda</span>
+              {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4 text-amber-400" />}
+              <span>{isSaving ? 'Guardando en servidor…' : 'Guardar Configuración de Hacienda'}</span>
             </button>
           </div>
         </div>

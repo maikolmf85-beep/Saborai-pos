@@ -44,11 +44,11 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   
   useEffect(() => {
     if (isOpen) {
-      const unsubscribe = haciendaService.subscribe(setInvoices);
-      void haciendaService.refreshFromServer();
+      const unsubscribe = haciendaService.subscribe(setInvoices, tenant.id);
+      void haciendaService.refreshFromServer(tenant.id);
       return unsubscribe;
     }
-  }, [isOpen]);
+  }, [isOpen, tenant.id]);
 
   if (!isOpen) return null;
 
@@ -71,6 +71,12 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
             <XCircle className="w-3 h-3" /> RECHAZADO
           </span>
         );
+      case 'ERROR_LOCAL':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+            <XCircle className="w-3 h-3" /> NO ENVIADO
+          </span>
+        );
       case 'ANULADO':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-300">
@@ -88,7 +94,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
   };
 
   const handleResend = (clave: string) => {
-    haciendaService.resendInvoice(clave);
+    haciendaService.resendInvoice(clave, undefined, tenant.id);
   };
 
   const handleAnular = (clave: string) => {
@@ -190,9 +196,9 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                       <span>•</span>
                       <span>{inv.fechaEmision.toLocaleString()}</span>
                     </div>
-                    {inv.estadoHacienda === 'RECHAZADO' && inv.errorMensaje && (
-                      <div className="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-2 py-1 break-words whitespace-normal">
-                        Motivo DGT: {inv.errorMensaje}
+                    {(inv.estadoHacienda === 'RECHAZADO' || inv.estadoHacienda === 'ERROR_LOCAL' || inv.estadoHacienda === 'PROCESANDO') && inv.errorMensaje && (
+                      <div className={`text-[11px] ${inv.estadoHacienda === 'RECHAZADO' ? 'text-red-700 bg-red-50 border-red-100' : 'text-amber-900 bg-amber-50 border-amber-200'} border rounded-lg px-2 py-1 break-words whitespace-normal`}>
+                        {inv.estadoHacienda === 'RECHAZADO' ? 'Estado guardado como rechazado:' : inv.estadoHacienda === 'ERROR_LOCAL' ? 'No transmitido:' : 'Resultado aún no confirmado:'} {inv.errorMensaje}
                       </div>
                     )}
                   </div>
@@ -231,7 +237,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                         className="px-3 py-2 bg-stone-900 text-white hover:bg-stone-800 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold shadow-xs"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Reenviar a DGT</span>
+                        <span>Verificar estado y reenviar</span>
                       </button>
                     )}
                   </div>

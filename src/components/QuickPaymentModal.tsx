@@ -12,16 +12,25 @@ import {
   Download,
   UserCheck
 } from 'lucide-react';
-import { Table, TableItem, TenantInfo, UserProfile } from '../types';
+import { HaciendaConfig, Table, TableItem, TenantInfo, UserProfile } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, reserveConsecutivoNumber } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { cashControlCloudService } from '../services/cashControlCloudService';
 import { haciendaService } from '../services/haciendaService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
-import { getTenantItem, isLocalDemoTenantId } from '../services/tenantStorage';
+import { isLocalDemoTenantId } from '../services/tenantStorage';
 import { buildQuickPaymentEmployeeCreditCharge, employeeCreditService } from '../services/employeeCreditService';
 import { localDB } from '../services/db';
+import type { OfflineSyncQueueItem } from '../services/db';
+import {
+  clearQuickPaymentAttempt,
+  getOrCreateQuickPaymentAttempt,
+  isQuickPaymentEffectApplied,
+  markQuickPaymentEffectApplied,
+  quickPaymentOperationIds,
+  shouldApplyQuickPaymentLocalEffects
+} from '../services/quickPaymentAttempt';
 import { shouldCloseOrderAfterPayment } from '../services/cashClosureRules';
 import { PosNotification } from './NotificationToast';
 import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
@@ -33,13 +42,22 @@ interface QuickPaymentModalProps {
   tenant: TenantInfo;
   subAccountId?: number | 'ALL';
   dinerName?: string;
-  onPaymentComplete: (method: string, amount: number) => void;
+  onPaymentComplete: (method: string, amount: number, completion?: QuickPaymentCompletion) => void;
   onNotify?: (notif: PosNotification) => void;
   staffList?: UserProfile[];
 }
 
 type PaymentMode = 'single' | 'mixed';
 type SingleMethod = 'Tarjeta' | 'Efectivo' | 'Efectivo USD' | 'SINPE Móvil' | 'Crédito Funcionario';
+type PaymentSyncStatus = 'IDLE' | 'CONFIRMED' | 'QUEUED';
+type HaciendaEmissionStatus = 'NOT_REQUESTED' | 'QUEUED' | 'PROCESSING' | 'ACCEPTED' | 'REJECTED' | 'UNKNOWN' | 'LOCAL_ERROR';
+
+export interface QuickPaymentCompletion {
+  status: 'CONFIRMED' | 'QUEUED';
+  orderNumber: string;
+  paymentOperationId?: string;
+  tableUpdateOperationId?: string;
+}
 
 export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
   isOpen,
@@ -76,7 +94,11 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
   // Status states
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
   const [showReceiptView, setShowReceiptView] = useState(false);
+  const [paymentSyncStatus, setPaymentSyncStatus] = useState<PaymentSyncStatus>('IDLE');
+  const [paymentCompletion, setPaymentCompletion] = useState<QuickPaymentCompletion | null>(null);
+  const [haciendaEmissionStatus, setHaciendaEmissionStatus] = useState<HaciendaEmissionStatus>('NOT_REQUESTED');
   const [clave50Digitos, setClave50Digitos] = useState('');
   const [generatedXml, setGeneratedXml] = useState('');
   const [consecutivo, setConsecutivo] = useState('');
@@ -126,6 +148,10 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       setMixedSinpe(0);
       setShowReceiptView(false);
       setIsProcessing(false);
+      isProcessingRef.current = false;
+      setPaymentSyncStatus('IDLE');
+      setPaymentCompletion(null);
+      setHaciendaEmissionStatus('NOT_REQUESTED');
       setGeneratedXml('');
 
       if (isLocalDemo || isSimplified) {
@@ -209,6 +235,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
 
   const handleProcessPayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isProcessingRef.current) return;
     if (!canSubmit()) return;
 
     const isOffline = !isLocalDemo && !localDB.isOnline();
@@ -236,6 +263,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       return;
     }
 
+    isProcessingRef.current = true;
     setIsProcessing(true);
 
     try {
@@ -245,6 +273,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       const isCurrentBusinessDate = Boolean(dailyCashStatus
         && cashControlCloudService.isDailyCashStatusForCurrentDate(dailyCashStatus));
       if (!dailyCashStatus || !isCurrentBusinessDate || !dailyCashStatus.isOpen || dailyCashStatus.isClosed) {
+        isProcessingRef.current = false;
         setIsProcessing(false);
         const message = isOffline
           ? 'No hay una apertura diaria vigente y confirmada para esta caja. Conecta el dispositivo y abre la caja del día antes de cobrar.'
@@ -261,6 +290,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         return;
       }
     } catch (error: any) {
+      isProcessingRef.current = false;
       setIsProcessing(false);
       onNotify?.({
         id: `daily_cash_status_error_${++dailyCashNotificationCounter.current}`,
@@ -272,48 +302,37 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       return;
     }
 
-    const emissionDate = new Date();
+    let branchConfig: HaciendaConfig | null = null;
+    if (!isLocalDemo && emitToHacienda && !isSimplified) {
+      try {
+        branchConfig = await haciendaService.loadConfig(tenant.id, branchCode);
+      } catch {
+        branchConfig = null;
+      }
+      if (!branchConfig?.isValidated || !branchConfig.cedulaEmisor || !branchConfig.codigoActividad
+        || !branchConfig.provincia || !branchConfig.canton || !branchConfig.distrito || !branchConfig.otrasSenas?.trim()
+        || !branchConfig.atvUsernameConfigured || !branchConfig.atvPasswordConfigured || !branchConfig.certificateConfigured) {
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        onNotify?.({
+          id: `quick_hacienda_profile_${Date.now()}`,
+          type: 'HACIENDA_UPDATE',
+          title: 'Hacienda no configurada para esta sucursal',
+          message: `Complete y valide el perfil de Hacienda de la sucursal ${branchCode} en Ajustes antes de cobrar con emisión oficial.`,
+          timestamp: new Date()
+        });
+        return;
+      }
+    }
+
     const docType = 'TE' as const; // Consumidor final sin identificar => Tiquete Electrónico
-    
-    // Obtener la cédula del emisor más fresca (de la configuración guardada o del tenant)
-    let savedLocalHc: any = null;
-    try {
-      const saved = getTenantItem<any>('hacienda_config', tenant.id);
-      if (saved) savedLocalHc = saved;
-    } catch {}
-    const effectiveCedula = isLocalDemo ? '' : savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
-
-    const { clave: generatedClave, consecutivo: generatedConsecutivo } = buildClaveYConsecutivo({
-      cedula: effectiveCedula,
-      branchCode,
-      terminalCode,
-      tipo: docType,
-      numero: isLocalDemo ? 1 : reserveConsecutivoNumber(branchCode, terminalCode, docType),
-      fecha: emissionDate
-    });
-    setClave50Digitos(generatedClave);
-    setConsecutivo(generatedConsecutivo);
-
-    // Record into active cash shift of the current register
+    const effectiveCedula = isLocalDemo ? '' : branchConfig?.cedulaEmisor || ((!emitToHacienda || isSimplified) ? tenant.cedulaJuridica : '');
+    const isCreditoFuncionario = paymentMode === 'single' && singleMethod === 'Crédito Funcionario';
+    const selectedEmployee = staffList.find(staff => staff.id === selectedEmployeeId);
     let cashAmt = 0;
     let cardAmt = 0;
     let sinpeAmt = 0;
-    
-    // Si NO es crédito de funcionario, afecta la caja
-    const isCreditoFuncionario = paymentMode === 'single' && singleMethod === 'Crédito Funcionario';
-    const selectedEmployee = staffList.find(staff => staff.id === selectedEmployeeId);
-    const employeeCreditCharge = isCreditoFuncionario
-      ? buildQuickPaymentEmployeeCreditCharge({
-          tenantId: tenant.id,
-          employeeId: selectedEmployeeId,
-          employeeName: selectedEmployee?.name || 'Colaborador',
-          amount: total,
-          orderNumber: table.activeOrder?.orderNumber,
-          invoiceClave: generatedClave
-        })
-      : null;
-    if (employeeCreditCharge) employeeCreditService.recordCharge(employeeCreditCharge.localCharge);
-    
+
     if (!isCreditoFuncionario) {
       if (paymentMode === 'single') {
         if (singleMethod === 'Efectivo' || singleMethod === 'Efectivo USD') cashAmt = total;
@@ -326,36 +345,112 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       }
     }
 
-    cashShiftService.recordSalePayment({
-      cashAmount: cashAmt,
-      cardAmount: cardAmt,
-      sinpeAmount: sinpeAmt,
-      creditAmount: isCreditoFuncionario ? total : 0,
+    const paymentRows = paymentMode === 'single'
+      ? [{
+          amount: total,
+          method: singleMethod === 'Tarjeta' ? 'CARD' : singleMethod === 'SINPE Móvil' ? 'SINPE' : singleMethod === 'Crédito Funcionario' ? 'CREDIT' : 'CASH',
+          reference: sinpeRef || undefined,
+          provider: singleMethod === 'Crédito Funcionario' ? 'STAFF_CREDIT' : 'POS'
+        }]
+      : [
+          { amount: mixedCash, method: 'CASH', provider: 'POS' },
+          { amount: mixedCard, method: 'CARD', provider: 'POS' },
+          { amount: mixedSinpe, method: 'SINPE', reference: sinpeRef || undefined, provider: 'POS' }
+        ].filter(payment => payment.amount > 0);
+    const closeOrder = shouldCloseOrderAfterPayment(rawItems, subAccountId);
+    const orderNumber = table.activeOrder?.orderNumber || 'ORD-NEW';
+    const activeShift = cashShiftService.getActiveShift(currentRegister.id);
+    const inventoryItems = items.filter(item => !item.inventoryDeductedAtDispatch).map(item => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      quantity: item.quantity
+    }));
+    const attemptSeed = {
+      tenantId: tenant.id,
+      tableId: table.id,
+      orderNumber,
+      subAccountId,
+      branchCode,
+      terminalCode,
+      registerId: currentRegister.id,
+      closeOrder,
+      paymentMode,
+      paymentRows: paymentRows.map(payment => ({ amount: payment.amount, method: payment.method, reference: payment.reference || '' })),
+      total,
       subtotal,
       tax: iva13,
       service10: servicio10,
-      registerId: currentRegister.id,
-      tenantId: tenant.id,
-      actor: staffList.find(staff => staff.id === selectedEmployeeId) || staffList[0],
-      reference: generatedClave
-    });
+      employeeId: isCreditoFuncionario ? selectedEmployeeId : '',
+      items: items.map(item => ({
+        id: item.id,
+        menuItemId: item.menuItemId || '',
+        quantity: item.quantity,
+        price: item.price,
+        subAccountId: item.subAccountId ?? null,
+        modifiers: item.selectedModifiers?.map(modifier => ({ id: modifier.id, choiceName: modifier.choiceName, price: modifier.price })) || []
+      }))
+    };
 
-    // Hacienda Simulation Integration
+    let attempt: Awaited<ReturnType<typeof getOrCreateQuickPaymentAttempt>>;
+    try {
+      attempt = await getOrCreateQuickPaymentAttempt(attemptSeed, () => {
+        const generatedAt = new Date();
+        const generated = buildClaveYConsecutivo({
+          cedula: effectiveCedula,
+          branchCode,
+          terminalCode,
+          tipo: docType,
+          numero: isLocalDemo ? 1 : reserveConsecutivoNumber(branchCode, terminalCode, docType),
+          fecha: generatedAt
+        });
+        return { clave: generated.clave, consecutivo: generated.consecutivo, emissionDate: generatedAt.toISOString() };
+      });
+    } catch (error: any) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      onNotify?.({
+        id: `quick_attempt_key_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'No se pudo proteger este cobro',
+        message: error?.message || 'No hay una clave local persistente para evitar duplicar el pago. No se registró el cobro.',
+        timestamp: new Date()
+      });
+      return;
+    }
+
+    const generatedClave = attempt.clave;
+    const generatedConsecutivo = attempt.consecutivo;
+    const emissionDate = new Date(attempt.emissionDate);
+    const operationIds = quickPaymentOperationIds(tenant.id, attempt.operationId);
+    setClave50Digitos(generatedClave);
+    setConsecutivo(generatedConsecutivo);
+
+    const employeeCreditCharge = isCreditoFuncionario
+      ? buildQuickPaymentEmployeeCreditCharge({
+          tenantId: tenant.id,
+          employeeId: selectedEmployeeId,
+          employeeName: selectedEmployee?.name || 'Colaborador',
+          amount: total,
+          orderNumber,
+          invoiceClave: generatedClave
+        })
+      : null;
+
     const invoiceObj: any = {
       clave50Digitos: generatedClave,
       consecutivo: generatedConsecutivo,
       emisor: {
         nombre: tenant.name,
         cedulaJuridica: effectiveCedula,
-        nombreComercial: "Saborai POS",
+        nombreComercial: 'Saborai POS',
         correo: tenant.email,
         sucursal: branchCode,
         terminal: terminalCode
       },
       receptor: {
-        nombre: isCreditoFuncionario 
-          ? `[CRÉDITO FUNCIONARIO] ${staffList.find(s => s.id === selectedEmployeeId)?.name || 'Desconocido'}`
-          : "Cliente General Contado",
+        nombre: isCreditoFuncionario
+          ? `[CRÉDITO FUNCIONARIO] ${selectedEmployee?.name || 'Desconocido'}`
+          : 'Cliente General Contado',
         tipoIdentificacion: '01-Fisica',
         identificacion: '',
         correo: ''
@@ -382,129 +477,337 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       fechaEmision: emissionDate.toISOString()
     };
 
-    const paymentRows = paymentMode === 'single'
-      ? [{
-          amount: total,
-          method: singleMethod === 'Tarjeta' ? 'CARD' : singleMethod === 'SINPE Móvil' ? 'SINPE' : singleMethod === 'Crédito Funcionario' ? 'CREDIT' : 'CASH',
-          reference: sinpeRef || undefined,
-          provider: singleMethod === 'Crédito Funcionario' ? 'STAFF_CREDIT' : 'POS'
-        }]
-      : [
-          { amount: mixedCash, method: 'CASH', provider: 'POS' },
-          { amount: mixedCard, method: 'CARD', provider: 'POS' },
-          { amount: mixedSinpe, method: 'SINPE', reference: sinpeRef || undefined, provider: 'POS' }
-        ].filter(payment => payment.amount > 0);
-    const closeOrder = shouldCloseOrderAfterPayment(rawItems, subAccountId);
+    const requiresOfficialHacienda = !isLocalDemo && emitToHacienda && !isSimplified && Boolean(branchConfig);
+    if (requiresOfficialHacienda && branchConfig) {
+      try {
+        const fiscalTenant = { ...tenant, cedulaJuridica: branchConfig.cedulaEmisor || '', haciendaConfig: branchConfig };
+        const xml = generateHaciendaXmlV44(invoiceObj, fiscalTenant, branchConfig);
+        invoiceObj.xmlContent = xml;
+        setGeneratedXml(xml);
+      } catch (error: any) {
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        onNotify?.({
+          id: `quick_xml_error_${Date.now()}`,
+          type: 'SYNC_ERROR',
+          title: 'No se pudo preparar el comprobante',
+          message: error?.message || 'No se generó XML ni se registró el cobro.',
+          timestamp: new Date()
+        });
+        return;
+      }
+    } else {
+      setGeneratedXml('');
+    }
 
-    const shouldQueueInvoice = isLocalDemo || isOffline || isSimplified || !emitToHacienda;
-    const inventoryItems = items.filter(item => !item.inventoryDeductedAtDispatch).map(item => ({
-      menuItemId: item.menuItemId,
-      name: item.name,
-      quantity: item.quantity
-    }));
+    const preparedTable: Table = { ...table, status: 'OCCUPIED' };
+    const paymentPayload = {
+      orderNumber,
+      tableNumber: table.number,
+      cashRegisterId: currentRegister.id,
+      cashShiftId: activeShift?.id,
+      payments: paymentRows,
+      employeeCredit: employeeCreditCharge?.syncPayload,
+      total,
+      currency: 'CRC',
+      occurredAt: emissionDate.toISOString(),
+      closeOrder
+    };
+    const paymentActor = selectedEmployee || staffList[0];
+    const paymentClientMetadata = {
+      quickPayment: {
+        tenantId: tenant.id,
+        operationId: attempt.operationId,
+        employeeCredit: employeeCreditCharge?.localCharge || null,
+        cashShift: {
+          cashAmount: cashAmt,
+          cardAmount: cardAmt,
+          sinpeAmount: sinpeAmt,
+          creditAmount: isCreditoFuncionario ? total : 0,
+          subtotal,
+          tax: iva13,
+          service10: servicio10,
+          registerId: currentRegister.id,
+          shiftId: activeShift?.id,
+          tenantId: tenant.id,
+          actor: paymentActor ? { id: paymentActor.id, name: paymentActor.name, role: paymentActor.role } : undefined,
+          reference: generatedClave
+        },
+        inventory: inventoryItems.length > 0 ? {
+          items: inventoryItems,
+          operationId: operationIds.inventory,
+          reason: `Venta ${generatedConsecutivo}`
+        } : null
+      }
+    };
+    const queueErrorNotification = (title: string, message: string) => onNotify?.({
+      id: `quick_queue_${Date.now()}`,
+      type: 'SYNC_ERROR',
+      title,
+      message,
+      timestamp: new Date()
+    });
 
-    // Se registra como PENDING en el backend; nunca se marca como autorizado desde el cliente.
-    void localDB.enqueueOfflineAction(
-      'UPDATE_TABLE',
-      table,
-      `Mesa ${table.name}: preparar orden antes de registrar el pago`,
-      tenant.id
-    ).then(() => localDB.enqueueOfflineAction(
-      'PAYMENT',
-      {
-        orderNumber: table.activeOrder?.orderNumber,
-        tableNumber: table.number,
-        cashRegisterId: currentRegister.id,
-        cashShiftId: cashShiftService.getActiveShift(currentRegister.id)?.id,
-        payments: paymentRows,
-        employeeCredit: employeeCreditCharge?.syncPayload,
-        total,
-        currency: 'CRC',
-        occurredAt: emissionDate.toISOString(),
-        closeOrder
-      },
-      `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
-      tenant.id
-    )).then(() => inventoryItems.length > 0 ? localDB.enqueueOfflineAction(
-      'DEDUCT_INVENTORY',
-      {
-        orderNumber: table.activeOrder?.orderNumber,
-        items: inventoryItems,
-        occurredAt: emissionDate.toISOString()
-      },
-      `Inventario pendiente de descuento para ${table.name || 'Mesa'}`,
-      tenant.id
-    ) : Promise.resolve()).then(() => shouldQueueInvoice
-      ? localDB.enqueueOfflineAction(
-          'EMIT_INVOICE',
-          {
-            orderNumber: table.activeOrder?.orderNumber,
-            clave: generatedClave,
-            consecutivo: generatedConsecutivo,
-            documentType: docType,
-            total,
-            invoiceData: invoiceObj,
-            xmlContent: undefined,
-            occurredAt: emissionDate.toISOString()
-          },
-          `Comprobante pendiente para ${table.name || 'Mesa'}`,
+    try {
+      await localDB.enqueueOfflineAction(
+        'UPDATE_TABLE',
+        preparedTable,
+        `Mesa ${table.name}: preparar orden antes de registrar el pago`,
+        tenant.id,
+        operationIds.prepare
+      );
+      await localDB.enqueueOfflineAction(
+        'PAYMENT',
+        paymentPayload,
+        `Pago pendiente de confirmación para ${table.name || 'Mesa'}`,
+        tenant.id,
+        operationIds.payment,
+        paymentClientMetadata
+      );
+      if (inventoryItems.length > 0) {
+        await localDB.enqueueOfflineAction(
+          'DEDUCT_INVENTORY',
+          { orderNumber, items: inventoryItems, occurredAt: emissionDate.toISOString() },
+          `Inventario pendiente de descuento para ${table.name || 'Mesa'}`,
+          tenant.id,
+          operationIds.inventory
+        );
+      }
+      if (!isLocalDemo && !isOffline) await localDB.syncAllPending(tenant.id);
+    } catch (error: any) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      queueErrorNotification(
+        'No se confirmó ni guardó la cola',
+        `${error?.message || 'No se pudo guardar la operación localmente.'} No vuelva a cobrar; el mismo intento conservará su clave para una verificación segura.`
+      );
+      return;
+    }
+
+    let queueItems: OfflineSyncQueueItem[] = [];
+    try {
+      if (!isLocalDemo) queueItems = await localDB.getAllItems<OfflineSyncQueueItem>('sync_queue');
+    } catch {
+      queueItems = [];
+    }
+    let paymentQueueItem = queueItems.find(item => item.id === operationIds.payment && item.tenantId === tenant.id);
+    if (!isLocalDemo && !paymentQueueItem) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      queueErrorNotification('No se confirmó el cobro', 'La aplicación no pudo verificar que el pago quedó guardado en la cola. No vuelva a cobrar; revise la conexión antes de reintentar.');
+      return;
+    }
+    if (paymentQueueItem?.status === 'REJECTED') {
+      clearQuickPaymentAttempt(attempt.storageKey);
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      queueErrorNotification('El pago fue rechazado', paymentQueueItem.lastError || 'La caja no aceptó este pago. No se descontó inventario ni se envió factura.');
+      return;
+    }
+    const validQueuedStates = new Set(['SYNCED', 'PENDING', 'FAILED', 'PROCESSING']);
+    if (!isLocalDemo && !validQueuedStates.has(paymentQueueItem?.status || '')) {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      queueErrorNotification('Estado del cobro no verificable', 'No se registró el pago localmente. No vuelva a cobrar hasta revisar la sincronización.');
+      return;
+    }
+    let paymentConfirmed = isLocalDemo || (paymentQueueItem?.status === 'SYNCED' && paymentQueueItem.synced === true);
+    if (!isLocalDemo && !isOffline && !paymentConfirmed) {
+      try {
+        await localDB.syncAllPending(tenant.id);
+        queueItems = await localDB.getAllItems<OfflineSyncQueueItem>('sync_queue');
+        paymentQueueItem = queueItems.find(item => item.id === operationIds.payment && item.tenantId === tenant.id);
+      } catch {
+        // La cola permanece durable; la comprobación siguiente falla de forma cerrada si no se puede leer.
+      }
+      if (!paymentQueueItem) {
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        queueErrorNotification('No se pudo verificar el cobro', 'La operación sigue guardada; no vuelva a cobrar. Reintente la verificación cuando haya conexión.');
+        return;
+      }
+      if (paymentQueueItem.status === 'REJECTED') {
+        clearQuickPaymentAttempt(attempt.storageKey);
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        queueErrorNotification('El pago fue rechazado', paymentQueueItem.lastError || 'La caja no aceptó este pago. No se descontó inventario ni se envió factura.');
+        return;
+      }
+      paymentConfirmed = paymentQueueItem.status === 'SYNCED' && paymentQueueItem.synced === true;
+    }
+    setPaymentSyncStatus(paymentConfirmed ? 'CONFIRMED' : 'QUEUED');
+
+    // Si se solicitó emisión oficial, no se muestra un recibo ni se libera la mesa mientras PAYMENT siga sin confirmar.
+    if (requiresOfficialHacienda && !paymentConfirmed) {
+      setHaciendaEmissionStatus('QUEUED');
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+      queueErrorNotification(
+        'Cobro en cola; Hacienda aún no recibió la factura',
+        'El pago quedó protegido con una clave estable y está pendiente de confirmación. No vuelva a cobrar ni cierre esta orden; restablezca la conexión y reintente el mismo cobro.'
+      );
+      return;
+    }
+
+    const paymentIds = Array.isArray(paymentQueueItem?.result?.paymentIds)
+      ? paymentQueueItem.result.paymentIds.filter((id): id is string => typeof id === 'string')
+      : [];
+    const invoiceQueuePayload = {
+      orderNumber,
+      paymentId: paymentIds.length === 1 ? paymentIds[0] : undefined,
+      clave: generatedClave,
+      consecutivo: generatedConsecutivo,
+      documentType: docType,
+      total,
+      invoiceData: invoiceObj,
+      xmlContent: invoiceObj.xmlContent,
+      occurredAt: emissionDate.toISOString(),
+      branchCode,
+      terminalCode
+    };
+    try {
+      await localDB.enqueueOfflineAction(
+        'EMIT_INVOICE',
+        invoiceQueuePayload,
+        `Comprobante pendiente para ${table.name || 'Mesa'}`,
+        tenant.id,
+        operationIds.invoice
+      );
+      if (!isLocalDemo && !isOffline) await localDB.syncAllPending(tenant.id);
+    } catch (error: any) {
+      queueErrorNotification(
+        'No se guardó la referencia del comprobante',
+        `${error?.message || 'No se pudo encolar el comprobante.'} El pago no se repetirá; revise Hacienda antes de volver a enviar.`
+      );
+    }
+
+    if (!isLocalDemo) {
+      try {
+        queueItems = await localDB.getAllItems<OfflineSyncQueueItem>('sync_queue');
+        paymentQueueItem = queueItems.find(item => item.id === operationIds.payment && item.tenantId === tenant.id);
+      } catch {
+        paymentQueueItem = undefined;
+      }
+      if (!paymentQueueItem) {
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        queueErrorNotification('No se pudo verificar el pago final', 'La operación quedó en cola; no vuelva a cobrar y revise la sincronización antes de cerrar la orden.');
+        return;
+      }
+      if (paymentQueueItem.status === 'REJECTED') {
+        clearQuickPaymentAttempt(attempt.storageKey);
+        isProcessingRef.current = false;
+        setIsProcessing(false);
+        queueErrorNotification('El pago fue rechazado', paymentQueueItem.lastError || 'La caja no aceptó este pago. No se aplicaron los efectos locales.');
+        return;
+      }
+      paymentConfirmed = paymentQueueItem.status === 'SYNCED' && paymentQueueItem.synced === true;
+      setPaymentSyncStatus(paymentConfirmed ? 'CONFIRMED' : 'QUEUED');
+    }
+
+    setPaymentCompletion({
+      status: paymentConfirmed ? 'CONFIRMED' : 'QUEUED',
+      orderNumber,
+      paymentOperationId: isLocalDemo ? undefined : operationIds.payment,
+      tableUpdateOperationId: isLocalDemo ? undefined : operationIds.complete
+    });
+
+    // En ventas cloud, caja/crédito/inventario son proyecciones y se aplican solo al confirmar PAYMENT.
+    // La metadata local permite aplicarlas después si el servidor confirma al volver la conexión.
+    const mayApplyLocalProjections = shouldApplyQuickPaymentLocalEffects(isLocalDemo, paymentConfirmed);
+    if (mayApplyLocalProjections && employeeCreditCharge && !isQuickPaymentEffectApplied(attempt, 'employeeCredit')) {
+      try {
+        employeeCreditService.recordCharge(employeeCreditCharge.localCharge);
+        attempt = markQuickPaymentEffectApplied(attempt, 'employeeCredit');
+      } catch {
+        queueErrorNotification('Crédito de colaborador pendiente', 'El pago se conservó, pero el saldo local de crédito requiere sincronización.');
+      }
+    }
+    if (mayApplyLocalProjections && !isQuickPaymentEffectApplied(attempt, 'cashShift')) {
+      try {
+        cashShiftService.recordSalePayment({
+          cashAmount: cashAmt,
+          cardAmount: cardAmt,
+          sinpeAmount: sinpeAmt,
+          creditAmount: isCreditoFuncionario ? total : 0,
+          subtotal,
+          tax: iva13,
+          service10: servicio10,
+          registerId: currentRegister.id,
+          shiftId: activeShift?.id,
+          tenantId: tenant.id,
+          actor: selectedEmployee || staffList[0],
+          reference: generatedClave
+        });
+        attempt = markQuickPaymentEffectApplied(attempt, 'cashShift');
+      } catch {
+        queueErrorNotification('Pago guardado; resumen de caja pendiente', 'El cobro quedó confirmado o en cola, pero el resumen local de caja requiere revisión.');
+      }
+    }
+    if (mayApplyLocalProjections && inventoryItems.length > 0 && !isQuickPaymentEffectApplied(attempt, 'inventory')) {
+      try {
+        inventoryService.deductItemsStock(
+          inventoryItems,
+          'SALE_DEDUCTION',
+          `Venta ${generatedConsecutivo}`,
+          operationIds.inventory,
           tenant.id
-        )
-      : Promise.resolve()
-    ).then(() => localDB.syncAllPending(tenant.id));
-    
-    if (!isLocalDemo && emitToHacienda && !isSimplified) {
-      const xml = generateHaciendaXmlV44(invoiceObj, tenant);
-      invoiceObj.xmlContent = xml;
-      setGeneratedXml(xml);
-
-      haciendaService.emitInvoice(invoiceObj, (status, detail) => {
-        let msg = detail || '';
-        if (status === 'RECHAZADO' && detail && detail.includes('-408')) {
-          msg = 'Error -408 en Hacienda: El Código de Actividad no coincide con su registro en ATV. Vaya a Ajustes → Hacienda y seleccione su actividad inscrita en ATV.';
-        } else if (status === 'ACEPTADO') {
-          msg = `Hacienda aceptó la factura ${generatedClave.slice(-6)}`;
+        );
+        attempt = markQuickPaymentEffectApplied(attempt, 'inventory');
+      } catch {
+        queueErrorNotification('Inventario pendiente de actualización', 'El pago quedó confirmado o en cola; el inventario se mantiene en la cola de sincronización.');
+      }
+    }
+    if (cashAmt > 0 && !isQuickPaymentEffectApplied(attempt, 'cashDrawer')) {
+      try {
+        const drawerResult = await printerService.openCashDrawer();
+        if (drawerResult.success) {
+          attempt = markQuickPaymentEffectApplied(attempt, 'cashDrawer');
+        } else {
+          queueErrorNotification('No se pudo abrir el cajón', 'El pago quedó confirmado o en cola; abre el cajón manualmente.');
         }
-        if (onNotify) {
-          onNotify({
+      } catch {
+        queueErrorNotification('No se pudo abrir el cajón', 'El pago quedó confirmado o en cola; abre el cajón manualmente.');
+      }
+    }
+
+    if (requiresOfficialHacienda && branchConfig && paymentConfirmed) {
+      setHaciendaEmissionStatus('PROCESSING');
+      try {
+        await haciendaService.emitInvoice(invoiceObj, (status, detail) => {
+          const fiscalStatus: HaciendaEmissionStatus = status === 'ACEPTADO'
+            ? 'ACCEPTED'
+            : status === 'RECHAZADO' ? 'REJECTED' : status === 'ERROR_LOCAL' ? 'LOCAL_ERROR' : status === 'INCIERTO' ? 'UNKNOWN' : 'PROCESSING';
+          setHaciendaEmissionStatus(fiscalStatus);
+          let message = detail || '';
+          if (status === 'RECHAZADO' && detail?.includes('-408')) {
+            message = 'Error -408 en Hacienda: el código de actividad no coincide con ATV. Revise Ajustes → Hacienda.';
+          } else if (status === 'ACEPTADO') {
+            message = `Hacienda aceptó la factura ${generatedClave.slice(-6)}.`;
+          }
+          onNotify?.({
             id: `hacienda_${Date.now()}`,
             type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
-            title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada (DGT)' : '⏳ Procesando DGT...',
-            message: msg || `Enviando XML a Hacienda...`,
+            title: status === 'ACEPTADO' ? 'Factura aceptada por Hacienda' : status === 'RECHAZADO' ? 'Factura rechazada por Hacienda' : status === 'ERROR_LOCAL' ? 'Comprobante no transmitido' : 'Factura en procesamiento',
+            message: message || (status === 'ERROR_LOCAL' ? 'El comprobante no se transmitió por un problema local.' : 'El comprobante se está procesando en Hacienda.'),
             station: 'Bar',
             tableNumber: table.number,
             server: 'Sistema',
             timestamp: new Date()
           });
-        }
-      });
-    } else {
-      setGeneratedXml('');
-    }
-
-    // Deduct ingredients from inventory
-    try {
-      inventoryService.deductItemsStock(
-        items.filter(it => !it.inventoryDeductedAtDispatch).map(it => ({ menuItemId: it.menuItemId, name: it.name, quantity: it.quantity })),
-        `VENTA-${generatedConsecutivo || 'POS'}`,
-        undefined,
-        undefined,
-        tenant.id
-      );
-    } catch (e) {
-      console.warn('Error al descontar inventario en pago rápido:', e);
-    }
-
-    // Cash drawer kick if cash was part of payment
-    if (cashAmt > 0) {
-      try {
-        printerService.openCashDrawer();
-      } catch (e) {
-        console.warn('Error al abrir cajón de dinero:', e);
+        }, branchConfig, tenant.id);
+      } catch {
+        setHaciendaEmissionStatus('UNKNOWN');
+        queueErrorNotification('Resultado fiscal no confirmado', 'El pago quedó registrado, pero no se confirmó la respuesta de Hacienda. No vuelva a cobrar; revise el historial fiscal antes de reenviar.');
       }
+    } else if (requiresOfficialHacienda) {
+      setHaciendaEmissionStatus('QUEUED');
+    } else {
+      setHaciendaEmissionStatus('NOT_REQUESTED');
     }
 
     setTimeout(() => {
+      isProcessingRef.current = false;
       setIsProcessing(false);
       setShowReceiptView(true);
 
@@ -531,7 +834,7 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       methodSummary = `Mixto (${parts.join(' + ')})`;
     }
 
-    onPaymentComplete(methodSummary, total);
+    onPaymentComplete(methodSummary, total, paymentCompletion || undefined);
     onClose();
   };
 
@@ -549,7 +852,8 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         {/* Close button */}
         <button
           onClick={showReceiptView ? handleFinalizeAndClose : onClose}
-          className="absolute top-5 right-5 p-1 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+          disabled={isProcessing}
+          className="absolute top-5 right-5 p-1 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <X className="w-5 h-5" />
         </button>
@@ -571,15 +875,31 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
         {showReceiptView ? (
           <div className="space-y-4 animate-in zoom-in-95 duration-200">
             
-            {/* Success Alert */}
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900">
+            {/* Cobro y aceptación fiscal se comunican por separado. */}
+            <div className={`p-3.5 border rounded-2xl flex items-center justify-between text-xs ${paymentSyncStatus === 'QUEUED' || haciendaEmissionStatus === 'REJECTED' ? 'bg-stone-100 border-stone-300 text-stone-800' : haciendaEmissionStatus === 'UNKNOWN' || haciendaEmissionStatus === 'LOCAL_ERROR' ? 'bg-amber-50 border-amber-200 text-amber-950' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
               <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <CheckCircle2 className={`w-5 h-5 shrink-0 ${paymentSyncStatus === 'QUEUED' || haciendaEmissionStatus === 'REJECTED' ? 'text-stone-600' : haciendaEmissionStatus === 'UNKNOWN' || haciendaEmissionStatus === 'LOCAL_ERROR' ? 'text-amber-700' : 'text-emerald-600'}`} />
                 <span>
-                  <strong>¡Pago registrado con éxito!</strong>{' '}
-                  {emitToHacienda
-                    ? 'Factura transmitida a Hacienda Costa Rica v4.4.'
-                    : 'Ticket de caja interno generado.'}
+                  <strong>{paymentSyncStatus === 'QUEUED' ? 'Cobro guardado en cola.' : 'Pago registrado.'}</strong>{' '}
+                  {paymentSyncStatus === 'QUEUED'
+                    ? 'Está pendiente de sincronización; no vuelva a cobrar.'
+                    : isLocalDemo
+                      ? 'Registro local de demostración.'
+                      : 'El pago quedó confirmado en el sistema.'}
+                  <br />
+                  {!isLocalDemo && emitToHacienda && !isSimplified
+                    ? haciendaEmissionStatus === 'ACCEPTED'
+                      ? 'Hacienda aceptó el comprobante.'
+                      : haciendaEmissionStatus === 'REJECTED'
+                        ? 'Hacienda rechazó el comprobante; el cobro no se repitió.'
+                      : haciendaEmissionStatus === 'UNKNOWN'
+                        ? 'No se confirmó la respuesta fiscal; revise el historial antes de reenviar.'
+                        : haciendaEmissionStatus === 'LOCAL_ERROR'
+                          ? 'El comprobante no se transmitió por una validación local; revise el motivo y corrija el perfil antes de intentar de nuevo.'
+                        : 'Comprobante enviado; Hacienda está procesándolo.'
+                    : isSimplified
+                      ? 'Comprobante de régimen simplificado; no se transmite a Hacienda.'
+                      : 'Ticket interno generado; no se transmitió a Hacienda.'}
                 </span>
               </div>
             </div>

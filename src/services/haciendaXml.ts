@@ -1,4 +1,4 @@
-import { ElectronicInvoiceCR, ElectronicInvoiceItem, TenantInfo } from '../types';
+import type { ElectronicInvoiceCR, ElectronicInvoiceItem, HaciendaConfig, TableItem, TenantInfo } from '../types';
 import { resolveRestaurantCabys, isValidCabys } from './cabysService';
 import { getStoredTenantId, getTenantItem } from './tenantStorage';
 
@@ -132,7 +132,7 @@ export function buildClaveYConsecutivo(opts: {
 /*  Validación previa al envío (evita rechazos "silenciosos")         */
 /* ------------------------------------------------------------------ */
 
-export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?: TenantInfo): string | null {
+export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?: TenantInfo, configOverride?: HaciendaConfig): string | null {
   if (!/^\d{50}$/.test(invoice.clave50Digitos)) return 'La clave generada no tiene 50 dígitos numéricos.';
   if (!/^\d{20}$/.test(invoice.consecutivo)) return 'El número consecutivo no tiene 20 dígitos.';
   if (!invoice.items || invoice.items.length === 0) return 'El documento no tiene líneas de detalle.';
@@ -162,8 +162,12 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
   if ((invoice.tipoDocumento === 'NC' || invoice.tipoDocumento === 'ND') && !invoice.referencia?.clave) {
     return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
-  if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
-  const act = tenant?.haciendaConfig?.codigoActividad;
+  if (!configOverride?.cedulaEmisor && !invoice.emisor?.cedulaJuridica && !tenant?.cedulaJuridica) return 'Falta la cédula del emisor.';
+  const act = configOverride?.codigoActividad;
+  if (configOverride && !act) return 'Falta el código de actividad económica configurado para esta sucursal.';
+  if (configOverride && (!configOverride.provincia || !configOverride.canton || !configOverride.distrito || !configOverride.otrasSenas?.trim())) {
+    return 'Completa la ubicación fiscal real de esta sucursal antes de emitir.';
+  }
   if (act && !/^\d{6}$/.test(act.trim())) {
     return 'El código de actividad económica del emisor debe tener exactamente 6 dígitos numéricos registrados en ATV.';
   }
@@ -210,7 +214,7 @@ function medioPagoCode(tipo: string): string {
   return '99';
 }
 
-export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: TenantInfo): string {
+export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: TenantInfo, configOverride?: HaciendaConfig): string {
   const fecha = invoice.fechaEmision ? new Date(invoice.fechaEmision as any) : new Date();
   const fechaEmision = formatHaciendaDate(isNaN(fecha.getTime()) ? new Date() : fecha);
 
@@ -301,24 +305,20 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const otrosCargos = invoice.servicio10 > 0 ? r5(totVenta * 0.10) : 0;
   const totComprobante = r5(totVenta + totImp + otrosCargos);
 
-  // Obtener la configuración más reciente (localStorage tiene prioridad sobre tenant desactualizado)
-  let savedHc: any = null;
-  try {
-    const saved = getTenantItem<any>('hacienda_config', tenant.id);
-    if (saved) savedHc = saved;
-  } catch {}
-  const hc = { ...(tenant.haciendaConfig || {}), ...(savedHc || {}) };
+  // El perfil debe venir explícitamente de la sucursal actual; no se mezcla una
+  // configuración local de otra sucursal/tenant ni se usa un proveedor global.
+  const hc = { ...(configOverride || {}) };
 
-  const emisorCedula = normalizeCedula(hc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica || '');
-  const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
-  const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || '402220888' || emisorCedula).replace(/[^0-9]/g, '').slice(0, 20) || '402220888';
+  const emisorCedula = normalizeCedula(hc.cedulaEmisor || invoice.emisor?.cedulaJuridica || tenant.cedulaJuridica || '');
+  const emisorTipoId = hc.tipoIdentificacion || '02';
+  const codigoActividad = normalizeActividad(hc.codigoActividad || '');
+  const proveedor = (hc.proveedorSistemas || emisorCedula).replace(/[^0-9]/g, '').padStart(12, '0').slice(-12);
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
-  const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
-  const canton = (hc?.canton || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
-  const distrito = (hc?.distrito || '01').replace(/\D/g, '').padStart(2, '0').slice(-2);
-  const otrasSenas = (hc?.otrasSenas || tenant.location || 'San José, Costa Rica').trim();
+  const provincia = String(parseInt((hc.provincia || '').replace(/\D/g, ''), 10) || '').slice(0, 1);
+  const canton = (hc.canton || '').replace(/\D/g, '').padStart(2, '0').slice(-2);
+  const distrito = (hc.distrito || '').replace(/\D/g, '').padStart(2, '0').slice(-2);
+  const otrasSenas = (hc.otrasSenas || '').trim();
 
   const esCredito = (invoice.condicionVenta as string).includes('Credito');
   const condicionVenta = esCredito ? '02' : '01';

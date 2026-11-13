@@ -32,7 +32,6 @@ const LEGACY_KEY_MAP: Record<string, TenantStorageKey> = {
   saborai_zones: 'zones',
   saborai_inventory_ingredients: 'inventory_ingredients',
   saborai_inventory_movements: 'inventory_movements',
-  saborai_hacienda_config: 'hacienda_config',
   saborai_hacienda_invoices: 'hacienda_invoices',
   saborai_cash_registers: 'cash_registers',
   saborai_current_terminal_id: 'current_terminal_id',
@@ -115,6 +114,61 @@ export function hasTenantItem(key: TenantStorageKey, tenantId?: string | null): 
   return Boolean(scopedKey && typeof window !== 'undefined' && localStorage.getItem(scopedKey));
 }
 
+function redactTenantHaciendaSecrets<T>(value: T): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const tenant = value as Record<string, any>;
+  if (!tenant.haciendaConfig || typeof tenant.haciendaConfig !== 'object') return value;
+  return {
+    ...tenant,
+    haciendaConfig: {
+      ...tenant.haciendaConfig,
+      atvUsername: undefined,
+      atvPassword: undefined,
+      pinP12: undefined,
+      p12Base64: undefined
+    }
+  } as T;
+}
+
+/** Lee la configuración heredada solo si la copia global pertenece al tenant autenticado. */
+export function getLegacyHaciendaConfigForTenant<T>(tenantId: string): T | null {
+  const scoped = getTenantItem<T>('hacienda_config', tenantId);
+  if (scoped) return scoped;
+  if (typeof window === 'undefined' || !tenantId) return null;
+  try {
+    const rawTenant = localStorage.getItem('saborai_tenant');
+    const legacyTenant = rawTenant ? JSON.parse(rawTenant) : null;
+    if (!legacyTenant || String(legacyTenant.id) !== String(tenantId)) return null;
+    const rawConfig = localStorage.getItem('saborai_hacienda_config');
+    return rawConfig ? JSON.parse(rawConfig) as T : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Elimina copias legadas solo después de confirmar que el perfil remoto se guardó o ya existe. */
+export function clearLegacyHaciendaSecretsForTenant(tenantId: string): void {
+  if (typeof window === 'undefined' || !tenantId) return;
+  removeTenantItem('hacienda_config', tenantId);
+
+  const scopedProfileKey = tenantStorageKey('tenant_profile', tenantId);
+  if (scopedProfileKey) {
+    try {
+      const rawProfile = localStorage.getItem(scopedProfileKey);
+      if (rawProfile) localStorage.setItem(scopedProfileKey, JSON.stringify(redactTenantHaciendaSecrets(JSON.parse(rawProfile))));
+    } catch {}
+  }
+
+  try {
+    const rawTenant = localStorage.getItem('saborai_tenant');
+    const legacyTenant = rawTenant ? JSON.parse(rawTenant) : null;
+    if (legacyTenant && String(legacyTenant.id) === String(tenantId)) {
+      localStorage.setItem('saborai_tenant', JSON.stringify(redactTenantHaciendaSecrets(legacyTenant)));
+      localStorage.removeItem('saborai_hacienda_config');
+    }
+  } catch {}
+}
+
 export function clearTenantData(tenantId: string): void {
   if (typeof window === 'undefined') return;
   const normalizedId = normalizeId(tenantId);
@@ -181,6 +235,7 @@ export function migrateLegacyDataToTenant(tenantId: string): boolean {
     const legacyTenantRaw = localStorage.getItem('saborai_tenant');
     const legacyTenant = legacyTenantRaw ? JSON.parse(legacyTenantRaw) : null;
     if (!legacyTenant || String(legacyTenant.id) !== String(tenantId)) return false;
+    localStorage.setItem('saborai_tenant', JSON.stringify(redactTenantHaciendaSecrets(legacyTenant)));
 
     let migrated = false;
     Object.entries(LEGACY_KEY_MAP).forEach(([legacyKey, scopedKey]) => {

@@ -33,12 +33,13 @@ import { nyzaUIAgent } from './services/nyzaUIAgent';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
 import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
-import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
+import { HaciendaConfig, Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
-import { PosCloudSyncError, posCloudService, SaleCloudPayload, salePaymentOperationId } from './services/posCloudService';
+import { PosCloudSyncError, posCloudService, SaleCloudPayload, SaleRegistrationResult, salePaymentOperationId } from './services/posCloudService';
 import { inventoryService } from './services/inventoryService';
 import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
+import { getQuickPaymentAttemptByOperationId, isQuickPaymentEffectApplied, markQuickPaymentEffectApplied } from './services/quickPaymentAttempt';
 import { createEmployeeSession, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
@@ -125,14 +126,29 @@ function mergeCloudLayoutIntoTables(current: Table[], layout: TableLayoutItem[])
   }));
 }
 
+function withoutHaciendaSecrets(config?: HaciendaConfig | null): HaciendaConfig | undefined {
+  if (!config) return undefined;
+  return {
+    ...config,
+    atvUsername: undefined,
+    atvPassword: undefined,
+    pinP12: undefined,
+    p12Base64: undefined
+  };
+}
+
+function withPublicHaciendaConfig(tenant: TenantInfo): TenantInfo {
+  return { ...tenant, haciendaConfig: withoutHaciendaSecrets(tenant.haciendaConfig) };
+}
+
 function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null {
   const scopedTenant = getTenantItem<TenantInfo>('tenant_profile', tenantId);
   const storedZones = getTenantItem<string[]>('zones', tenantId);
   if (scopedTenant) {
-    return {
+    return withPublicHaciendaConfig({
       ...scopedTenant,
       zones: Array.isArray(storedZones) ? storedZones : (scopedTenant.zones || [])
-    };
+    });
   }
 
   // Compatibilidad con sesiones anteriores: antes de esta reparación el
@@ -141,7 +157,7 @@ function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null
     const rawTenant = localStorage.getItem('saborai_tenant');
     const legacyTenant = rawTenant ? JSON.parse(rawTenant) as TenantInfo : null;
     return legacyTenant && String(legacyTenant.id) === String(tenantId)
-      ? { ...legacyTenant, zones: Array.isArray(storedZones) ? storedZones : (legacyTenant.zones || []) }
+      ? withPublicHaciendaConfig({ ...legacyTenant, zones: Array.isArray(storedZones) ? storedZones : (legacyTenant.zones || []) })
       : null;
   } catch {
     return null;
@@ -197,20 +213,19 @@ export function App() {
   const [tenant, setTenant] = useState<TenantInfo>(() => {
     try {
       const saved = localStorage.getItem('saborai_tenant');
-      const savedHaciendaConfig = getTenantItem<any>('hacienda_config');
       const savedZones = getTenantItem<string[]>('zones');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return {
+        return withPublicHaciendaConfig({
           ...initialTenant,
           ...parsed,
           zones: Array.isArray(savedZones) ? savedZones : (parsed.zones || []),
           taxRegime: parsed.taxRegime || 'TRADITIONAL',
           includeService10ByDefault: parsed.includeService10ByDefault ?? true,
-          haciendaConfig: { ...(parsed.haciendaConfig || {}), ...(savedHaciendaConfig || {}) }
-        };
+          haciendaConfig: parsed.haciendaConfig
+        });
       }
-      return { ...initialTenant, zones: savedZones || [], haciendaConfig: savedHaciendaConfig };
+      return withPublicHaciendaConfig({ ...initialTenant, zones: savedZones || [] });
     } catch {
       return initialTenant;
     }
@@ -268,6 +283,77 @@ export function App() {
     };
     window.addEventListener('saborai_sync_rejected', handleRejectedSync);
     return () => window.removeEventListener('saborai_sync_rejected', handleRejectedSync);
+  }, [addNotification, tenant.id]);
+
+  useEffect(() => {
+    const handlePaymentSynced = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        tenantId?: string;
+        operationId?: string;
+        clientMetadata?: Record<string, unknown>;
+      }>).detail;
+      if (detail?.tenantId !== tenant.id || typeof detail.operationId !== 'string') return;
+      const quickPayment = (detail.clientMetadata as any)?.quickPayment;
+      if (!quickPayment || quickPayment.tenantId !== tenant.id || quickPayment.operationId !== detail.operationId) return;
+      let attempt = getQuickPaymentAttemptByOperationId(detail.operationId);
+      if (!attempt) return;
+
+      if (quickPayment.employeeCredit && !isQuickPaymentEffectApplied(attempt, 'employeeCredit')) {
+        try {
+          employeeCreditService.recordCharge(quickPayment.employeeCredit);
+          attempt = markQuickPaymentEffectApplied(attempt, 'employeeCredit');
+          void employeeCreditService.refreshLedger(tenant.id).catch(() => {});
+        } catch (error) {
+          addNotification({
+            id: `quick_payment_credit_sync_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Crédito confirmado; falta actualizar la vista local',
+            message: error instanceof Error ? error.message : 'Vuelva a abrir el registro de crédito para refrescarlo.',
+            timestamp: new Date()
+          });
+        }
+      }
+
+      if (quickPayment.cashShift && !isQuickPaymentEffectApplied(attempt, 'cashShift')) {
+        try {
+          cashShiftService.recordSalePayment(quickPayment.cashShift);
+          attempt = markQuickPaymentEffectApplied(attempt, 'cashShift');
+        } catch (error) {
+          addNotification({
+            id: `quick_payment_cash_sync_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Pago confirmado; resumen de caja pendiente',
+            message: error instanceof Error ? error.message : 'Refresque el turno para actualizar el resumen.',
+            timestamp: new Date()
+          });
+        }
+      }
+
+      const inventory = quickPayment.inventory;
+      if (inventory && Array.isArray(inventory.items) && typeof inventory.operationId === 'string'
+        && !isQuickPaymentEffectApplied(attempt, 'inventory')) {
+        try {
+          inventoryService.deductItemsStock(
+            inventory.items,
+            'SALE_DEDUCTION',
+            typeof inventory.reason === 'string' ? inventory.reason : 'Venta QuickPayment',
+            inventory.operationId,
+            tenant.id
+          );
+          attempt = markQuickPaymentEffectApplied(attempt, 'inventory');
+        } catch (error) {
+          addNotification({
+            id: `quick_payment_inventory_sync_${Date.now()}`,
+            type: 'SYNC_ERROR',
+            title: 'Pago confirmado; inventario pendiente',
+            message: error instanceof Error ? error.message : 'Refresque el inventario para actualizar las existencias.',
+            timestamp: new Date()
+          });
+        }
+      }
+    };
+    window.addEventListener('saborai_payment_synced', handlePaymentSynced);
+    return () => window.removeEventListener('saborai_payment_synced', handlePaymentSynced);
   }, [addNotification, tenant.id]);
 
   useEffect(() => {
@@ -341,13 +427,17 @@ export function App() {
   // Mantener tenant.haciendaConfig reactivo cuando se actualiza desde HaciendaSettings
   useEffect(() => {
     const handleCfgUpdate = (e: any) => {
-      const cfg = e.detail;
+      const detail = e.detail;
+      const cfg = withoutHaciendaSecrets(detail?.config || detail);
       if (cfg) {
-        setTenant(prev => ({
-          ...prev,
-          cedulaJuridica: cfg.cedulaEmisor || prev.cedulaJuridica,
-          haciendaConfig: { ...(prev.haciendaConfig || {}), ...cfg }
-        }));
+        setTenant(prev => {
+          if (detail?.tenantId && String(detail.tenantId) !== String(prev.id)) return prev;
+          return {
+            ...prev,
+            cedulaJuridica: cfg.cedulaEmisor || prev.cedulaJuridica,
+            haciendaConfig: { ...(prev.haciendaConfig || {}), ...cfg }
+          };
+        });
       }
     };
     window.addEventListener('saborai_hacienda_config_updated', handleCfgUpdate);
@@ -360,25 +450,26 @@ export function App() {
   const broadcastMenuItemsRef = useRef<((items: MenuItem[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
+    const safeUpdated = withPublicHaciendaConfig(updated);
     const shouldPersistZones = !skipBroadcast
       && JSON.stringify(normalizeTenantZones(updated.zones)) !== JSON.stringify(normalizeTenantZones(tenant.zones));
-    activeTenantIdRef.current = updated.id;
-    setTenant(updated);
-    setActiveTenantId(updated.id);
+    activeTenantIdRef.current = safeUpdated.id;
+    setTenant(safeUpdated);
+    setActiveTenantId(safeUpdated.id);
     if (!skipBroadcast && broadcastTenantRef.current) {
-      broadcastTenantRef.current(updated);
+      broadcastTenantRef.current(safeUpdated);
     }
     try {
-      localStorage.setItem('saborai_tenant', JSON.stringify(updated));
+      localStorage.setItem('saborai_tenant', JSON.stringify(safeUpdated));
       // Persistir también en el almacenamiento aislado por tenant. El perfil
       // contiene los salones y categorías, que deben sobrevivir al logout y
       // no depender únicamente del estado global de la sesión.
-      setTenantItem('tenant_profile', updated, updated.id);
-      setTenantItem('zones', updated.zones || [], updated.id);
+      setTenantItem('tenant_profile', safeUpdated, safeUpdated.id);
+      setTenantItem('zones', safeUpdated.zones || [], safeUpdated.id);
       // Solo una edición local de la lista envía un PATCH; una hidratación remota
       // nunca reescribe una copia posiblemente obsoleta en el servidor.
-      if (shouldPersistZones && !isLocalDemoTenantId(updated.id)) {
-        void syncTenantZonesWithServer(updated.zones || []).catch(error => {
+      if (shouldPersistZones && !isLocalDemoTenantId(safeUpdated.id)) {
+        void syncTenantZonesWithServer(safeUpdated.zones || []).catch(error => {
           console.warn('[SaborAI] No se pudieron guardar los salones:', error);
           addNotification({
             id: `zones_sync_error_${Date.now()}`,
@@ -388,9 +479,6 @@ export function App() {
             timestamp: new Date()
           });
         });
-      }
-      if (updated.haciendaConfig && !isLocalDemoTenantId(updated.id)) {
-        setTenantItem('hacienda_config', updated.haciendaConfig, updated.id);
       }
     } catch {}
   };
@@ -515,7 +603,6 @@ export function App() {
             role: data.user.role,
             active: data.user.active
           };
-          const savedHaciendaConfig = getTenantItem<any>('hacienda_config', data.tenant.id);
           const savedTenant = getTenantProfileWithLegacyFallback(data.tenant.id);
 
           const tenantObj: TenantInfo = {
@@ -532,7 +619,7 @@ export function App() {
             onboardingCompleted: data.tenant.onboardingCompleted,
             taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
             includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
-            haciendaConfig: savedTenant?.haciendaConfig || savedHaciendaConfig,
+            haciendaConfig: withoutHaciendaSecrets(savedTenant?.haciendaConfig),
             zones: resolveTenantZones(
               data.tenant.zones,
               getTenantItem<string[]>('zones', data.tenant.id) ?? savedTenant?.zones
@@ -1356,7 +1443,7 @@ export function App() {
       menuCategories: savedTenant?.menuCategories ?? loggedTenant.menuCategories ?? [],
       taxRegime: savedTenant?.taxRegime ?? loggedTenant.taxRegime,
       includeService10ByDefault: savedTenant?.includeService10ByDefault ?? loggedTenant.includeService10ByDefault,
-      haciendaConfig: savedTenant?.haciendaConfig ?? loggedTenant.haciendaConfig
+      haciendaConfig: withoutHaciendaSecrets(savedTenant?.haciendaConfig ?? loggedTenant.haciendaConfig)
     };
 
     activeTenantIdRef.current = restoredTenant.id;
@@ -1646,8 +1733,11 @@ export function App() {
     setActiveTab('billing');
   };
 
-  const handleRegisterPayment = (sale: SaleCloudPayload) => {
+  const handleRegisterPayment = async (sale: SaleCloudPayload): Promise<SaleRegistrationResult> => {
     const paymentOperationId = salePaymentOperationId(tenant.id, sale);
+    const orderNumber = sale.table.activeOrder?.orderNumber;
+    if (!orderNumber) return { status: 'REJECTED', message: 'No se pudo identificar la orden para registrar el pago.' };
+    const operationPrefix = `sale:${tenant.id}:${sale.invoice.clave50Digitos || orderNumber}`;
     const cashRegisterId = cashShiftService.getCurrentRegisterId();
     const cashShiftId = cashShiftService.getActiveShift(cashRegisterId)?.id;
     const saleOccurredAt = new Date().toISOString();
@@ -1688,8 +1778,26 @@ export function App() {
       closeOrder: sale.closeOrder
     };
     const inventoryPayload = {
-      orderNumber: sale.table.activeOrder?.orderNumber,
+      orderNumber,
       items: getUndispatchedItems(sale.items)
+    };
+    const preparedTable: Table = { ...(sale.tableBeforePayment || sale.table), status: 'OCCUPIED' };
+    const completedTable: Table = sale.closeOrder
+      ? { ...sale.table, status: 'AVAILABLE', activeOrder: undefined }
+      : sale.table;
+    const queueSaleOperations = async (): Promise<boolean> => {
+      try {
+        await localDB.enqueueOfflineAction('UPDATE_TABLE', preparedTable, 'Orden preparada antes de registrar el pago', tenant.id, `${operationPrefix}:order:prepare`);
+        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id, paymentOperationId);
+        if (inventoryPayload.items.length > 0) {
+          await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id, `${operationPrefix}:inventory`);
+        }
+        await localDB.enqueueOfflineAction('UPDATE_TABLE', completedTable, 'Estado de mesa pendiente de sincronización', tenant.id, `${operationPrefix}:order:complete`);
+        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id, `${operationPrefix}:invoice`);
+        return true;
+      } catch {
+        return false;
+      }
     };
 
     if (sale.paymentMethod === '04-Credito' && executiveEmployeeId) {
@@ -1706,9 +1814,14 @@ export function App() {
     }
 
     if (localDB.isOnline()) {
-      void posCloudService.syncSale(tenant.id, saleWithCashScope).then(() => {
+      try {
+        await posCloudService.syncSale(tenant.id, {
+          ...saleWithCashScope,
+          tableBeforePayment: preparedTable
+        });
         void employeeCreditService.refreshLedger(tenant.id).catch(error => console.warn('[Employee Credit] No se pudo actualizar la vista local:', error));
-      }).catch(async error => {
+        return { status: 'CONFIRMED' };
+      } catch (error) {
         if (error instanceof PosCloudSyncError && ['DAILY_CASH_CLOSED', 'DAILY_CASH_NOT_OPEN'].includes(error.code || '')) {
           if (employeeCredit?.idempotencyKey
             && employeeCreditService.discardPendingCharge(tenant.id, employeeCredit.idempotencyKey)) {
@@ -1721,23 +1834,48 @@ export function App() {
             message: error.message,
             timestamp: new Date()
           });
-          return;
+          return { status: 'REJECTED', message: error.message };
         }
         console.warn('[POS Cloud] Venta en cola después de fallo de red:', error);
-        await localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago pendiente de sincronización', tenant.id);
-        if (inventoryPayload.items.length > 0) await localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario pendiente de sincronización', tenant.id);
-        await localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura pendiente de sincronización', tenant.id);
-      });
-      return;
+        const queued = await queueSaleOperations();
+        return {
+          status: 'QUEUED',
+          message: queued
+            ? 'El cobro quedó guardado para sincronizarse; el comprobante no se enviará a Hacienda hasta recuperar la conexión.'
+            : 'El resultado del cobro no está confirmado en la nube y la cola local falló. No vuelva a cobrar; revise la sincronización antes de cerrar la orden.'
+        };
+      }
     }
 
-    void localDB.enqueueOfflineAction('PAYMENT', paymentPayload, 'Pago guardado sin conexión', tenant.id);
-    if (inventoryPayload.items.length > 0) void localDB.enqueueOfflineAction('DEDUCT_INVENTORY', inventoryPayload, 'Inventario guardado sin conexión', tenant.id);
-    void localDB.enqueueOfflineAction('EMIT_INVOICE', invoicePayload, 'Factura guardada sin conexión', tenant.id);
+    if (isLocalDemoTenantId(tenant.id)) return { status: 'CONFIRMED' };
+    const queued = await queueSaleOperations();
+    return {
+      status: 'QUEUED',
+      message: queued
+        ? 'El cobro quedó guardado para sincronizarse; el comprobante no se enviará a Hacienda hasta recuperar la conexión.'
+        : 'El cobro no pudo guardarse en la cola local. No vuelva a cobrar; revise la conexión y la sincronización antes de continuar.'
+    };
   };
 
-  const handleSaveOrder = (updatedTable: Table) => {
+  const handleSaveOrder = (updatedTable: Table, queuedPayment?: { tableUpdateOperationId: string; orderNumber: string; persisted?: boolean }) => {
     if (!updatedTable) return;
+    if (queuedPayment && !queuedPayment.persisted) {
+      const dependentTable = { ...updatedTable, orderNumber: queuedPayment.orderNumber };
+      void localDB.enqueueOfflineAction(
+        'UPDATE_TABLE',
+        dependentTable,
+        `Comanda actualizada en ${updatedTable.name || 'Mesa'} (${queuedPayment.orderNumber})`,
+        tenant.id,
+        queuedPayment.tableUpdateOperationId
+      ).then(() => handleSaveOrder(updatedTable, { ...queuedPayment, persisted: true })).catch(error => addNotification({
+        id: `table_payment_queue_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'Mesa sigue ocupada',
+        message: error instanceof Error ? error.message : 'No se pudo guardar el cierre después del pago en cola. La mesa quedó abierta; no vuelva a cobrar y revise la cola de sincronización.',
+        timestamp: new Date()
+      }));
+      return;
+    }
     const dispatchItemIds = new Set<string>();
 
     // 1. Process new items for KDS
@@ -1857,7 +1995,9 @@ export function App() {
       });
       const syncDispatch = async () => {
         let tableSynced = false;
-        if (localDB.isOnline()) {
+        if (queuedPayment) {
+          tableSynced = false;
+        } else if (localDB.isOnline()) {
           try {
             await posCloudService.syncOperation('UPDATE_TABLE', updatedTable as unknown as Record<string, unknown>, tenant.id);
             tableSynced = true;
@@ -1882,7 +2022,17 @@ export function App() {
           await localDB.enqueueOfflineAction('DISPATCH_INVENTORY', payload, `Descuento pendiente para ${item.name}`, tenant.id, operationId);
         }
       };
-      void syncDispatch();
+      void syncDispatch().catch(error => addNotification({
+        id: `table_payment_queue_${Date.now()}`,
+        type: 'SYNC_ERROR',
+        title: 'Mesa pendiente de sincronización',
+        message: error instanceof Error ? error.message : 'No se pudo guardar el cambio de mesa después del cobro. No vuelva a cobrar; revise la cola de sincronización.',
+        timestamp: new Date()
+      }));
+      return;
+    }
+
+    if (queuedPayment) {
       return;
     }
 

@@ -19,7 +19,7 @@ import {
   Mic,
   MicOff
 } from 'lucide-react';
-import { QuickPaymentModal } from './QuickPaymentModal';
+import { QuickPaymentModal, type QuickPaymentCompletion } from './QuickPaymentModal';
 import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
 import { printerService } from '../services/printerService';
@@ -30,7 +30,7 @@ interface OrderTakingProps {
   table: Table;
   tenant: TenantInfo;
   menuItems: MenuItem[];
-  onSaveOrder: (updatedTable: Table) => void;
+  onSaveOrder: (updatedTable: Table, queuedPayment?: Pick<QuickPaymentCompletion, 'tableUpdateOperationId' | 'orderNumber'>) => void;
   onBackToTables: () => void;
   onDirectInvoice?: (table: Table) => void;
   onNotify?: (notif: PosNotification) => void;
@@ -514,9 +514,12 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
     setPaymentModalOpen(true);
   };
 
-  const handlePaymentComplete = (_method: string, _amount: number) => {
+  const handlePaymentComplete = (_method: string, _amount: number, completion?: QuickPaymentCompletion) => {
     const isAll = paymentTargetDiner.id === 'ALL';
     const remainingItems = isAll ? [] : currentOrderItems.filter(i => i.subAccountId !== paymentTargetDiner.id);
+    const queuedPayment = completion?.status === 'QUEUED' && completion.tableUpdateOperationId
+      ? { tableUpdateOperationId: completion.tableUpdateOperationId, orderNumber: completion.orderNumber }
+      : undefined;
 
     if (isAll || remainingItems.length === 0) {
       const updatedTable: Table = {
@@ -524,7 +527,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         status: 'AVAILABLE',
         activeOrder: undefined
       };
-      onSaveOrder(updatedTable);
+      onSaveOrder(updatedTable, queuedPayment);
       onBackToTables();
     } else {
       const updatedTable: Table = {
@@ -539,7 +542,7 @@ export const OrderTaking: React.FC<OrderTakingProps> = ({
         }
       };
       setCurrentOrderItems(remainingItems);
-      onSaveOrder(updatedTable);
+      onSaveOrder(updatedTable, queuedPayment);
     }
   };
 

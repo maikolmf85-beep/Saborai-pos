@@ -4,11 +4,16 @@ export type TaxRegime = 'TRADITIONAL' | 'SIMPLIFIED'; // Régimen Normal/General
 
 export interface HaciendaConfig {
   environment: 'sandbox' | 'production';
-  atvUsername: string;
+  atvUsername?: string;
   atvPassword?: string;
-  pinP12: string;
+  pinP12?: string;
   p12FileName?: string;
   p12Base64?: string;
+  atvUsernameConfigured?: boolean;
+  atvUsernameMasked?: string;
+  atvPasswordConfigured?: boolean;
+  certificateConfigured?: boolean;
+  branchCode?: string;
   cedulaEmisor?: string;
   tipoIdentificacion?: '01' | '02' | '03' | '04';
   codigoActividad?: string;
@@ -226,7 +231,7 @@ export interface ElectronicInvoiceCR {
   iva1: number;
   servicio10: number;
   totalComprobante: number;
-  estadoHacienda: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO' | 'ANULADO';
+  estadoHacienda: 'ACEPTADO' | 'PROCESANDO' | 'RECHAZADO' | 'ERROR_LOCAL' | 'ANULADO';
   xmlContent?: string;
   signedXmlContent?: string;
 }

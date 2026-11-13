@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getTenantItem, setTenantItem } from '../services/tenantStorage';
 import { 
   Printer, 
@@ -24,11 +24,12 @@ import {
   MessageCircle,
   WifiOff
 } from 'lucide-react';
-import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount, UserProfile } from '../types';
 import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
+import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, HaciendaConfig, SubAccount, UserProfile } from '../types';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
+import type { SaleRegistrationResult } from '../services/posCloudService';
 import { inventoryService } from '../services/inventoryService';
 import { printerService } from '../services/printerService';
 import { soundService } from '../services/soundEffects';
@@ -38,16 +39,16 @@ interface BillingHaciendaProps {
   tenant: TenantInfo;
   currentUser?: UserProfile | null;
   selectedTable?: Table | null;
-  onEmitInvoice?: (invoice: ElectronicInvoiceCR) => void;
   onSaveTable?: (updatedTable: Table) => void;
   onRegisterPayment?: (payload: {
     table: Table;
+    tableBeforePayment?: Table;
     invoice: ElectronicInvoiceCR;
     paymentMethod: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
     total: number;
     closeOrder: boolean;
     items: Array<{ name: string; quantity: number; menuItemId?: string }>;
-  }) => void;
+  }) => Promise<SaleRegistrationResult | void> | SaleRegistrationResult | void;
   onOpenCashShift?: (initialTab?: 'status' | 'close') => void;
   onOpenHaciendaHistory?: () => void;
   onNotify?: (notif: PosNotification) => void;
@@ -58,7 +59,6 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   tenant,
   currentUser,
   selectedTable,
-  onEmitInvoice,
   onSaveTable,
   onRegisterPayment,
   onOpenCashShift,
@@ -68,7 +68,14 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 }) => {
   const [paperWidth, setPaperWidth] = useState<'80mm' | '58mm'>('80mm');
   const [copiedClave, setCopiedClave] = useState(false);
-  const [isInvoiceEmitted, setIsInvoiceEmitted] = useState(false);
+  const [isSaleCommitted, setIsSaleCommitted] = useState(false);
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const submittingPaymentRef = useRef(false);
+  const retryActionRef = useRef<'emit' | 'resend'>('emit');
+  const [invoiceStatus, setInvoiceStatus] = useState<'IDLE' | 'QUEUED' | 'PROCESANDO' | 'ACEPTADO' | 'RECHAZADO' | 'ERROR_LOCAL'>('IDLE');
+  const [invoiceStatusMessage, setInvoiceStatusMessage] = useState('');
+  const [paymentError, setPaymentError] = useState('');
+  const [committedInvoice, setCommittedInvoice] = useState<ElectronicInvoiceCR | null>(null);
   const [showXmlModal, setShowXmlModal] = useState(false);
   const [transferToast, setTransferToast] = useState<string | null>(null);
 
@@ -102,6 +109,35 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       setSubAccounts(selectedTable.activeOrder.subAccounts);
     }
   }, [selectedTable]);
+
+  const activeOrderKey = selectedTable?.activeOrder?.orderNumber
+    ? `${tenant.id}:${selectedTable.activeOrder.orderNumber}`
+    : '';
+  const lastActiveOrderKeyRef = useRef(activeOrderKey);
+  useEffect(() => {
+    if (!activeOrderKey || lastActiveOrderKeyRef.current === activeOrderKey) return;
+    lastActiveOrderKeyRef.current = activeOrderKey;
+    submittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
+    setIsSaleCommitted(false);
+    setInvoiceStatus('IDLE');
+    setInvoiceStatusMessage('');
+    setPaymentError('');
+    setCommittedInvoice(null);
+  }, [activeOrderKey]);
+
+  const lastSubAccountRef = useRef(selectedSubAccount);
+  useEffect(() => {
+    if (lastSubAccountRef.current === selectedSubAccount) return;
+    lastSubAccountRef.current = selectedSubAccount;
+    submittingPaymentRef.current = false;
+    setIsSubmittingPayment(false);
+    setIsSaleCommitted(false);
+    setInvoiceStatus('IDLE');
+    setInvoiceStatusMessage('');
+    setPaymentError('');
+    setCommittedInvoice(null);
+  }, [selectedSubAccount]);
 
   // Customer form state
   const [isFacturaElectronica, setIsFacturaElectronica] = useState(false);
@@ -138,6 +174,20 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const isExecutiveOrder = Boolean(selectedTable?.activeOrder?.executiveEmployeeId);
   const terminalCode = currentRegister.terminalCode || '00001';
   const branchCode = currentRegister.branchCode || '001';
+  const [branchConfig, setBranchConfig] = useState<HaciendaConfig | null>(null);
+  const [branchConfigError, setBranchConfigError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setBranchConfig(null);
+    setBranchConfigError('');
+    haciendaService.loadConfig(tenant.id, branchCode).then(config => {
+      if (active) setBranchConfig(config);
+    }).catch(error => {
+      if (active) setBranchConfigError(error?.message || 'No se pudo cargar la configuración de esta sucursal.');
+    });
+    return () => { active = false; };
+  }, [tenant.id, branchCode]);
   const genericServerNames = new Set(['Mesero General', 'Salonero general', 'Salonero General', 'Mesero', 'Salonero']);
   const effectiveServerName = selectedTable?.activeOrder?.server && !genericServerNames.has(selectedTable.activeOrder.server)
     ? selectedTable.activeOrder.server
@@ -152,12 +202,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [previewDate] = useState(() => new Date());
   const [previewSecurity] = useState(() => randomSecurityCode());
   const [emittedInfo, setEmittedInfo] = useState<{ clave: string; consecutivo: string; fecha: Date; tipo: 'FE' | 'TE' } | null>(null);
-  let savedLocalHc: any = null;
-  try {
-    const saved = getTenantItem<any>('hacienda_config', tenant.id);
-    if (saved) savedLocalHc = saved;
-  } catch {}
-  const effectiveCedula = savedLocalHc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica;
+  const effectiveCedula = branchConfig?.cedulaEmisor || tenant.cedulaJuridica;
   const activeDocType = emittedInfo?.tipo ?? docType;
 
   const claveInfo = emittedInfo ?? {
@@ -377,10 +422,11 @@ Medio de Pago: ${paymentMethod}
     iva1: 0,
     servicio10,
     totalComprobante: total,
-    estadoHacienda: 'ACEPTADO'
+    estadoHacienda: 'PROCESANDO'
   };
 
-  const xmlContent = generateHaciendaXmlV44(invoiceObject, tenant);
+  const fiscalTenant = { ...tenant, haciendaConfig: branchConfig || undefined };
+  const xmlContent = generateHaciendaXmlV44(invoiceObject, fiscalTenant, branchConfig || undefined);
 
   const handleCopyClave = () => {
     navigator.clipboard.writeText(clave50Digitos);
@@ -392,232 +438,263 @@ Medio de Pago: ${paymentMethod}
     downloadXmlFile(xmlContent, `FacturaElectronica_${clave50Digitos}.xml`);
   };
 
-  const handleEmitToHacienda = () => {
-    if (!currentShift) {
-      if (onNotify) {
-        onNotify({
-          id: `err_shift_${Date.now()}`,
-          type: 'HACIENDA_UPDATE',
-          title: 'Turno no iniciado',
-          message: 'Debe abrir un turno de caja antes de facturar.',
-          timestamp: new Date()
-        });
+  const sendInvoiceToHacienda = (invoice: ElectronicInvoiceCR, isRetry = false) => {
+    retryActionRef.current = isRetry ? 'resend' : 'emit';
+    setInvoiceStatus('PROCESANDO');
+    setInvoiceStatusMessage('Cobro registrado. Esperando validación de Hacienda...');
+    const handleStatusChange = (status: string, detail?: string) => {
+      const nextStatus: 'PROCESANDO' | 'ACEPTADO' | 'RECHAZADO' | 'ERROR_LOCAL' = status === 'ACEPTADO'
+        ? 'ACEPTADO'
+        : status === 'RECHAZADO' ? 'RECHAZADO' : status === 'ERROR_LOCAL' ? 'ERROR_LOCAL' : 'PROCESANDO';
+      let message = detail || '';
+      if (nextStatus === 'RECHAZADO' && detail?.includes('-408')) {
+        message = 'Error -408 en Hacienda: el Código de Actividad no coincide con su registro en ATV. Revise Ajustes → Hacienda.';
+      } else if (nextStatus === 'ACEPTADO') {
+        message = `Hacienda aceptó la factura ${invoice.clave50Digitos.slice(-6)}.`;
       }
-      if (onOpenCashShift) onOpenCashShift('status');
+      setInvoiceStatus(nextStatus);
+      setInvoiceStatusMessage(message || (nextStatus === 'ERROR_LOCAL' ? 'El comprobante no se transmitió; revise el problema local antes de volver a intentar.' : 'Hacienda continúa procesando el comprobante.'));
+      onNotify?.({
+        id: `hacienda_${invoice.clave50Digitos}_${nextStatus}_${Date.now()}`,
+        type: nextStatus === 'ACEPTADO' ? 'ORDER_READY' : nextStatus === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
+        title: nextStatus === 'ACEPTADO' ? 'Factura aceptada' : nextStatus === 'RECHAZADO' ? 'Factura rechazada por Hacienda' : nextStatus === 'ERROR_LOCAL' ? 'Comprobante no transmitido' : 'Factura procesando en Hacienda',
+        message: message || (nextStatus === 'ERROR_LOCAL' ? 'El comprobante no se transmitió por un problema local.' : 'Hacienda está procesando el comprobante.'),
+        station: 'Bar',
+        tableNumber: selectedTable?.number || 0,
+        server: 'Sistema',
+        timestamp: new Date()
+      });
+    };
+    if (isRetry) {
+      haciendaService.resendInvoice(invoice.clave50Digitos, handleStatusChange, tenant.id);
+      return;
+    }
+    void haciendaService.emitInvoice(invoice, handleStatusChange, branchConfig || undefined, tenant.id).catch(() => {
+      const message = 'No se confirmó el resultado de Hacienda. Se consultará la clave; no reenvíe el comprobante mientras siga pendiente.';
+      setInvoiceStatus('PROCESANDO');
+      setInvoiceStatusMessage(message);
+      haciendaService.reconcileInvoiceStatus(
+        tenant.id,
+        invoice.clave50Digitos,
+        invoice.emisor?.sucursal || '',
+        (status, detail) => {
+          const resolvedStatus: 'PROCESANDO' | 'ACEPTADO' | 'RECHAZADO' = status === 'ACEPTADO'
+            ? 'ACEPTADO'
+            : status === 'RECHAZADO' ? 'RECHAZADO' : 'PROCESANDO';
+          setInvoiceStatus(resolvedStatus);
+          setInvoiceStatusMessage(detail || (resolvedStatus === 'PROCESANDO' ? message : ''));
+        },
+        message
+      );
+    });
+  };
+
+  const handleRetryHacienda = () => {
+    if (!committedInvoice || !['RECHAZADO', 'ERROR_LOCAL'].includes(invoiceStatus)) return;
+    const shouldResend = invoiceStatus === 'RECHAZADO' || retryActionRef.current === 'resend';
+    sendInvoiceToHacienda(committedInvoice, shouldResend);
+  };
+
+  const handleEmitToHacienda = async () => {
+    if (submittingPaymentRef.current || isSaleCommitted || activeItems.length === 0 || total <= 0) return;
+    if (!currentShift) {
+      onNotify?.({
+        id: `err_shift_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Turno no iniciado',
+        message: 'Debe abrir un turno de caja antes de facturar.',
+        timestamp: new Date()
+      });
+      onOpenCashShift?.('status');
       return;
     }
 
-    if (isFacturaElectronica) {
-      if (!customerName || !customerCedula || !customerEmail || !customerActivityCode) {
-        if (onNotify) {
-          onNotify({
-            id: `err_form_${Date.now()}`,
-            type: 'HACIENDA_UPDATE',
-            title: 'Datos Incompletos',
-            message: 'Debe llenar todos los datos para Factura Electrónica.',
-            timestamp: new Date()
-          });
+    if (!branchConfig || !branchConfig.isValidated || !branchConfig.cedulaEmisor || !branchConfig.codigoActividad ||
+        !branchConfig.provincia || !branchConfig.canton || !branchConfig.distrito || !branchConfig.otrasSenas?.trim() ||
+        !branchConfig.atvUsernameConfigured || !branchConfig.certificateConfigured) {
+      onNotify?.({
+        id: `err_hacienda_config_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Hacienda no configurada para esta sucursal',
+        message: branchConfigError || `Complete y valide la configuración de Hacienda de la sucursal ${branchCode} en Ajustes antes de emitir.`,
+        timestamp: new Date()
+      });
+      return;
+    }
+
+    if (isFacturaElectronica && (!customerName || !customerCedula || !customerEmail || !customerActivityCode)) {
+      onNotify?.({
+        id: `err_form_${Date.now()}`,
+        type: 'HACIENDA_UPDATE',
+        title: 'Datos incompletos',
+        message: 'Debe llenar todos los datos para Factura Electrónica.',
+        timestamp: new Date()
+      });
+      return;
+    }
+
+    submittingPaymentRef.current = true;
+    setIsSubmittingPayment(true);
+    setPaymentError('');
+
+    try {
+      const emissionDate = new Date();
+      const built = buildClaveYConsecutivo({
+        cedula: effectiveCedula,
+        branchCode,
+        terminalCode,
+        tipo: docType,
+        numero: reserveConsecutivoNumber(branchCode, terminalCode, docType),
+        fecha: emissionDate
+      });
+      const finalInvoice: ElectronicInvoiceCR = {
+        ...invoiceObject,
+        emisor: { ...invoiceObject.emisor, cedulaJuridica: effectiveCedula },
+        clave50Digitos: built.clave,
+        consecutivo: built.consecutivo,
+        tipoDocumento: docType,
+        receptor: {
+          nombre: docType === 'FE' ? customerName : 'Cliente General Contado',
+          tipoIdentificacion: '01-Fisica',
+          identificacion: docType === 'FE' ? customerCedula : '',
+          correo: docType === 'FE' ? customerEmail : ''
+        },
+        codigoActividadReceptor: docType === 'FE' ? customerActivityCode : undefined,
+        fechaEmision: emissionDate.toISOString(),
+        estadoHacienda: 'PROCESANDO'
+      };
+      finalInvoice.xmlContent = generateHaciendaXmlV44(finalInvoice, fiscalTenant, branchConfig);
+
+      const isPayingAll = selectedSubAccount === 'ALL';
+      const remainingItems = isPayingAll ? [] : orderItems.filter(item => (item.subAccountId || 1) !== selectedSubAccount);
+      const effectiveTable: Table = selectedTable || {
+        id: 'tbl_caja_rapida',
+        number: 0,
+        name: 'Venta Directa / Caja',
+        zone: 'Caja',
+        seats: 1,
+        shape: 'square',
+        status: 'AVAILABLE',
+        x: 0,
+        y: 0
+      };
+      const closeOrder = isPayingAll || remainingItems.length === 0;
+      const updatedTable: Table = closeOrder
+        ? { ...effectiveTable, status: 'AVAILABLE', activeOrder: undefined }
+        : {
+            ...effectiveTable,
+            status: 'OCCUPIED',
+            activeOrder: {
+              ...(selectedTable?.activeOrder || {}),
+              orderNumber: selectedTable?.activeOrder?.orderNumber || 'ORD-8921',
+              server: effectiveServerName,
+              openedAt: selectedTable?.activeOrder?.openedAt || 'Ahora',
+              subAccounts,
+              items: remainingItems
+            }
+          };
+      const orderNumber = selectedTable?.activeOrder?.orderNumber || updatedTable.activeOrder?.orderNumber || `ORD-${built.consecutivo}`;
+      const cloudTable: Table = {
+        ...updatedTable,
+        activeOrder: {
+          ...(updatedTable.activeOrder || selectedTable?.activeOrder || {}),
+          orderNumber,
+          server: effectiveServerName,
+          openedAt: selectedTable?.activeOrder?.openedAt || updatedTable.activeOrder?.openedAt || emissionDate.toISOString(),
+          subAccounts,
+          items: updatedTable.activeOrder?.items || activeItems
         }
+      };
+      const tableBeforePayment: Table = selectedTable?.activeOrder
+        ? selectedTable
+        : {
+            ...cloudTable,
+            status: 'OCCUPIED',
+            activeOrder: { ...cloudTable.activeOrder, orderNumber, items: activeItems }
+          };
+      const registration = await onRegisterPayment?.({
+        table: cloudTable,
+        tableBeforePayment,
+        invoice: finalInvoice,
+        paymentMethod,
+        total,
+        closeOrder,
+        items: activeItems.map(item => ({
+          name: item.name,
+          quantity: item.quantity,
+          menuItemId: item.menuItemId,
+          inventoryDeductedAtDispatch: item.inventoryDeductedAtDispatch
+        }))
+      });
+      const registrationStatus = registration?.status || 'CONFIRMED';
+      if (registrationStatus === 'REJECTED') {
+        const message = registration?.message || 'El pago no fue registrado. La orden sigue abierta y no se envió la factura.';
+        setPaymentError(message);
+        onNotify?.({ id: `payment_rejected_${built.clave}`, type: 'SYNC_ERROR', title: 'Cobro no registrado', message, timestamp: new Date() });
         return;
       }
 
-      // Save customer for future
-      try {
-        let customers = getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || [];
-        const newCustomer = {
-          cedula: customerCedula,
-          name: customerName,
-          email: customerEmail,
-          activityCode: customerActivityCode
-        };
-        const existingIdx = customers.findIndex((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
-        if (existingIdx >= 0) {
-          customers[existingIdx] = newCustomer;
-        } else {
-          customers.push(newCustomer);
-        }
-        setTenantItem('customers', customers, tenant.id);
-      } catch (err) {}
-    }
-
-    setIsInvoiceEmitted(true);
-
-    // Record transaction into active cash shift of the current register
-    let cashAmt = 0;
-    let cardAmt = 0;
-    let sinpeAmt = 0;
-    let creditAmt = 0;
-
-    if (paymentMethod === '01-Efectivo') {
-      cashAmt = total;
-    } else if (paymentMethod === '02-Tarjeta') {
-      cardAmt = total;
-    } else if (paymentMethod === '03-SINPE_Movil') {
-      sinpeAmt = total;
-    } else if (paymentMethod === '04-Credito') {
-      creditAmt = total;
-    }
-
-    cashShiftService.recordSalePayment({
-      cashAmount: cashAmt,
-      cardAmount: cardAmt,
-      sinpeAmount: sinpeAmt,
-      creditAmount: creditAmt,
-      subtotal,
-      tax: iva13,
-      service10: servicio10,
-      registerId: currentRegister.id,
-      tenantId: tenant.id,
-      actor: currentUser || undefined,
-      reference: clave50Digitos
-    });
-
-    // Deducción automática de insumos e ingredientes del inventario (escandallo)
-    const itemsToDeduct = activeItems.filter(it => !it.inventoryDeductedAtDispatch).map(it => ({ menuItemId: it.menuItemId, name: it.name, quantity: it.quantity }));
-    const deductionResult = inventoryService.deductItemsStock(itemsToDeduct, 'SALE_DEDUCTION', undefined, undefined, tenant.id);
-    if (deductionResult.depletedItems.length > 0 && onNotify) {
-      onNotify({
-        id: `depleted_${Date.now()}`,
-        type: 'HACIENDA_UPDATE',
-        title: '⚠️ Insumos agotados en cocina',
-        message: `Los siguientes platillos quedaron agotados: ${deductionResult.depletedItems.join(', ')}`,
-        timestamp: new Date()
-      });
-    }
-
-    // Apertura automática del cajón de dinero (Cash drawer kick ESC p 0 25 250)
-    if (paymentMethod === '01-Efectivo') {
-      printerService.openCashDrawer().catch(() => {});
-    }
-
-    // Feedback auditivo de cobro completado
-    soundService.playSuccessChime();
-
-    // Reservar consecutivo real y construir el comprobante definitivo
-    const emissionDate = new Date();
-    const built = buildClaveYConsecutivo({
-      cedula: effectiveCedula,
-      branchCode,
-      terminalCode,
-      tipo: docType,
-      numero: reserveConsecutivoNumber(branchCode, terminalCode, docType),
-      fecha: emissionDate
-    });
-    setEmittedInfo({ clave: built.clave, consecutivo: built.consecutivo, fecha: emissionDate, tipo: docType });
-
-    const finalInvoice: ElectronicInvoiceCR = {
-      ...invoiceObject,
-      emisor: {
-        ...invoiceObject.emisor,
-        cedulaJuridica: effectiveCedula
-      },
-      clave50Digitos: built.clave,
-      consecutivo: built.consecutivo,
-      tipoDocumento: docType,
-      receptor: {
-        nombre: docType === 'FE' ? customerName : 'Cliente General Contado',
-        tipoIdentificacion: '01-Fisica',
-        identificacion: docType === 'FE' ? customerCedula : '',
-        correo: docType === 'FE' ? customerEmail : ''
-      },
-      codigoActividadReceptor: docType === 'FE' ? customerActivityCode : undefined,
-      fechaEmision: emissionDate.toISOString(),
-      estadoHacienda: 'PROCESANDO'
-    };
-    finalInvoice.xmlContent = generateHaciendaXmlV44(finalInvoice, tenant);
-
-    haciendaService.emitInvoice(finalInvoice, (status, detail) => {
-      let msg = detail || '';
-      if (status === 'RECHAZADO' && detail && detail.includes('-408')) {
-        msg = 'Error -408 en Hacienda: El Código de Actividad no coincide con su registro en ATV. Vaya a Ajustes → Hacienda y seleccione su actividad inscrita en ATV.';
-      } else if (status === 'ACEPTADO') {
-        msg = `Hacienda aceptó la factura ${built.clave.slice(-6)}`;
+      setIsSaleCommitted(true);
+      setCommittedInvoice(finalInvoice);
+      setEmittedInfo({ clave: built.clave, consecutivo: built.consecutivo, fecha: emissionDate, tipo: docType });
+      if (registrationStatus === 'QUEUED') {
+        setInvoiceStatus('QUEUED');
+        setInvoiceStatusMessage(registration?.message || 'El cobro quedó guardado para sincronizarse; Hacienda recibirá el comprobante cuando vuelva la conexión.');
+      } else {
+        setInvoiceStatus('PROCESANDO');
+        setInvoiceStatusMessage('Cobro registrado. Esperando validación de Hacienda...');
       }
-      if (onNotify) {
-        onNotify({
-          id: `hacienda_${Date.now()}`,
-          type: status === 'ACEPTADO' ? 'ORDER_READY' : status === 'RECHAZADO' ? 'NEW_ORDER' : 'HACIENDA_UPDATE',
-          title: status === 'ACEPTADO' ? '✅ Factura Aceptada' : status === 'RECHAZADO' ? '❌ Factura Rechazada (DGT)' : '⏳ Procesando DGT...',
-          message: msg || `Enviando XML a Hacienda...`,
-          station: 'Bar',
-          tableNumber: 0,
-          server: 'Sistema',
+
+      const cashAmount = paymentMethod === '01-Efectivo' ? total : 0;
+      const cardAmount = paymentMethod === '02-Tarjeta' ? total : 0;
+      const sinpeAmount = paymentMethod === '03-SINPE_Movil' ? total : 0;
+      const creditAmount = paymentMethod === '04-Credito' ? total : 0;
+      cashShiftService.recordSalePayment({
+        cashAmount,
+        cardAmount,
+        sinpeAmount,
+        creditAmount,
+        subtotal,
+        tax: iva13,
+        service10: servicio10,
+        registerId: currentRegister.id,
+        tenantId: tenant.id,
+        actor: currentUser || undefined,
+        reference: `sale:${tenant.id}:${built.clave}:payment`
+      });
+
+      const itemsToDeduct = activeItems
+        .filter(item => !item.inventoryDeductedAtDispatch)
+        .map(item => ({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity }));
+      const deductionResult = inventoryService.deductItemsStock(
+        itemsToDeduct,
+        'SALE_DEDUCTION',
+        undefined,
+        `sale:${tenant.id}:${built.clave}:inventory`,
+        tenant.id
+      );
+      if (deductionResult.depletedItems.length > 0) {
+        onNotify?.({
+          id: `depleted_${built.clave}`,
+          type: 'HACIENDA_UPDATE',
+          title: 'Insumos agotados en cocina',
+          message: `Los siguientes platillos quedaron agotados: ${deductionResult.depletedItems.join(', ')}`,
           timestamp: new Date()
         });
       }
-    });
+      if (cashAmount > 0) printerService.openCashDrawer().catch(() => {});
+      soundService.playSuccessChime();
 
-    // 3. Liberar la mesa si se pagó la cuenta completa, o actualizar ítems si fue por subcuenta
-    const isPayingAll = selectedSubAccount === 'ALL';
-    const remainingItems = isPayingAll ? [] : orderItems.filter(i => (i.subAccountId || 1) !== selectedSubAccount);
+      if (closeOrder) setOrderItems([]);
+      else setOrderItems(remainingItems);
+      if (onSaveTable && selectedTable) onSaveTable(updatedTable);
 
-    const effectiveTable: Table = selectedTable || {
-      id: 'tbl_caja_rapida',
-      number: 0,
-      name: 'Venta Directa / Caja',
-      zone: 'Caja',
-      seats: 1,
-      shape: 'square',
-      status: 'AVAILABLE',
-      x: 0,
-      y: 0
-    };
-
-    let updatedTable: Table;
-    if (isPayingAll || remainingItems.length === 0) {
-      updatedTable = {
-        ...effectiveTable,
-        status: 'AVAILABLE',
-        activeOrder: undefined
-      };
-      setOrderItems([]);
-    } else {
-      updatedTable = {
-        ...effectiveTable,
-        status: 'OCCUPIED',
-        activeOrder: {
-          ...(selectedTable?.activeOrder || {}),
-          orderNumber: selectedTable?.activeOrder?.orderNumber || 'ORD-8921',
-          server: effectiveServerName,
-          openedAt: selectedTable?.activeOrder?.openedAt || 'Ahora',
-          subAccounts,
-          items: remainingItems
-        }
-      };
-      setOrderItems(remainingItems);
-    }
-
-    if (onSaveTable && selectedTable) {
-      onSaveTable(updatedTable);
-    }
-
-    const cloudTable: Table = {
-      ...updatedTable,
-      activeOrder: {
-        ...(updatedTable.activeOrder || selectedTable?.activeOrder || {}),
-        orderNumber: selectedTable?.activeOrder?.orderNumber || updatedTable.activeOrder?.orderNumber || `ORD-${Date.now()}`,
-        server: effectiveServerName,
-        openedAt: selectedTable?.activeOrder?.openedAt || updatedTable.activeOrder?.openedAt || new Date().toISOString(),
-        subAccounts,
-        items: updatedTable.activeOrder?.items || activeItems
-      }
-    };
-    onRegisterPayment?.({
-      table: cloudTable,
-      invoice: finalInvoice,
-      paymentMethod,
-      total,
-      closeOrder: isPayingAll || remainingItems.length === 0,
-      items: activeItems.map(item => ({
-        name: item.name,
-        quantity: item.quantity,
-        menuItemId: item.menuItemId,
-        inventoryDeductedAtDispatch: item.inventoryDeductedAtDispatch
-      }))
-    });
-
-    if (onEmitInvoice) {
-      onEmitInvoice(finalInvoice);
+      if (registrationStatus === 'CONFIRMED') sendInvoiceToHacienda(finalInvoice);
+    } catch {
+      setPaymentError('No se pudo confirmar el cobro. La orden se mantiene abierta; revise el estado de sincronización antes de volver a intentarlo.');
+    } finally {
+      submittingPaymentRef.current = false;
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -1195,12 +1272,18 @@ Medio de Pago: ${paymentMethod}
           {/* Action Trigger */}
           <button
             onClick={handleEmitToHacienda}
-            className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+            disabled={isSubmittingPayment || isSaleCommitted || activeItems.length === 0 || total <= 0}
+            className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 transition-all flex items-center justify-center gap-2 shadow-sm cursor-pointer disabled:opacity-80 disabled:cursor-not-allowed"
           >
-            {isInvoiceEmitted ? (
+            {isSubmittingPayment ? (
+              <>
+                <Send className="w-4 h-4 text-[#a9b994]" />
+                <span>Registrando cobro...</span>
+              </>
+            ) : isSaleCommitted ? (
               <>
                 <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
-                <span>{isSimplified ? 'Comprobante Registrado con Éxito ✓' : isFacturaElectronica ? 'Factura Transmitida con Éxito a Hacienda CR ✓' : 'Tiquete Electrónico Emitido con Éxito ✓'}</span>
+                <span>Cobro registrado</span>
               </>
             ) : (
               <>
@@ -1212,8 +1295,36 @@ Medio de Pago: ${paymentMethod}
             )}
           </button>
 
+          {paymentError && (
+            <div role="alert" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+              {paymentError}
+            </div>
+          )}
+
+          {isSaleCommitted && (
+            <div role="status" className={`mt-3 rounded-xl border p-3 text-sm ${invoiceStatus === 'ACEPTADO' ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : invoiceStatus === 'RECHAZADO' ? 'border-red-200 bg-red-50 text-red-900' : 'border-amber-200 bg-amber-50 text-amber-950'}`}>
+              <p className="font-bold">
+                {invoiceStatus === 'ACEPTADO'
+                  ? 'Hacienda aceptó el comprobante.'
+                  : invoiceStatus === 'RECHAZADO'
+                    ? 'El cobro está registrado, pero Hacienda rechazó el comprobante.'
+                    : invoiceStatus === 'ERROR_LOCAL'
+                      ? 'El comprobante no se transmitió por un problema local.'
+                      : invoiceStatus === 'QUEUED'
+                      ? 'Cobro registrado; comprobante pendiente de sincronización.'
+                      : 'Cobro registrado; Hacienda está procesando el comprobante.'}
+              </p>
+              {invoiceStatusMessage && <p className="mt-1">{invoiceStatusMessage}</p>}
+              {(invoiceStatus === 'RECHAZADO' || invoiceStatus === 'ERROR_LOCAL') && committedInvoice && (
+                <button type="button" onClick={handleRetryHacienda} className="mt-3 rounded-lg bg-stone-900 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800">
+                  {invoiceStatus === 'RECHAZADO' ? 'Verificar estado DGT y reintentar sin volver a cobrar' : 'Corregir el problema y volver a enviar sin volver a cobrar'}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Botón de Envío Directo por WhatsApp tras Cobro */}
-          {isInvoiceEmitted && (
+          {isSaleCommitted && (
             <button
               type="button"
               onClick={handleShareWhatsApp}
@@ -1224,7 +1335,7 @@ Medio de Pago: ${paymentMethod}
             </button>
           )}
 
-          {isInvoiceEmitted && onBackToTables && (
+          {isSaleCommitted && onBackToTables && (
             <button
               type="button"
               onClick={onBackToTables}

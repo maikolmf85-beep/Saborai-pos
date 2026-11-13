@@ -29,6 +29,8 @@ export interface OfflineSyncQueueItem {
   attemptCount?: number;
   nextAttemptAt?: string;
   lastError?: string;
+  result?: Record<string, unknown>;
+  clientMetadata?: Record<string, unknown>;
   description: string;
 }
 
@@ -41,6 +43,24 @@ export function filterPendingItemsForTenant(items: OfflineSyncQueueItem[], tenan
 
 export function filterSyncableItemsForTenant(items: OfflineSyncQueueItem[], tenantId: string): OfflineSyncQueueItem[] {
   return filterPendingItemsForTenant(items, tenantId).filter(item => item.status !== 'REJECTED');
+}
+
+function sanitizeTenantSnapshot(snapshot: TenantOfflineSnapshot): TenantOfflineSnapshot {
+  const config = snapshot.tenant?.haciendaConfig;
+  if (!config || typeof config !== 'object') return snapshot;
+  return {
+    ...snapshot,
+    tenant: {
+      ...snapshot.tenant,
+      haciendaConfig: {
+        ...config,
+        atvUsername: undefined,
+        atvPassword: undefined,
+        pinP12: undefined,
+        p12Base64: undefined
+      }
+    }
+  };
 }
 
 export class SaboraiLocalDB {
@@ -241,7 +261,7 @@ export class SaboraiLocalDB {
     });
   }
 
-  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string, operationId?: string): Promise<void> {
+  async enqueueOfflineAction(action: OfflineSyncQueueItem['action'], payload: any, description?: string, tenantId?: string, operationId?: string, clientMetadata?: Record<string, unknown>): Promise<void> {
     const scopedTenantId = tenantId || this.activeTenantId || (typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') || undefined : undefined);
     if (!isCloudTenantId(scopedTenantId)) return;
     const stableOperationId = operationId || `sync_${Date.now()}_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).substring(2, 10)}`;
@@ -258,32 +278,23 @@ export class SaboraiLocalDB {
       synced: false,
       status: 'PENDING',
       attemptCount: 0,
+      clientMetadata,
       description: description || `Operación ${action} almacenada en memoria local`
     };
 
     await this.saveItem('sync_queue', item);
+    const persistedItem = (await this.getAllItems<OfflineSyncQueueItem>('sync_queue'))
+      .find(saved => saved.id === item.id && saved.tenantId === item.tenantId);
+    if (!persistedItem || persistedItem.action !== item.action
+      || JSON.stringify(persistedItem.payload) !== JSON.stringify(item.payload)) {
+      throw new Error('No se pudo guardar la operación en la cola local. El cobro no se confirmó.');
+    }
     await this.notifyActiveTenantCount();
   }
 
   async saveTenantSnapshot(snapshot: TenantOfflineSnapshot): Promise<void> {
     if (!snapshot.tenantId) return;
-    const safeTenant = snapshot.tenant
-      ? {
-          ...snapshot.tenant,
-          haciendaConfig: snapshot.tenant.haciendaConfig
-            ? {
-                ...snapshot.tenant.haciendaConfig,
-                atvPassword: undefined,
-                pinP12: undefined,
-                p12Base64: undefined
-              }
-            : undefined
-        }
-      : null;
-    const safeSnapshot: TenantOfflineSnapshot = {
-      ...snapshot,
-      tenant: safeTenant
-    };
+    const safeSnapshot = sanitizeTenantSnapshot(snapshot);
 
     await this.saveItem('tenant_snapshots', safeSnapshot);
   }
@@ -294,7 +305,10 @@ export class SaboraiLocalDB {
     if (!this.db) {
       try {
         const raw = localStorage.getItem(`saborai_tenant_snapshots_${tenantId}`);
-        return raw ? JSON.parse(raw) as TenantOfflineSnapshot : null;
+        if (!raw) return null;
+        const snapshot = sanitizeTenantSnapshot(JSON.parse(raw) as TenantOfflineSnapshot);
+        if (snapshot.tenant?.haciendaConfig) void this.saveTenantSnapshot(snapshot);
+        return snapshot;
       } catch {
         return null;
       }
@@ -304,7 +318,13 @@ export class SaboraiLocalDB {
       try {
         const tx = this.db!.transaction('tenant_snapshots', 'readonly');
         const request = tx.objectStore('tenant_snapshots').get(tenantId);
-        request.onsuccess = () => resolve((request.result as TenantOfflineSnapshot | undefined) || null);
+        request.onsuccess = () => {
+          const stored = request.result as TenantOfflineSnapshot | undefined;
+          if (!stored) return resolve(null);
+          const snapshot = sanitizeTenantSnapshot(stored);
+          if (snapshot.tenant?.haciendaConfig) void this.saveTenantSnapshot(snapshot);
+          resolve(snapshot);
+        };
         request.onerror = () => resolve(null);
       } catch {
         resolve(null);
@@ -408,7 +428,12 @@ export class SaboraiLocalDB {
         || originalItem.tenantId !== activeTenantId) continue;
       const itemOrderNumber = typeof originalItem.payload?.orderNumber === 'string' ? originalItem.payload.orderNumber : '';
       if (originalItem.action !== 'PAYMENT' && itemOrderNumber && blockedOrders.has(itemOrderNumber)) continue;
-      if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) continue;
+      if (originalItem.nextAttemptAt && new Date(originalItem.nextAttemptAt).getTime() > Date.now()) {
+        if (originalItem.action === 'PAYMENT' && itemOrderNumber) {
+          blockedOrders.set(itemOrderNumber, 'El pago de esta orden sigue pendiente de confirmación.');
+        }
+        continue;
+      }
 
       const processingItem: OfflineSyncQueueItem = { ...originalItem, status: 'PROCESSING' };
       await this.updateQueueItem(processingItem);
@@ -455,17 +480,36 @@ export class SaboraiLocalDB {
           throw new Error(data.error || `Error HTTP ${response.status}`);
         }
 
-        await this.updateQueueItem({
+        const syncedItem: OfflineSyncQueueItem = {
           ...processingItem,
           status: 'SYNCED',
           synced: true,
+          result: data.result && typeof data.result === 'object' ? data.result : undefined,
           lastError: undefined,
           nextAttemptAt: undefined
-        });
+        };
+        await this.updateQueueItem(syncedItem);
+        if (syncedItem.action === 'PAYMENT'
+          && syncedItem.clientMetadata
+          && typeof window !== 'undefined'
+          && typeof window.dispatchEvent === 'function') {
+          const clientQuickPaymentOperationId = (syncedItem.clientMetadata.quickPayment as { operationId?: unknown } | undefined)?.operationId;
+          window.dispatchEvent(new CustomEvent('saborai_payment_synced', {
+            detail: {
+              tenantId: syncedItem.tenantId,
+              operationId: typeof clientQuickPaymentOperationId === 'string' ? clientQuickPaymentOperationId : syncedItem.id,
+              queueItemId: syncedItem.id,
+              clientMetadata: syncedItem.clientMetadata
+            }
+          }));
+        }
         syncedCount += 1;
       } catch (error: any) {
         await this.markFailed(processingItem, error?.message || 'No se pudo sincronizar la operación.');
         failedCount += 1;
+        if (processingItem.action === 'PAYMENT' && itemOrderNumber) {
+          blockedOrders.set(itemOrderNumber, 'El pago de esta orden no se confirmó.');
+        }
       }
     }
 
