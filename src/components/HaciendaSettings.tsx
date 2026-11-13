@@ -23,7 +23,7 @@ import { haciendaService } from '../services/haciendaService';
 import { cashShiftService } from '../services/cashShiftService';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
 import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../utils/haciendaP12Pin';
-
+import { isValidHaciendaActivityCode } from '../utils/haciendaActivityCode';
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
   onUpdateTenant?: (updated: TenantInfo) => void;
@@ -431,7 +431,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
           {/* Barra de Cumplimiento 100% Hacienda v4.4 */}
           {(() => {
             const hasEmisor = !!cedulaEmisor.replace(/\D/g, '');
-            const hasAct = /^\d{6}$/.test(codigoActividad.trim());
+            const hasAct = isValidHaciendaActivityCode(codigoActividad);
             const hasUbi = !!(provincia && canton && distrito && otrasSenas.trim());
             const hasCred = !!((atvUsername.trim() || atvUsernameConfigured) && (atvPassword || atvPasswordConfigured));
             const hasCert = !!((p12Base64 && isValidHaciendaP12Pin(pinP12)) || certificateConfigured);
