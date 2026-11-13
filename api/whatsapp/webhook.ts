@@ -3,6 +3,10 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+// Vercel debe entregar el stream intacto para que la firma se valide sobre
+// exactamente los bytes recibidos, antes de interpretar el JSON.
+export const config = { api: { bodyParser: false } };
+
 try {
   dotenv.config();
   dotenv.config({ path: '.env.local' });
@@ -16,7 +20,9 @@ type WebhookLogEvent =
   | 'verification_rejected'
   | 'method_rejected'
   | 'post_received'
+  | 'body_read_failed'
   | 'signature_rejected'
+  | 'payload_rejected'
   | 'event_ignored'
   | 'duplicate_ignored'
   | 'message_accepted'
@@ -80,8 +86,11 @@ ${userText}`;
 }
 
 class WhatsAppGraphApiError extends Error {
-  constructor(readonly statusCode: number) {
+  readonly statusCode: number;
+
+  constructor(statusCode: number) {
     super('WhatsApp Graph API request failed.');
+    this.statusCode = statusCode;
     this.name = 'WhatsAppGraphApiError';
   }
 }
@@ -111,13 +120,20 @@ async function sendWhatsAppText(to: string, text: string): Promise<void> {
   if (!response.ok) throw new WhatsAppGraphApiError(response.status);
 }
 
-function hasValidMetaSignature(req: VercelRequest): boolean {
-  const appSecret = process.env.META_APP_SECRET?.trim();
-  if (!appSecret) return true;
+async function readRawBody(req: VercelRequest): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
 
-  const signature = String(req.headers['x-hub-signature-256'] || '');
-  const rawBody = (req as VercelRequest & { rawBody?: Buffer }).rawBody;
-  if (!signature || !rawBody) return false;
+function hasValidMetaSignature(req: VercelRequest, rawBody: Buffer): boolean {
+  const appSecret = process.env.META_APP_SECRET?.trim();
+  if (!appSecret) return false;
+
+  const signature = req.headers['x-hub-signature-256'];
+  if (typeof signature !== 'string' || !/^sha256=[a-f0-9]{64}$/.test(signature)) return false;
 
   const expected = `sha256=${createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
   const providedBuffer = Buffer.from(signature);
@@ -144,14 +160,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   logWebhook('post_received');
-  if (!hasValidMetaSignature(req)) {
+  let rawBody: Buffer;
+  try {
+    rawBody = await readRawBody(req);
+  } catch {
+    logWebhook('body_read_failed', 'error');
+    return res.status(400).json({ error: 'No se pudo leer la solicitud.' });
+  }
+
+  if (!hasValidMetaSignature(req, rawBody)) {
     logWebhook('signature_rejected', 'error');
     return res.status(401).json({ error: 'Firma de Meta inválida.' });
   }
 
+  let body: unknown;
+  try {
+    body = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    logWebhook('payload_rejected', 'error');
+    return res.status(400).json({ error: 'El JSON de la solicitud no es válido.' });
+  }
+
   // Meta espera una respuesta rápida; el procesamiento continúa antes de cerrar
   // la solicitud para conservar compatibilidad con funciones serverless sencillas.
-  const message = getTextMessage(req.body);
+  const message = getTextMessage(body);
   if (!message) {
     logWebhook('event_ignored');
     return res.status(200).json({ received: true, ignored: true });
