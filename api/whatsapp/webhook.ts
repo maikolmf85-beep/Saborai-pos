@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { extractCoexistenceEvents, type CoexistenceEvent } from './coexistence.js';
+import { normalizeCoexistenceEvents, type NormalizedCoexistenceMessage } from './coexistenceInbox.js';
 
 // Vercel debe entregar el stream intacto para que la firma se valide sobre
 // exactamente los bytes recibidos, antes de interpretar el JSON.
@@ -29,28 +31,51 @@ type WebhookLogEvent =
   | 'reply_generated'
   | 'reply_sent'
   | 'reply_generation_failed'
-  | 'reply_send_failed';
+  | 'reply_send_failed'
+  | 'coexistence_events_processed'
+  | 'coexistence_inbox_processed'
+  | 'coexistence_persist_failed';
 
-function logWebhook(event: WebhookLogEvent, level: 'info' | 'error' = 'info', statusCode?: number): void {
-  const entry: { component: 'whatsapp-webhook'; event: WebhookLogEvent; statusCode?: number } = {
+type WebhookMetrics = {
+  normalized?: number;
+  imported?: number;
+  skipped?: number;
+  duplicates?: number;
+  contactStatePendingSchema?: number;
+};
+
+function logWebhook(
+  event: WebhookLogEvent,
+  level: 'info' | 'error' = 'info',
+  statusCode?: number,
+  metrics?: WebhookMetrics
+): void {
+  const entry: { component: 'whatsapp-webhook'; event: WebhookLogEvent; statusCode?: number; metrics?: WebhookMetrics } = {
     component: 'whatsapp-webhook',
     event
   };
   if (statusCode !== undefined) entry.statusCode = statusCode;
+  if (metrics) entry.metrics = metrics;
   const line = JSON.stringify(entry);
   if (level === 'error') console.error(line);
   else console.info(line);
 }
 
 function getTextMessage(body: any): { from: string; text: string; messageId: string } | null {
-  const change = body?.entry?.[0]?.changes?.[0]?.value;
-  const message = change?.messages?.[0];
-  if (!message || message.type !== 'text' || !message.from || !message.text?.body) return null;
-  return {
-    from: String(message.from),
-    text: String(message.text.body).trim(),
-    messageId: String(message.id || '')
-  };
+  const entries = Array.isArray(body?.entry) ? body.entry : [];
+  for (const entry of entries) {
+    const changes = Array.isArray(entry?.changes) ? entry.changes : [];
+    for (const change of changes) {
+      const message = change?.value?.messages?.[0];
+      if (!message || message.type !== 'text' || !message.from || !message.text?.body) continue;
+      return {
+        from: String(message.from),
+        text: String(message.text.body).trim(),
+        messageId: String(message.id || '')
+      };
+    }
+  }
+  return null;
 }
 
 async function generateSupportReply(userText: string): Promise<string> {
@@ -141,75 +166,137 @@ function hasValidMetaSignature(req: VercelRequest, rawBody: Buffer): boolean {
   return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === 'GET') {
-    const mode = String(req.query['hub.mode'] || '');
-    const token = String(req.query['hub.verify_token'] || '');
-    const challenge = String(req.query['hub.challenge'] || '');
-    if (mode === 'subscribe' && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
-      logWebhook('verification_accepted');
-      return res.status(200).send(challenge);
-    }
-    logWebhook('verification_rejected', 'error');
-    return res.status(403).send('Verificación de webhook rechazada.');
-  }
-
-  if (req.method !== 'POST') {
-    logWebhook('method_rejected');
-    return res.status(405).json({ error: 'Método no permitido.' });
-  }
-
-  logWebhook('post_received');
-  let rawBody: Buffer;
-  try {
-    rawBody = await readRawBody(req);
-  } catch {
-    logWebhook('body_read_failed', 'error');
-    return res.status(400).json({ error: 'No se pudo leer la solicitud.' });
-  }
-
-  if (!hasValidMetaSignature(req, rawBody)) {
-    logWebhook('signature_rejected', 'error');
-    return res.status(401).json({ error: 'Firma de Meta inválida.' });
-  }
-
-  let body: unknown;
-  try {
-    body = JSON.parse(rawBody.toString('utf8'));
-  } catch {
-    logWebhook('payload_rejected', 'error');
-    return res.status(400).json({ error: 'El JSON de la solicitud no es válido.' });
-  }
-
-  // Meta espera una respuesta rápida; el procesamiento continúa antes de cerrar
-  // la solicitud para conservar compatibilidad con funciones serverless sencillas.
-  const message = getTextMessage(body);
-  if (!message) {
-    logWebhook('event_ignored');
-    return res.status(200).json({ received: true, ignored: true });
-  }
-  if (message.messageId && processedMessageIds.has(message.messageId)) {
-    logWebhook('duplicate_ignored');
-    return res.status(200).json({ received: true, duplicate: true });
-  }
-  if (message.messageId) processedMessageIds.add(message.messageId);
-
-  logWebhook('message_accepted');
-  let stage: 'generation' | 'send' = 'generation';
-  try {
-    const reply = await generateSupportReply(message.text);
-    logWebhook('reply_generated');
-    stage = 'send';
-    await sendWhatsAppText(message.from, reply);
-    logWebhook('reply_sent');
-    return res.status(200).json({ received: true, replied: true });
-  } catch (error: unknown) {
-    if (stage === 'generation') {
-      logWebhook('reply_generation_failed', 'error');
-    } else {
-      const statusCode = error instanceof WhatsAppGraphApiError ? error.statusCode : undefined;
-      logWebhook('reply_send_failed', 'error', statusCode);
-    }
-    return res.status(200).json({ received: true, replied: false });
-  }
+async function persistCoexistenceEventsInDatabase(events: CoexistenceEvent[]): Promise<void> {
+  const [{ supabaseAdmin }, { persistCoexistenceEvents }] = await Promise.all([
+    import('../_utils/supabase.js'),
+    import('./coexistence.js')
+  ]);
+  await persistCoexistenceEvents(supabaseAdmin, events, {
+    configuredPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim(),
+    configuredTenantId: process.env.WHATSAPP_TENANT_ID?.trim()
+  });
 }
+
+async function persistNormalizedCoexistenceMessagesInDatabase(messages: NormalizedCoexistenceMessage[]): Promise<{ imported: number; skipped_unverified_tenant: number }> {
+  if (messages.length === 0) return { imported: 0, skipped_unverified_tenant: 0 };
+  const [{ supabaseAdmin }, { persistNormalizedCoexistenceMessages }] = await Promise.all([
+    import('../_utils/supabase.js'),
+    import('./coexistenceInbox.js')
+  ]);
+  return persistNormalizedCoexistenceMessages(supabaseAdmin, messages);
+}
+
+export interface WebhookDependencies {
+  persistCoexistenceEvents?: (events: CoexistenceEvent[]) => Promise<void>;
+  persistNormalizedCoexistenceMessages?: (messages: NormalizedCoexistenceMessage[]) => Promise<{ imported: number; skipped_unverified_tenant: number }>;
+}
+
+export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
+  return async function handler(req: VercelRequest, res: VercelResponse) {
+    if (req.method === 'GET') {
+      const mode = String(req.query['hub.mode'] || '');
+      const token = String(req.query['hub.verify_token'] || '');
+      const challenge = String(req.query['hub.challenge'] || '');
+      if (mode === 'subscribe' && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+        logWebhook('verification_accepted');
+        return res.status(200).send(challenge);
+      }
+      logWebhook('verification_rejected', 'error');
+      return res.status(403).send('Verificación de webhook rechazada.');
+    }
+
+    if (req.method !== 'POST') {
+      logWebhook('method_rejected');
+      return res.status(405).json({ error: 'Método no permitido.' });
+    }
+
+    logWebhook('post_received');
+    let rawBody: Buffer;
+    try {
+      rawBody = await readRawBody(req);
+    } catch {
+      logWebhook('body_read_failed', 'error');
+      return res.status(400).json({ error: 'No se pudo leer la solicitud.' });
+    }
+
+    if (!hasValidMetaSignature(req, rawBody)) {
+      logWebhook('signature_rejected', 'error');
+      return res.status(401).json({ error: 'Firma de Meta inválida.' });
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody.toString('utf8'));
+    } catch {
+      logWebhook('payload_rejected', 'error');
+      return res.status(400).json({ error: 'El JSON de la solicitud no es válido.' });
+    }
+
+    const coexistence = extractCoexistenceEvents(body);
+    if (coexistence.invalid) {
+      logWebhook('payload_rejected', 'error');
+      return res.status(400).json({ error: 'El evento de coexistencia no tiene el formato esperado.' });
+    }
+
+    if (coexistence.events.length > 0) {
+      try {
+        const normalized = normalizeCoexistenceEvents(coexistence.events);
+        const persist = dependencies.persistCoexistenceEvents || persistCoexistenceEventsInDatabase;
+        await persist(coexistence.events);
+        logWebhook('coexistence_events_processed');
+        const persistInbox = dependencies.persistNormalizedCoexistenceMessages || persistNormalizedCoexistenceMessagesInDatabase;
+        const inboxResult = await persistInbox(normalized.messages);
+        const skipped = Object.values(normalized.skipped_by_reason).reduce((total, count) => total + count, 0)
+          + inboxResult.skipped_unverified_tenant;
+        logWebhook('coexistence_inbox_processed', 'info', undefined, {
+          normalized: normalized.messages.length,
+          imported: inboxResult.imported,
+          skipped,
+          duplicates: normalized.duplicate_message_ids,
+          contactStatePendingSchema: normalized.contact_state_items
+        });
+      } catch {
+        // No imprimir errores del proveedor: podrían contener detalles del payload.
+        logWebhook('coexistence_persist_failed', 'error');
+        return res.status(500).json({ error: 'No se pudieron registrar los eventos de coexistencia.' });
+      }
+    }
+
+    // Meta espera una respuesta rápida; el procesamiento termina antes de cerrar
+    // la solicitud para que un fallo de persistencia provoque un reintento.
+    const message = getTextMessage(body);
+    if (!message) {
+      if (coexistence.events.length > 0) {
+        return res.status(200).json({ received: true, coexistenceEvents: coexistence.events.length });
+      }
+      logWebhook('event_ignored');
+      return res.status(200).json({ received: true, ignored: true });
+    }
+    if (message.messageId && processedMessageIds.has(message.messageId)) {
+      logWebhook('duplicate_ignored');
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+    if (message.messageId) processedMessageIds.add(message.messageId);
+
+    logWebhook('message_accepted');
+    let stage: 'generation' | 'send' = 'generation';
+    try {
+      const reply = await generateSupportReply(message.text);
+      logWebhook('reply_generated');
+      stage = 'send';
+      await sendWhatsAppText(message.from, reply);
+      logWebhook('reply_sent');
+      return res.status(200).json({ received: true, replied: true });
+    } catch (error: unknown) {
+      if (stage === 'generation') {
+        logWebhook('reply_generation_failed', 'error');
+      } else {
+        const statusCode = error instanceof WhatsAppGraphApiError ? error.statusCode : undefined;
+        logWebhook('reply_send_failed', 'error', statusCode);
+      }
+      return res.status(200).json({ received: true, replied: false });
+    }
+  };
+}
+
+export default createWebhookHandler();
