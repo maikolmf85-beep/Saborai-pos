@@ -187,6 +187,63 @@ test('clasifica y conserva solo el texto explicativo redactado de los campos Gra
   assert.equal(logLines[0].includes(providerText.error_user_msg), false);
 });
 
+test('detecta un campo requerido dentro de texto adicional y conserva el payload de envío sin cambios', async () => {
+  const providerText = '(#100) The field messaging_product is required but was not supplied for request OPAQUE-VALUE-9281.';
+  const { response, graphRequest, logLines } = await simulateGraphError({ message: providerText }, 'wamid.telemetry-required-field');
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.payload, { received: true, replied: false });
+  assert.deepEqual(graphRequest, {
+    url: 'https://graph.facebook.com/v26.0/test-phone-number-id/messages',
+    method: 'POST',
+    body: {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: TEST_RECIPIENT,
+      type: 'text',
+      text: { preview_url: false, body: TEST_REPLY }
+    }
+  });
+  assert.equal(logLines.length, 1);
+  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
+    code: 100,
+    message: 'The parameter messaging_product is required.',
+    messageClass: 'missing_required_parameter'
+  });
+  assert.equal(logLines[0].includes(providerText), false);
+  assert.equal(logLines[0].includes('OPAQUE-VALUE-9281'), false);
+  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
+  assert.equal(logLines[0].includes(TEST_REPLY), false);
+  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
+  assert.equal(logLines[0].includes('INBOUND-TEST-NO-PII'), false);
+});
+
+test('redacta el nombre de campo requerido no documentado y lo deja unclassified', async () => {
+  const providerText = 'The parameter private_unlisted_9281 is required but not available for request OPAQUE-VALUE-1937.';
+  const { graphRequest, logLines } = await simulateGraphError({ message: providerText }, 'wamid.telemetry-unknown-required-field');
+
+  assert.deepEqual(graphRequest.body, {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: TEST_RECIPIENT,
+    type: 'text',
+    text: { preview_url: false, body: TEST_REPLY }
+  });
+  assert.equal(logLines.length, 1);
+  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
+    code: 100,
+    message: 'The parameter [parameter] is required.',
+    messageClass: 'unclassified'
+  });
+  assert.equal(logLines[0].includes(providerText), false);
+  assert.equal(logLines[0].includes('private_unlisted_9281'), false);
+  assert.equal(logLines[0].includes('OPAQUE-VALUE-1937'), false);
+  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
+  assert.equal(logLines[0].includes(TEST_REPLY), false);
+  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
+  assert.equal(logLines[0].includes('INBOUND-TEST-NO-PII'), false);
+});
+
 test('clasifica como unclassified los textos no allowlisted y no registra contenido original', async () => {
   const untrustedFields = {
     message: 'Unexpected parameter value containing PRIVATE-DETAIL-912.',

@@ -172,7 +172,6 @@ const GRAPH_API_ERROR_TEXT_ALLOWLIST = new Map<string, GraphApiErrorClass>([
 ]);
 
 const GRAPH_API_ERROR_TEXT_PATTERNS: Array<[RegExp, GraphApiErrorClass]> = [
-  [/^(?:\(#\d+\)\s*)?the parameter [a-z][a-z0-9_]* is required\.?$/, 'missing_required_parameter'],
   [/^(?:\(#\d+\)\s*)?invalid parameter(?: value)?\.?$/, 'invalid_parameter_value'],
   [/^(?:\(#\d+\)\s*)?unsupported post request\.?$/, 'unsupported_request'],
   [/^(?:unsupported post request\.\s*)?object with id ['"][a-z0-9._:+-]{1,128}['"] does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/, 'object_unavailable_or_unsupported']
@@ -188,16 +187,23 @@ const GRAPH_API_SAFE_EXPLANATION_WORDS = new Set([
   'with'
 ]);
 
+// Keep only names present in Meta's official WhatsApp Cloud API Messages reference:
+// https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages/
 const GRAPH_API_PARAMETER_NAMES = new Set([
-  'action', 'address', 'audio', 'biz_opaque_callback_data', 'body', 'button', 'buttons',
-  'caption', 'code', 'components', 'context', 'currency', 'description', 'document',
+  'action', 'address', 'audio', 'body', 'button', 'buttons',
+  'caption', 'code', 'components', 'context', 'description', 'document',
   'flow_action', 'flow_action_payload', 'flow_id', 'flow_message_version', 'flow_token',
   'footer', 'header', 'image', 'interactive', 'language', 'latitude', 'link', 'location',
-  'longitude', 'media', 'messaging_product', 'name', 'parameters', 'phone_number_id',
+  'longitude', 'media', 'messaging_product', 'name', 'parameters',
   'preview_url', 'product_retailer_id', 'recipient_type', 'rows', 'sections', 'status',
-  'sticker', 'sub_type', 'template', 'text', 'title', 'to', 'tracking_data', 'type',
+  'sticker', 'template', 'text', 'title', 'to', 'type',
   'video'
 ]);
+
+function getRequiredGraphApiParameter(value: string): string | undefined {
+  const match = value.replace(/^\(#\d+\)\s*/i, '').match(/\b(?:the\s+)?(?:parameter|param|field)\s+["']?([a-z][a-z0-9_]{0,63})["']?\s+is\s+required\b/i);
+  return match?.[1].toLowerCase();
+}
 
 const GRAPH_API_SAFE_PUNCTUATION = new Set([',', '.', ';', ':', '!', '?', '(', ')', '{', '}', '[', ']', '/', '+', '-']);
 
@@ -213,10 +219,10 @@ function redactGraphApiErrorText(value: unknown): string | undefined {
     return 'Object with ID [redacted] does not exist, cannot be loaded due to missing permissions, or does not support this operation.';
   }
 
-  // Preserve only a recognized parameter name; any supplied value is discarded.
-  const requiredParameter = normalized.replace(/^\(#\d+\)\s*/i, '').match(/^the parameter ([a-z][a-z0-9_]{0,63}) is required\.?$/i);
+  // Preserve only an officially allowlisted field name; discard all surrounding provider text.
+  const requiredParameter = getRequiredGraphApiParameter(normalized);
   if (requiredParameter) {
-    const parameter = requiredParameter[1].toLowerCase();
+    const parameter = requiredParameter;
     return `The parameter ${GRAPH_API_PARAMETER_NAMES.has(parameter) ? parameter : '[parameter]'} is required.`;
   }
   const invalidParameterValue = normalized.replace(/^\(#\d+\)\s*/i, '').match(/^(?:the )?value\s+(['"]).*?\1\s+for parameter ([a-z][a-z0-9_]{0,63}) is invalid\.?$/i);
@@ -256,6 +262,10 @@ function classifyGraphApiErrorText(value: unknown): GraphApiErrorClass | undefin
   if (!normalized) return undefined;
   const exactClass = GRAPH_API_ERROR_TEXT_ALLOWLIST.get(normalized);
   if (exactClass) return exactClass;
+  const requiredParameter = getRequiredGraphApiParameter(normalized);
+  if (requiredParameter) {
+    return GRAPH_API_PARAMETER_NAMES.has(requiredParameter) ? 'missing_required_parameter' : 'unclassified';
+  }
   for (const [pattern, errorClass] of GRAPH_API_ERROR_TEXT_PATTERNS) {
     if (pattern.test(normalized)) return errorClass;
   }
