@@ -380,7 +380,7 @@ test('registra solo códigos de error de Graph API y no el cuerpo de respuesta n
 
     assert.equal(response.statusCode, 500);
     const serializedLogs = logs.join('\n');
-    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false\}/);
+    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false,"detailsClass":"unclassified"\}/);
     for (const privateValue of [
       'PRIVATE_TEST_TOKEN',
       'PRIVATE_TEST_PHONE_NUMBER_ID',

@@ -47,10 +47,18 @@ type WebhookMetrics = {
   contactStatePendingSchema?: number;
 };
 
+type GraphApiErrorDetailsClass =
+  | 'unsupported_parameter'
+  | 'invalid_parameter_value'
+  | 'missing_required_parameter'
+  | 'template_message_required'
+  | 'unclassified';
+
 type SafeGraphApiError = {
   code?: number;
   subcode?: number;
   isTransient?: boolean;
+  detailsClass?: GraphApiErrorDetailsClass;
 };
 
 function logWebhook(
@@ -143,6 +151,21 @@ class WhatsAppGraphApiError extends Error {
   }
 }
 
+const GRAPH_API_ERROR_DETAILS_ALLOWLIST = new Map<string, GraphApiErrorDetailsClass>([
+  ['the request included one or more unsupported or misspelled parameters.', 'unsupported_parameter'],
+  ['one or more parameter values are invalid.', 'invalid_parameter_value'],
+  ['the request is missing a required parameter.', 'missing_required_parameter'],
+  ['message must be a template message.', 'template_message_required']
+]);
+
+function classifyGraphApiErrorDetails(details: unknown): GraphApiErrorDetailsClass | undefined {
+  if (typeof details !== 'string') return undefined;
+  if (details.length > 256) return 'unclassified';
+  const normalized = details.trim().replace(/\s+/g, ' ').toLowerCase();
+  if (!normalized) return undefined;
+  return GRAPH_API_ERROR_DETAILS_ALLOWLIST.get(normalized) || 'unclassified';
+}
+
 function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
   const error = (payload as { error?: unknown }).error;
@@ -153,6 +176,11 @@ function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
   if (typeof fields.code === 'number' && Number.isSafeInteger(fields.code)) safeDetails.code = fields.code;
   if (typeof fields.error_subcode === 'number' && Number.isSafeInteger(fields.error_subcode)) safeDetails.subcode = fields.error_subcode;
   if (typeof fields.is_transient === 'boolean') safeDetails.isTransient = fields.is_transient;
+  const errorData = fields.error_data;
+  if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {
+    const detailsClass = classifyGraphApiErrorDetails((errorData as Record<string, unknown>).details);
+    if (detailsClass) safeDetails.detailsClass = detailsClass;
+  }
   return safeDetails;
 }
 
