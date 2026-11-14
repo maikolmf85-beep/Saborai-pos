@@ -10,6 +10,7 @@ import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
 import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
+import { OfflineOrderCreateError, toSafeOfflineOrderCreateFailure } from '../_utils/offlineSyncAttempt.js';
 const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ACCOUNT', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
@@ -157,7 +158,7 @@ async function syncTable(tenantId: string, userId: string, employeeId: string | 
         })
         .select('id')
         .single();
-      if (orderResult.error || !orderResult.data) throw new Error('No se pudo guardar la orden en la nube.');
+      if (orderResult.error || !orderResult.data) throw new OfflineOrderCreateError();
       orderId = orderResult.data.id;
 
     }
@@ -846,6 +847,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
+    const safeOrderFailure = toSafeOfflineOrderCreateFailure(error);
+    if (safeOrderFailure) {
+      console.error('[Offline Sync] Order creation failed:', {
+        code: safeOrderFailure.code,
+        attemptRef: safeOrderFailure.attemptRef
+      });
+      return res.status(409).json(safeOrderFailure);
+    }
     console.error('[Offline Sync] Error:', error);
     return res.status(409).json({
       error: error?.message || 'No se pudo aplicar la operación offline.',
