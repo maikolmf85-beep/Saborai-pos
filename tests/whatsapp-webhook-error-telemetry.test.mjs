@@ -74,7 +74,7 @@ function makeResponse() {
   };
 }
 
-async function simulateGraphError(details, messageId = 'wamid.telemetry-test') {
+async function simulateGraphError(errorFields = {}, messageId = 'wamid.telemetry-test') {
   let graphRequest;
   const logLines = [];
   const originalConsoleError = console.error;
@@ -94,7 +94,7 @@ async function simulateGraphError(details, messageId = 'wamid.telemetry-test') {
           json: async () => ({
             error: {
               code: 100,
-              ...(details === undefined ? {} : { error_data: { details } })
+              ...errorFields
             }
           })
         };
@@ -110,7 +110,7 @@ async function simulateGraphError(details, messageId = 'wamid.telemetry-test') {
 
 test('clasifica un detalle permitido sin registrar detalle libre ni alterar el formato oficial de envío', async () => {
   const allowedDetails = 'The request included one or more unsupported or misspelled parameters.';
-  const { response, graphRequest, logLines } = await simulateGraphError(allowedDetails);
+  const { response, graphRequest, logLines } = await simulateGraphError({ error_data: { details: allowedDetails } });
 
   assert.equal(response.statusCode, 500);
   assert.deepEqual(response.payload, { received: true, replied: false });
@@ -137,7 +137,7 @@ test('clasifica un detalle permitido sin registrar detalle libre ni alterar el f
 
 test('mantiene como unclassified cualquier detalle no permitido y no registra su contenido', async () => {
   const untrustedDetails = 'recipient 0000000000; message text NEVER-LOG-THIS-DETAIL';
-  const { logLines } = await simulateGraphError(untrustedDetails, 'wamid.telemetry-unknown');
+  const { logLines } = await simulateGraphError({ error_data: { details: untrustedDetails } }, 'wamid.telemetry-unknown');
 
   assert.equal(logLines.length, 1);
   const logged = JSON.parse(logLines[0]);
@@ -150,8 +150,49 @@ test('mantiene como unclassified cualquier detalle no permitido y no registra su
 });
 
 test('no agrega clasificación cuando Meta no devuelve error_data.details', async () => {
-  const { logLines } = await simulateGraphError(undefined, 'wamid.telemetry-no-details');
+  const { logLines } = await simulateGraphError({}, 'wamid.telemetry-no-details');
 
   assert.equal(logLines.length, 1);
   assert.deepEqual(JSON.parse(logLines[0]).providerError, { code: 100 });
+});
+
+test('clasifica message, user title y user message en categorías fijas sin guardar texto libre', async () => {
+  const providerText = {
+    message: '(#100) The parameter messaging_product is required.',
+    error_user_title: 'Unsupported post request',
+    error_user_msg: "Object with ID 'private-object-84721' does not exist, cannot be loaded due to missing permissions, or does not support this operation."
+  };
+  const { logLines } = await simulateGraphError(providerText, 'wamid.telemetry-allowlisted-fields');
+
+  assert.equal(logLines.length, 1);
+  const logged = JSON.parse(logLines[0]);
+  assert.deepEqual(logged.providerError, {
+    code: 100,
+    messageClass: 'missing_required_parameter',
+    userTitleClass: 'unsupported_request',
+    userMessageClass: 'object_unavailable_or_unsupported'
+  });
+  for (const value of Object.values(providerText)) assert.equal(logLines[0].includes(value), false);
+  assert.equal(logLines[0].includes('private-object-84721'), false);
+});
+
+test('clasifica como unclassified los textos no allowlisted y no registra contenido original', async () => {
+  const untrustedFields = {
+    message: 'Unexpected parameter value containing PRIVATE-DETAIL-912.',
+    error_user_title: 'Something failed for private-object-84721',
+    error_user_msg: 'Recipient +50672061146: PRIVATE-DETAIL-912'
+  };
+  const { logLines } = await simulateGraphError(untrustedFields, 'wamid.telemetry-unclassified-fields');
+
+  assert.equal(logLines.length, 1);
+  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
+    code: 100,
+    messageClass: 'unclassified',
+    userTitleClass: 'unclassified',
+    userMessageClass: 'unclassified'
+  });
+  for (const value of Object.values(untrustedFields)) assert.equal(logLines[0].includes(value), false);
+  assert.equal(logLines[0].includes('PRIVATE-DETAIL-912'), false);
+  assert.equal(logLines[0].includes('private-object-84721'), false);
+  assert.equal(logLines[0].includes('+50672061146'), false);
 });

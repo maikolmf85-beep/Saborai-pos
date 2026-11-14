@@ -47,18 +47,23 @@ type WebhookMetrics = {
   contactStatePendingSchema?: number;
 };
 
-type GraphApiErrorDetailsClass =
+type GraphApiErrorClass =
   | 'unsupported_parameter'
   | 'invalid_parameter_value'
   | 'missing_required_parameter'
   | 'template_message_required'
+  | 'unsupported_request'
+  | 'object_unavailable_or_unsupported'
   | 'unclassified';
 
 type SafeGraphApiError = {
   code?: number;
   subcode?: number;
   isTransient?: boolean;
-  detailsClass?: GraphApiErrorDetailsClass;
+  detailsClass?: GraphApiErrorClass;
+  messageClass?: GraphApiErrorClass;
+  userTitleClass?: GraphApiErrorClass;
+  userMessageClass?: GraphApiErrorClass;
 };
 
 function logWebhook(
@@ -151,19 +156,35 @@ class WhatsAppGraphApiError extends Error {
   }
 }
 
-const GRAPH_API_ERROR_DETAILS_ALLOWLIST = new Map<string, GraphApiErrorDetailsClass>([
+const GRAPH_API_ERROR_TEXT_ALLOWLIST = new Map<string, GraphApiErrorClass>([
   ['the request included one or more unsupported or misspelled parameters.', 'unsupported_parameter'],
   ['one or more parameter values are invalid.', 'invalid_parameter_value'],
   ['the request is missing a required parameter.', 'missing_required_parameter'],
-  ['message must be a template message.', 'template_message_required']
+  ['message must be a template message.', 'template_message_required'],
+  ['unsupported post request', 'unsupported_request'],
+  ['unsupported post request.', 'unsupported_request'],
+  ['invalid parameter', 'invalid_parameter_value'],
+  ['invalid parameter.', 'invalid_parameter_value']
 ]);
 
-function classifyGraphApiErrorDetails(details: unknown): GraphApiErrorDetailsClass | undefined {
-  if (typeof details !== 'string') return undefined;
-  if (details.length > 256) return 'unclassified';
-  const normalized = details.trim().replace(/\s+/g, ' ').toLowerCase();
+const GRAPH_API_ERROR_TEXT_PATTERNS: Array<[RegExp, GraphApiErrorClass]> = [
+  [/^(?:\(#\d+\)\s*)?the parameter [a-z][a-z0-9_]* is required\.?$/, 'missing_required_parameter'],
+  [/^(?:\(#\d+\)\s*)?invalid parameter(?: value)?\.?$/, 'invalid_parameter_value'],
+  [/^(?:\(#\d+\)\s*)?unsupported post request\.?$/, 'unsupported_request'],
+  [/^(?:unsupported post request\.\s*)?object with id ['"][a-z0-9._:+-]{1,128}['"] does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/, 'object_unavailable_or_unsupported']
+];
+
+function classifyGraphApiErrorText(value: unknown): GraphApiErrorClass | undefined {
+  if (typeof value !== 'string') return undefined;
+  if (value.length > 512) return 'unclassified';
+  const normalized = value.trim().replace(/\s+/g, ' ').toLowerCase();
   if (!normalized) return undefined;
-  return GRAPH_API_ERROR_DETAILS_ALLOWLIST.get(normalized) || 'unclassified';
+  const exactClass = GRAPH_API_ERROR_TEXT_ALLOWLIST.get(normalized);
+  if (exactClass) return exactClass;
+  for (const [pattern, errorClass] of GRAPH_API_ERROR_TEXT_PATTERNS) {
+    if (pattern.test(normalized)) return errorClass;
+  }
+  return 'unclassified';
 }
 
 function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
@@ -176,9 +197,15 @@ function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
   if (typeof fields.code === 'number' && Number.isSafeInteger(fields.code)) safeDetails.code = fields.code;
   if (typeof fields.error_subcode === 'number' && Number.isSafeInteger(fields.error_subcode)) safeDetails.subcode = fields.error_subcode;
   if (typeof fields.is_transient === 'boolean') safeDetails.isTransient = fields.is_transient;
+  const messageClass = classifyGraphApiErrorText(fields.message);
+  const userTitleClass = classifyGraphApiErrorText(fields.error_user_title);
+  const userMessageClass = classifyGraphApiErrorText(fields.error_user_msg);
+  if (messageClass) safeDetails.messageClass = messageClass;
+  if (userTitleClass) safeDetails.userTitleClass = userTitleClass;
+  if (userMessageClass) safeDetails.userMessageClass = userMessageClass;
   const errorData = fields.error_data;
   if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {
-    const detailsClass = classifyGraphApiErrorDetails((errorData as Record<string, unknown>).details);
+    const detailsClass = classifyGraphApiErrorText((errorData as Record<string, unknown>).details);
     if (detailsClass) safeDetails.detailsClass = detailsClass;
   }
   return safeDetails;
