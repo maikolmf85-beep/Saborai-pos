@@ -5,7 +5,7 @@ import { after, beforeEach, test } from 'node:test';
 import {
   normalizeCoexistenceEvents,
   persistNormalizedCoexistenceMessages
-} from '../api/whatsapp/coexistenceInbox.ts';
+} from '../lib/whatsapp/coexistenceInbox.ts';
 
 const TENANT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const TENANT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

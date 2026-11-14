@@ -2,8 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { extractCoexistenceEvents, type CoexistenceEvent } from './coexistence.js';
-import { normalizeCoexistenceEvents, type NormalizedCoexistenceMessage } from './coexistenceInbox.js';
+import { extractCoexistenceEvents, type CoexistenceEvent } from '../../lib/whatsapp/coexistence.js';
+import { normalizeCoexistenceEvents, type NormalizedCoexistenceMessage } from '../../lib/whatsapp/coexistenceInbox.js';
 
 // Vercel debe entregar el stream intacto para que la firma se valide sobre
 // exactamente los bytes recibidos, antes de interpretar el JSON.
@@ -169,7 +169,7 @@ function hasValidMetaSignature(req: VercelRequest, rawBody: Buffer): boolean {
 async function persistCoexistenceEventsInDatabase(events: CoexistenceEvent[]): Promise<void> {
   const [{ supabaseAdmin }, { persistCoexistenceEvents }] = await Promise.all([
     import('../_utils/supabase.js'),
-    import('./coexistence.js')
+    import('../../lib/whatsapp/coexistence.js')
   ]);
   await persistCoexistenceEvents(supabaseAdmin, events, {
     configuredPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID?.trim(),
@@ -181,7 +181,7 @@ async function persistNormalizedCoexistenceMessagesInDatabase(messages: Normaliz
   if (messages.length === 0) return { imported: 0, skipped_unverified_tenant: 0 };
   const [{ supabaseAdmin }, { persistNormalizedCoexistenceMessages }] = await Promise.all([
     import('../_utils/supabase.js'),
-    import('./coexistenceInbox.js')
+    import('../../lib/whatsapp/coexistenceInbox.js')
   ]);
   return persistNormalizedCoexistenceMessages(supabaseAdmin, messages);
 }

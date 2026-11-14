@@ -6,7 +6,7 @@ import {
   extractCoexistenceEvents,
   fingerprintCoexistencePayload,
   persistCoexistenceEvents
-} from '../api/whatsapp/coexistence.ts';
+} from '../lib/whatsapp/coexistence.ts';
 
 const TEST_APP_SECRET = 'coexistence-test-secret-only';
 const previousAppSecret = process.env.META_APP_SECRET;
