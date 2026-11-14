@@ -343,3 +343,60 @@ test('permite reintentar el mismo mensaje si falla el envío de la respuesta', a
   assert.equal(generationCalls, 2);
   assert.equal(sendCalls, 2);
 });
+
+test('registra solo códigos de error de Graph API y no el cuerpo de respuesta ni datos del mensaje', async () => {
+  const previousToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  process.env.WHATSAPP_ACCESS_TOKEN = 'PRIVATE_TEST_TOKEN';
+  process.env.WHATSAPP_PHONE_NUMBER_ID = 'PRIVATE_TEST_PHONE_NUMBER_ID';
+
+  const logs = [];
+  const originalInfo = console.info;
+  const originalError = console.error;
+  console.info = (line) => logs.push(String(line));
+  console.error = (line) => logs.push(String(line));
+
+  try {
+    const handler = createWebhookHandler({
+      async generateSupportReply() {
+        return 'PRIVATE_REPLY_BODY';
+      },
+      async graphApiFetch() {
+        return new Response(JSON.stringify({
+          error: {
+            message: 'PRIVATE_PROVIDER_DETAIL',
+            type: 'OAuthException',
+            code: 130429,
+            error_subcode: 909090,
+            is_transient: false,
+            error_data: { details: 'PRIVATE_PROVIDER_BODY_DETAIL' }
+          }
+        }), { status: 400 });
+      }
+    });
+    const rawBody = Buffer.from(JSON.stringify(makeTextMessageBody('test-graph-error', 'PRIVATE_USER_MESSAGE')));
+    const response = makeResponse();
+    await handler(makeRequest(rawBody, sign(rawBody)), response);
+
+    assert.equal(response.statusCode, 500);
+    const serializedLogs = logs.join('\n');
+    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false\}/);
+    for (const privateValue of [
+      'PRIVATE_TEST_TOKEN',
+      'PRIVATE_TEST_PHONE_NUMBER_ID',
+      'PRIVATE_REPLY_BODY',
+      'PRIVATE_USER_MESSAGE',
+      'PRIVATE_PROVIDER_DETAIL',
+      'PRIVATE_PROVIDER_BODY_DETAIL'
+    ]) {
+      assert.equal(serializedLogs.includes(privateValue), false);
+    }
+  } finally {
+    console.info = originalInfo;
+    console.error = originalError;
+    if (previousToken === undefined) delete process.env.WHATSAPP_ACCESS_TOKEN;
+    else process.env.WHATSAPP_ACCESS_TOKEN = previousToken;
+    if (previousPhoneNumberId === undefined) delete process.env.WHATSAPP_PHONE_NUMBER_ID;
+    else process.env.WHATSAPP_PHONE_NUMBER_ID = previousPhoneNumberId;
+  }
+});

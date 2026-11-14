@@ -47,18 +47,26 @@ type WebhookMetrics = {
   contactStatePendingSchema?: number;
 };
 
+type SafeGraphApiError = {
+  code?: number;
+  subcode?: number;
+  isTransient?: boolean;
+};
+
 function logWebhook(
   event: WebhookLogEvent,
   level: 'info' | 'error' = 'info',
   statusCode?: number,
-  metrics?: WebhookMetrics
+  metrics?: WebhookMetrics,
+  providerError?: SafeGraphApiError
 ): void {
-  const entry: { component: 'whatsapp-webhook'; event: WebhookLogEvent; statusCode?: number; metrics?: WebhookMetrics } = {
+  const entry: { component: 'whatsapp-webhook'; event: WebhookLogEvent; statusCode?: number; metrics?: WebhookMetrics; providerError?: SafeGraphApiError } = {
     component: 'whatsapp-webhook',
     event
   };
   if (statusCode !== undefined) entry.statusCode = statusCode;
   if (metrics) entry.metrics = metrics;
+  if (providerError) entry.providerError = providerError;
   const line = JSON.stringify(entry);
   if (level === 'error') console.error(line);
   else console.info(line);
@@ -125,22 +133,37 @@ ${userText}`;
 
 class WhatsAppGraphApiError extends Error {
   readonly statusCode: number;
+  readonly safeDetails: SafeGraphApiError;
 
-  constructor(statusCode: number) {
+  constructor(statusCode: number, safeDetails: SafeGraphApiError) {
     super('WhatsApp Graph API request failed.');
     this.statusCode = statusCode;
+    this.safeDetails = safeDetails;
     this.name = 'WhatsAppGraphApiError';
   }
 }
 
-async function sendWhatsAppText(to: string, text: string): Promise<void> {
+function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+
+  const fields = error as Record<string, unknown>;
+  const safeDetails: SafeGraphApiError = {};
+  if (typeof fields.code === 'number' && Number.isSafeInteger(fields.code)) safeDetails.code = fields.code;
+  if (typeof fields.error_subcode === 'number' && Number.isSafeInteger(fields.error_subcode)) safeDetails.subcode = fields.error_subcode;
+  if (typeof fields.is_transient === 'boolean') safeDetails.isTransient = fields.is_transient;
+  return safeDetails;
+}
+
+async function sendWhatsAppText(to: string, text: string, graphApiFetch: typeof fetch = fetch): Promise<void> {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
   if (!accessToken || !phoneNumberId) {
     throw new Error('Faltan WHATSAPP_ACCESS_TOKEN o WHATSAPP_PHONE_NUMBER_ID.');
   }
 
-  const response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
+  const response = await graphApiFetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -156,7 +179,15 @@ async function sendWhatsAppText(to: string, text: string): Promise<void> {
     signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS)
   });
 
-  if (!response.ok) throw new WhatsAppGraphApiError(response.status);
+  if (!response.ok) {
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = undefined;
+    }
+    throw new WhatsAppGraphApiError(response.status, extractSafeGraphApiError(payload));
+  }
 }
 
 async function readRawBody(req: VercelRequest): Promise<Buffer> {
@@ -205,6 +236,7 @@ export interface WebhookDependencies {
   persistNormalizedCoexistenceMessages?: (messages: NormalizedCoexistenceMessage[]) => Promise<{ imported: number; skipped_unverified_tenant: number }>;
   generateSupportReply?: (userText: string) => Promise<string>;
   sendWhatsAppText?: (to: string, text: string) => Promise<void>;
+  graphApiFetch?: typeof fetch;
 }
 
 export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
@@ -298,7 +330,7 @@ export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
     let stage: 'generation' | 'send' = 'generation';
     try {
       const generateReply = dependencies.generateSupportReply || generateSupportReply;
-      const sendReply = dependencies.sendWhatsAppText || sendWhatsAppText;
+      const sendReply = dependencies.sendWhatsAppText || ((to, text) => sendWhatsAppText(to, text, dependencies.graphApiFetch || fetch));
       const reply = await generateReply(message.text);
       logWebhook('reply_generated');
       stage = 'send';
@@ -312,8 +344,8 @@ export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
       if (stage === 'generation') {
         logWebhook('reply_generation_failed', 'error');
       } else {
-        const statusCode = error instanceof WhatsAppGraphApiError ? error.statusCode : undefined;
-        logWebhook('reply_send_failed', 'error', statusCode);
+        const graphApiError = error instanceof WhatsAppGraphApiError ? error : undefined;
+        logWebhook('reply_send_failed', 'error', graphApiError?.statusCode, undefined, graphApiError?.safeDetails);
       }
       return res.status(500).json({ received: true, replied: false });
     }
