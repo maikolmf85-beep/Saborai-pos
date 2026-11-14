@@ -68,6 +68,18 @@ function makeRequest(rawBody, signature) {
   return request;
 }
 
+function makeTextMessageBody(messageId, text = 'mensaje de prueba') {
+  return {
+    object: 'whatsapp_business_account',
+    entry: [{ changes: [{ field: 'messages', value: { messages: [{
+      from: 'recipient-test',
+      id: messageId,
+      type: 'text',
+      text: { body: text }
+    }] } }] }]
+  };
+}
+
 function makeResponse() {
   return {
     statusCode: undefined,
@@ -273,4 +285,61 @@ test('un fallo de persistencia responde 500 para permitir reintento y no filtra 
     console.info = originalInfo;
     console.error = originalError;
   }
+});
+
+test('responde a un mensaje de texto y evita una respuesta duplicada tras una entrega exitosa', async () => {
+  const body = makeTextMessageBody('test-message-success');
+  const receivedTexts = [];
+  const sentReplies = [];
+  const handler = createWebhookHandler({
+    async generateSupportReply(text) {
+      receivedTexts.push(text);
+      return 'Respuesta de prueba.';
+    },
+    async sendWhatsAppText(to, text) {
+      sentReplies.push({ to, text });
+    }
+  });
+
+  const rawBody = Buffer.from(JSON.stringify(body));
+  const first = makeResponse();
+  await handler(makeRequest(rawBody, sign(rawBody)), first);
+  const duplicate = makeResponse();
+  await handler(makeRequest(rawBody, sign(rawBody)), duplicate);
+
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(first.payload, { received: true, replied: true });
+  assert.equal(duplicate.statusCode, 200);
+  assert.deepEqual(duplicate.payload, { received: true, duplicate: true });
+  assert.deepEqual(receivedTexts, ['mensaje de prueba']);
+  assert.deepEqual(sentReplies, [{ to: 'recipient-test', text: 'Respuesta de prueba.' }]);
+});
+
+test('permite reintentar el mismo mensaje si falla el envío de la respuesta', async () => {
+  const body = makeTextMessageBody('test-message-send-retry');
+  let generationCalls = 0;
+  let sendCalls = 0;
+  const handler = createWebhookHandler({
+    async generateSupportReply() {
+      generationCalls += 1;
+      return 'Respuesta de prueba.';
+    },
+    async sendWhatsAppText() {
+      sendCalls += 1;
+      if (sendCalls === 1) throw new Error('detalle privado de prueba');
+    }
+  });
+
+  const rawBody = Buffer.from(JSON.stringify(body));
+  const failed = makeResponse();
+  await handler(makeRequest(rawBody, sign(rawBody)), failed);
+  const retried = makeResponse();
+  await handler(makeRequest(rawBody, sign(rawBody)), retried);
+
+  assert.equal(failed.statusCode, 500);
+  assert.deepEqual(failed.payload, { received: true, replied: false });
+  assert.equal(retried.statusCode, 200);
+  assert.deepEqual(retried.payload, { received: true, replied: true });
+  assert.equal(generationCalls, 2);
+  assert.equal(sendCalls, 2);
 });

@@ -7,7 +7,7 @@ import { normalizeCoexistenceEvents, type NormalizedCoexistenceMessage } from '.
 
 // Vercel debe entregar el stream intacto para que la firma se valide sobre
 // exactamente los bytes recibidos, antes de interpretar el JSON.
-export const config = { api: { bodyParser: false } };
+export const config = { api: { bodyParser: false }, maxDuration: 30 };
 
 try {
   dotenv.config();
@@ -16,6 +16,9 @@ try {
 
 const GRAPH_VERSION = process.env.WHATSAPP_GRAPH_API_VERSION || 'v26.0';
 const processedMessageIds = new Set<string>();
+const MODEL_REQUEST_TIMEOUT_MS = 7000;
+const GENERATION_TIMEOUT_MS = 9000;
+const WHATSAPP_SEND_TIMEOUT_MS = 8000;
 
 type WebhookLogEvent =
   | 'verification_accepted'
@@ -81,10 +84,12 @@ function getTextMessage(body: any): { from: string; text: string; messageId: str
 async function generateSupportReply(userText: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
+    logWebhook('reply_generation_failed', 'error');
     return 'En este momento el soporte inteligente no está configurado. Por favor, deja tu mensaje y un integrante de Saborai te ayudará pronto.';
   }
 
   const ai = new GoogleGenAI({ apiKey });
+  const generationSignal = AbortSignal.timeout(GENERATION_TIMEOUT_MS);
   const prompt = `Eres Nyza, asistente oficial de soporte de Saborai POS para restaurantes en Costa Rica.
 Responde en español claro, amable y breve. Ayuda con configuración del POS, salones, mesas, turnos, comandas, menú, inventario, facturación electrónica y uso general del sistema.
 No inventes accesos, precios, estados de cuenta ni soluciones que requieran entrar al restaurante. Nunca pidas contraseñas, tokens, claves de Hacienda ni datos de tarjetas.
@@ -99,7 +104,15 @@ ${userText}`;
     try {
       const response = await ai.models.generateContent({
         model,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          abortSignal: generationSignal,
+          httpOptions: {
+            timeout: MODEL_REQUEST_TIMEOUT_MS,
+            retryOptions: { attempts: 1 }
+          },
+          maxOutputTokens: 512
+        }
       });
       const text = response.text?.trim();
       if (text) return text.slice(0, 3500);
@@ -139,7 +152,8 @@ async function sendWhatsAppText(to: string, text: string): Promise<void> {
       to,
       type: 'text',
       text: { preview_url: false, body: text }
-    })
+    }),
+    signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS)
   });
 
   if (!response.ok) throw new WhatsAppGraphApiError(response.status);
@@ -189,6 +203,8 @@ async function persistNormalizedCoexistenceMessagesInDatabase(messages: Normaliz
 export interface WebhookDependencies {
   persistCoexistenceEvents?: (events: CoexistenceEvent[]) => Promise<void>;
   persistNormalizedCoexistenceMessages?: (messages: NormalizedCoexistenceMessage[]) => Promise<{ imported: number; skipped_unverified_tenant: number }>;
+  generateSupportReply?: (userText: string) => Promise<string>;
+  sendWhatsAppText?: (to: string, text: string) => Promise<void>;
 }
 
 export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
@@ -281,20 +297,25 @@ export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
     logWebhook('message_accepted');
     let stage: 'generation' | 'send' = 'generation';
     try {
-      const reply = await generateSupportReply(message.text);
+      const generateReply = dependencies.generateSupportReply || generateSupportReply;
+      const sendReply = dependencies.sendWhatsAppText || sendWhatsAppText;
+      const reply = await generateReply(message.text);
       logWebhook('reply_generated');
       stage = 'send';
-      await sendWhatsAppText(message.from, reply);
+      await sendReply(message.from, reply);
       logWebhook('reply_sent');
       return res.status(200).json({ received: true, replied: true });
     } catch (error: unknown) {
+      // Si no se completó el procesamiento, permite que el reintento de Meta
+      // vuelva a intentar responder en lugar de ignorarlo como duplicado.
+      if (message.messageId) processedMessageIds.delete(message.messageId);
       if (stage === 'generation') {
         logWebhook('reply_generation_failed', 'error');
       } else {
         const statusCode = error instanceof WhatsAppGraphApiError ? error.statusCode : undefined;
         logWebhook('reply_send_failed', 'error', statusCode);
       }
-      return res.status(200).json({ received: true, replied: false });
+      return res.status(500).json({ received: true, replied: false });
     }
   };
 }

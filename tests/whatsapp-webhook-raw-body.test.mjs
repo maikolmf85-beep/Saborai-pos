@@ -51,7 +51,7 @@ function sign(rawBody, secret = TEST_APP_SECRET) {
 }
 
 test('desactiva el parser de Vercel para preservar el stream crudo', () => {
-  assert.deepEqual(config, { api: { bodyParser: false } });
+  assert.deepEqual(config, { api: { bodyParser: false }, maxDuration: 30 });
 });
 
 test('acepta una firma calculada sobre los bytes originales y luego parsea JSON', async () => {
