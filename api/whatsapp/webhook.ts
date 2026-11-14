@@ -60,6 +60,10 @@ type SafeGraphApiError = {
   code?: number;
   subcode?: number;
   isTransient?: boolean;
+  message?: string;
+  userTitle?: string;
+  userMessage?: string;
+  details?: string;
   detailsClass?: GraphApiErrorClass;
   messageClass?: GraphApiErrorClass;
   userTitleClass?: GraphApiErrorClass;
@@ -174,6 +178,77 @@ const GRAPH_API_ERROR_TEXT_PATTERNS: Array<[RegExp, GraphApiErrorClass]> = [
   [/^(?:unsupported post request\.\s*)?object with id ['"][a-z0-9._:+-]{1,128}['"] does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/, 'object_unavailable_or_unsupported']
 ];
 
+const GRAPH_API_SAFE_EXPLANATION_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'be', 'business', 'cannot', 'contact', 'does', 'due',
+  'exist', 'for', 'from', 'has', 'id', 'included', 'invalid', 'is', 'loaded',
+  'message', 'messaging', 'misspelled', 'missing', 'more', 'no', 'not', 'object',
+  'of', 'one', 'operation', 'or', 'parameter', 'parameters', 'permissions', 'post',
+  'recipient', 'request', 'required', 'support', 'template', 'the', 'this', 'to',
+  'unsupported', 'user', 'valid', 'value', 'values', 'was', 'were', 'whatsapp',
+  'with'
+]);
+
+const GRAPH_API_PARAMETER_NAMES = new Set([
+  'action', 'address', 'audio', 'biz_opaque_callback_data', 'body', 'button', 'buttons',
+  'caption', 'code', 'components', 'context', 'currency', 'description', 'document',
+  'flow_action', 'flow_action_payload', 'flow_id', 'flow_message_version', 'flow_token',
+  'footer', 'header', 'image', 'interactive', 'language', 'latitude', 'link', 'location',
+  'longitude', 'media', 'messaging_product', 'name', 'parameters', 'phone_number_id',
+  'preview_url', 'product_retailer_id', 'recipient_type', 'rows', 'sections', 'status',
+  'sticker', 'sub_type', 'template', 'text', 'title', 'to', 'tracking_data', 'type',
+  'video'
+]);
+
+const GRAPH_API_SAFE_PUNCTUATION = new Set([',', '.', ';', ':', '!', '?', '(', ')', '{', '}', '[', ']', '/', '+', '-']);
+
+function redactGraphApiErrorText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (!normalized) return undefined;
+  if (normalized.length > 512) return '[redacted:unclassified]';
+  if (GRAPH_API_ERROR_TEXT_ALLOWLIST.has(normalized.toLowerCase())) return normalized;
+
+  // Preserve the explanation for this known Graph error, never its object ID.
+  if (/^(?:unsupported post request\.\s*)?object with id\s+(['"]).*?\1 does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/i.test(normalized)) {
+    return 'Object with ID [redacted] does not exist, cannot be loaded due to missing permissions, or does not support this operation.';
+  }
+
+  // Preserve only a recognized parameter name; any supplied value is discarded.
+  const requiredParameter = normalized.replace(/^\(#\d+\)\s*/i, '').match(/^the parameter ([a-z][a-z0-9_]{0,63}) is required\.?$/i);
+  if (requiredParameter) {
+    const parameter = requiredParameter[1].toLowerCase();
+    return `The parameter ${GRAPH_API_PARAMETER_NAMES.has(parameter) ? parameter : '[parameter]'} is required.`;
+  }
+  const invalidParameterValue = normalized.replace(/^\(#\d+\)\s*/i, '').match(/^(?:the )?value\s+(['"]).*?\1\s+for parameter ([a-z][a-z0-9_]{0,63}) is invalid\.?$/i);
+  if (invalidParameterValue) {
+    const parameter = invalidParameterValue[2].toLowerCase();
+    return `The value [redacted] for parameter ${GRAPH_API_PARAMETER_NAMES.has(parameter) ? parameter : '[parameter]'} is invalid.`;
+  }
+
+  // Unknown text is token-filtered: only a small vocabulary of explanatory words
+  // and known Graph parameter names can survive; numbers and all other words are masked.
+  let filtered = normalized
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'REDACTEDTOKEN')
+    .replace(/\bhttps?:\/\/\S+/gi, 'REDACTEDTOKEN')
+    .replace(/\b(?:bearer\s+)?[A-Za-z0-9_-]{24,}\b/gi, 'REDACTEDTOKEN')
+    .replace(/(?<![A-Za-z0-9])\+?\d(?:[\s().-]*\d){6,}(?!\d)/g, 'REDACTEDTOKEN')
+    .replace(/(?<![A-Za-z0-9_])[+A-Za-z0-9][A-Za-z0-9_:+/@-]{5,}(?![A-Za-z0-9_])/g, (candidate) => {
+      if (candidate.startsWith('REDACTEDTOKEN')) return candidate;
+      const lower = candidate.toLowerCase();
+      if (GRAPH_API_SAFE_EXPLANATION_WORDS.has(lower) || GRAPH_API_PARAMETER_NAMES.has(lower)) return candidate;
+      return /[\d._:+/@-]/.test(candidate) ? 'REDACTEDTOKEN' : candidate;
+    });
+  filtered = filtered.replace(/[A-Za-z][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]+|\s+/g, (token) => {
+    if (/^\s+$/.test(token)) return ' ';
+    if (token === 'REDACTEDTOKEN') return token;
+    if (/^[^A-Za-z0-9_]+$/.test(token)) return [...token].every((character) => GRAPH_API_SAFE_PUNCTUATION.has(character)) ? token : 'REDACTEDTOKEN';
+    const lower = token.toLowerCase();
+    return GRAPH_API_SAFE_EXPLANATION_WORDS.has(lower) || GRAPH_API_PARAMETER_NAMES.has(lower) ? token : 'REDACTEDTOKEN';
+  });
+  filtered = filtered.replace(/REDACTEDTOKEN/g, '[redacted]').replace(/\s+/g, ' ').trim();
+  return filtered.slice(0, 512) || '[redacted:unclassified]';
+}
+
 function classifyGraphApiErrorText(value: unknown): GraphApiErrorClass | undefined {
   if (typeof value !== 'string') return undefined;
   if (value.length > 512) return 'unclassified';
@@ -197,6 +272,12 @@ function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
   if (typeof fields.code === 'number' && Number.isSafeInteger(fields.code)) safeDetails.code = fields.code;
   if (typeof fields.error_subcode === 'number' && Number.isSafeInteger(fields.error_subcode)) safeDetails.subcode = fields.error_subcode;
   if (typeof fields.is_transient === 'boolean') safeDetails.isTransient = fields.is_transient;
+  const message = redactGraphApiErrorText(fields.message);
+  const userTitle = redactGraphApiErrorText(fields.error_user_title);
+  const userMessage = redactGraphApiErrorText(fields.error_user_msg);
+  if (message) safeDetails.message = message;
+  if (userTitle) safeDetails.userTitle = userTitle;
+  if (userMessage) safeDetails.userMessage = userMessage;
   const messageClass = classifyGraphApiErrorText(fields.message);
   const userTitleClass = classifyGraphApiErrorText(fields.error_user_title);
   const userMessageClass = classifyGraphApiErrorText(fields.error_user_msg);
@@ -205,7 +286,9 @@ function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
   if (userMessageClass) safeDetails.userMessageClass = userMessageClass;
   const errorData = fields.error_data;
   if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {
+    const details = redactGraphApiErrorText((errorData as Record<string, unknown>).details);
     const detailsClass = classifyGraphApiErrorText((errorData as Record<string, unknown>).details);
+    if (details) safeDetails.details = details;
     if (detailsClass) safeDetails.detailsClass = detailsClass;
   }
   return safeDetails;

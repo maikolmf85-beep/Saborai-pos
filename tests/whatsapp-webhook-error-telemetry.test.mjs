@@ -128,8 +128,12 @@ test('clasifica un detalle permitido sin registrar detalle libre ni alterar el f
 
   assert.equal(logLines.length, 1);
   const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, { code: 100, detailsClass: 'unsupported_parameter' });
-  assert.equal(logLines[0].includes(allowedDetails), false);
+  assert.deepEqual(logged.providerError, {
+    code: 100,
+    details: allowedDetails,
+    detailsClass: 'unsupported_parameter'
+  });
+  assert.equal(logged.providerError.details, allowedDetails);
   assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
   assert.equal(logLines[0].includes(TEST_REPLY), false);
   assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
@@ -141,7 +145,11 @@ test('mantiene como unclassified cualquier detalle no permitido y no registra su
 
   assert.equal(logLines.length, 1);
   const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, { code: 100, detailsClass: 'unclassified' });
+  assert.deepEqual(logged.providerError, {
+    code: 100,
+    details: 'recipient [redacted]; message text [redacted]',
+    detailsClass: 'unclassified'
+  });
   assert.equal(logLines[0].includes(untrustedDetails), false);
   assert.equal(logLines[0].includes('NEVER-LOG-THIS-DETAIL'), false);
   assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
@@ -156,7 +164,7 @@ test('no agrega clasificación cuando Meta no devuelve error_data.details', asyn
   assert.deepEqual(JSON.parse(logLines[0]).providerError, { code: 100 });
 });
 
-test('clasifica message, user title y user message en categorías fijas sin guardar texto libre', async () => {
+test('clasifica y conserva solo el texto explicativo redactado de los campos Graph', async () => {
   const providerText = {
     message: '(#100) The parameter messaging_product is required.',
     error_user_title: 'Unsupported post request',
@@ -168,12 +176,15 @@ test('clasifica message, user title y user message en categorías fijas sin guar
   const logged = JSON.parse(logLines[0]);
   assert.deepEqual(logged.providerError, {
     code: 100,
+    message: 'The parameter messaging_product is required.',
+    userTitle: 'Unsupported post request',
+    userMessage: 'Object with ID [redacted] does not exist, cannot be loaded due to missing permissions, or does not support this operation.',
     messageClass: 'missing_required_parameter',
     userTitleClass: 'unsupported_request',
     userMessageClass: 'object_unavailable_or_unsupported'
   });
-  for (const value of Object.values(providerText)) assert.equal(logLines[0].includes(value), false);
   assert.equal(logLines[0].includes('private-object-84721'), false);
+  assert.equal(logLines[0].includes(providerText.error_user_msg), false);
 });
 
 test('clasifica como unclassified los textos no allowlisted y no registra contenido original', async () => {
@@ -187,6 +198,9 @@ test('clasifica como unclassified los textos no allowlisted y no registra conten
   assert.equal(logLines.length, 1);
   assert.deepEqual(JSON.parse(logLines[0]).providerError, {
     code: 100,
+    message: '[redacted] parameter value [redacted] [redacted].',
+    userTitle: '[redacted] [redacted] for [redacted]',
+    userMessage: 'Recipient [redacted]: [redacted]',
     messageClass: 'unclassified',
     userTitleClass: 'unclassified',
     userMessageClass: 'unclassified'
@@ -195,4 +209,40 @@ test('clasifica como unclassified los textos no allowlisted y no registra conten
   assert.equal(logLines[0].includes('PRIVATE-DETAIL-912'), false);
   assert.equal(logLines[0].includes('private-object-84721'), false);
   assert.equal(logLines[0].includes('+50672061146'), false);
+});
+
+test('redacta teléfono, ID, token y fragmento de usuario en los cuatro campos Graph', async () => {
+  const sensitiveValues = [
+    '+506 7206-1146',
+    '998877665544332211',
+    'EAAJ_test-token_secret_value1234567890',
+    'MAIKOL-ORDER-PRIVATE-88'
+  ];
+  const { response, graphRequest, logLines } = await simulateGraphError({
+    message: 'The parameter messaging_product is required.',
+    error_user_title: 'Invalid parameter value',
+    error_user_msg: `Recipient ${sensitiveValues[0]}: token ${sensitiveValues[2]}; fragment ${sensitiveValues[3]}; ID ${sensitiveValues[1]}`,
+    error_data: {
+      details: `The value '${sensitiveValues[0]}' for parameter to is invalid.`
+    }
+  }, 'wamid.telemetry-sensitive-fixtures');
+
+  assert.equal(response.statusCode, 500);
+  assert.equal(logLines.length, 1);
+  const logged = JSON.parse(logLines[0]);
+  assert.deepEqual(logged.providerError, {
+    code: 100,
+    message: 'The parameter messaging_product is required.',
+    userTitle: 'Invalid parameter value',
+    userMessage: 'Recipient [redacted]: [redacted] [redacted]; [redacted] [redacted]; ID [redacted]',
+    details: 'The value [redacted] for parameter to is invalid.',
+    messageClass: 'missing_required_parameter',
+    userTitleClass: 'invalid_parameter_value',
+    userMessageClass: 'unclassified',
+    detailsClass: 'unclassified'
+  });
+  for (const value of sensitiveValues) assert.equal(logLines[0].includes(value), false);
+  assert.equal(graphRequest.body.to, TEST_RECIPIENT);
+  assert.deepEqual(graphRequest.body.text, { preview_url: false, body: TEST_REPLY });
+  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
 });

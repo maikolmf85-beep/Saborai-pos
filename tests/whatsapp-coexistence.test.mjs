@@ -344,7 +344,7 @@ test('permite reintentar el mismo mensaje si falla el envío de la respuesta', a
   assert.equal(sendCalls, 2);
 });
 
-test('registra códigos y clases seguras de Graph API sin el cuerpo ni datos del mensaje', async () => {
+test('registra códigos, clases y solo texto Graph redactado sin cuerpos ni datos del mensaje', async () => {
   const previousToken = process.env.WHATSAPP_ACCESS_TOKEN;
   const previousPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   process.env.WHATSAPP_ACCESS_TOKEN = 'PRIVATE_TEST_TOKEN';
@@ -380,7 +380,7 @@ test('registra códigos y clases seguras de Graph API sin el cuerpo ni datos del
 
     assert.equal(response.statusCode, 500);
     const serializedLogs = logs.join('\n');
-    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false,"messageClass":"unclassified","detailsClass":"unclassified"\}/);
+    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false,"message":"\[redacted\]","messageClass":"unclassified","details":"\[redacted\]","detailsClass":"unclassified"\}/);
     for (const privateValue of [
       'PRIVATE_TEST_TOKEN',
       'PRIVATE_TEST_PHONE_NUMBER_ID',
