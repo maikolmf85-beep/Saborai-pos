@@ -268,6 +268,25 @@ export const TableMap: React.FC<TableMapProps> = ({
   const [isZoneModalOpen, setIsZoneModalOpen] = useState(false);
   const [newZoneName, setNewZoneName] = useState('');
 
+  const activateTableEditMode = () => {
+    setIsEditMode(true);
+    setShowDetailsDrawer(true);
+  };
+
+  const toggleTableEditMode = () => {
+    if (isEditMode) {
+      setIsEditMode(false);
+      return;
+    }
+    activateTableEditMode();
+  };
+
+  const openZoneEditor = (closeMobileControls = false) => {
+    activateTableEditMode();
+    setIsZoneModalOpen(true);
+    if (closeMobileControls) setIsMobileControlsOpen(false);
+  };
+
   useEffect(() => {
     if (openZoneManagerRequest > 0) {
       setIsZoneModalOpen(true);
@@ -874,7 +893,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 {isAdmin && effectiveZones.length === tenantZones.length && (
                   <button
                     type="button"
-                    onClick={() => { setIsZoneModalOpen(true); setIsMobileControlsOpen(false); }}
+                    onClick={() => openZoneEditor(true)}
                     title="Añadir o quitar salones"
                     className="flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-2.5 py-2 text-[11px] font-bold text-[#3b3733]"
                   >
@@ -890,7 +909,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 <>
                   <button
                     type="button"
-                    onClick={() => { setIsEditMode(!isEditMode); setIsMobileControlsOpen(false); }}
+                    onClick={() => { toggleTableEditMode(); setIsMobileControlsOpen(false); }}
                     aria-pressed={isEditMode}
                     className={`flex min-h-11 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-center text-[11px] font-bold ${isEditMode ? 'border-[#a9b994] bg-[#a9b994] text-[#3b3733]' : 'border-stone-200 bg-white text-stone-700'}`}
                   >
@@ -1045,7 +1064,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 {isAdmin && effectiveZones.length === tenantZones.length && (
                   <button
                     type="button"
-                    onClick={() => setIsZoneModalOpen(true)}
+                    onClick={() => openZoneEditor()}
                     className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[#a9b994]/60 bg-[#a9b994]/15 px-2.5 py-1.5 text-[11px] font-bold text-[#3b3733] transition-colors hover:bg-[#a9b994]/30 cursor-pointer sm:min-h-9"
                     title="Añadir o quitar salones"
                   >
@@ -1061,7 +1080,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                 <div className="grid w-full grid-cols-2 items-stretch gap-1.5 xl:w-auto xl:flex xl:flex-wrap xl:items-center">
                   <button
                     type="button"
-                    onClick={() => setIsEditMode(!isEditMode)}
+                    onClick={toggleTableEditMode}
                     aria-pressed={isEditMode}
                     className={`flex min-h-10 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all cursor-pointer xl:h-9 xl:min-h-9 xl:w-auto xl:px-2.5 xl:text-[11px] ${
                       isEditMode
