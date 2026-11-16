@@ -4,6 +4,15 @@ import dotenv from 'dotenv';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { extractCoexistenceEvents, type CoexistenceEvent } from '../../lib/whatsapp/coexistence.js';
 import { normalizeCoexistenceEvents, type NormalizedCoexistenceMessage } from '../../lib/whatsapp/coexistenceInbox.js';
+import {
+  createGeminiEmptyResponseTelemetry,
+  createSafeGeminiFailureTelemetry,
+  createMissingGeminiKeyTelemetry,
+  extractSafeGraphApiError,
+  type GeminiFailureTelemetry,
+  type GeminiModelLabel,
+  type SafeGraphApiError
+} from '../_utils/whatsappErrorTelemetry.js';
 
 // Vercel debe entregar el stream intacto para que la firma se valide sobre
 // exactamente los bytes recibidos, antes de interpretar el JSON.
@@ -33,6 +42,7 @@ type WebhookLogEvent =
   | 'message_accepted'
   | 'reply_generated'
   | 'reply_sent'
+  | 'gemini_attempt_failed'
   | 'reply_generation_failed'
   | 'reply_send_failed'
   | 'coexistence_events_processed'
@@ -47,28 +57,7 @@ type WebhookMetrics = {
   contactStatePendingSchema?: number;
 };
 
-type GraphApiErrorClass =
-  | 'unsupported_parameter'
-  | 'invalid_parameter_value'
-  | 'missing_required_parameter'
-  | 'template_message_required'
-  | 'unsupported_request'
-  | 'object_unavailable_or_unsupported'
-  | 'unclassified';
-
-type SafeGraphApiError = {
-  code?: number;
-  subcode?: number;
-  isTransient?: boolean;
-  message?: string;
-  userTitle?: string;
-  userMessage?: string;
-  details?: string;
-  detailsClass?: GraphApiErrorClass;
-  messageClass?: GraphApiErrorClass;
-  userTitleClass?: GraphApiErrorClass;
-  userMessageClass?: GraphApiErrorClass;
-};
+type GeminiGenerateContent = (params: Parameters<GoogleGenAI['models']['generateContent']>[0]) => ReturnType<GoogleGenAI['models']['generateContent']>;
 
 function logWebhook(
   event: WebhookLogEvent,
@@ -89,6 +78,11 @@ function logWebhook(
   else console.info(line);
 }
 
+function logGeminiDiagnostic(event: 'gemini_attempt_failed' | 'reply_generation_failed', gemini: GeminiFailureTelemetry): void {
+  const line = JSON.stringify({ component: 'whatsapp-webhook', event, gemini });
+  console.error(line);
+}
+
 function getTextMessage(body: any): { from: string; text: string; messageId: string } | null {
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
@@ -106,10 +100,10 @@ function getTextMessage(body: any): { from: string; text: string; messageId: str
   return null;
 }
 
-async function generateSupportReply(userText: string): Promise<string> {
+async function generateSupportReply(userText: string, generateContentOverride?: GeminiGenerateContent): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
-    logWebhook('reply_generation_failed', 'error');
+    logGeminiDiagnostic('reply_generation_failed', createMissingGeminiKeyTelemetry(GENERATION_TIMEOUT_MS));
     return 'En este momento el soporte inteligente no está configurado. Por favor, deja tu mensaje y un integrante de Saborai te ayudará pronto.';
   }
 
@@ -124,10 +118,10 @@ No afirmes que ejecutaste cambios dentro del POS: por WhatsApp solo puedes orien
 Pregunta del usuario:
 ${userText}`;
 
-  const models = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+  const models: Exclude<GeminiModelLabel, 'not_attempted'>[] = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
   for (const model of models) {
     try {
-      const response = await ai.models.generateContent({
+      const request = {
         model,
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         config: {
@@ -138,10 +132,15 @@ ${userText}`;
           },
           maxOutputTokens: 512
         }
-      });
+      };
+      const generateContent = generateContentOverride || ((params) => ai.models.generateContent(params));
+      const response = await generateContent(request);
       const text = response.text?.trim();
       if (text) return text.slice(0, 3500);
-    } catch {}
+      logGeminiDiagnostic('gemini_attempt_failed', createGeminiEmptyResponseTelemetry(model, MODEL_REQUEST_TIMEOUT_MS, GENERATION_TIMEOUT_MS, 1));
+    } catch (error: unknown) {
+      logGeminiDiagnostic('gemini_attempt_failed', createSafeGeminiFailureTelemetry(error, model, MODEL_REQUEST_TIMEOUT_MS, GENERATION_TIMEOUT_MS, 1));
+    }
   }
 
   logWebhook('reply_generation_failed', 'error');
@@ -158,150 +157,6 @@ class WhatsAppGraphApiError extends Error {
     this.safeDetails = safeDetails;
     this.name = 'WhatsAppGraphApiError';
   }
-}
-
-const GRAPH_API_ERROR_TEXT_ALLOWLIST = new Map<string, GraphApiErrorClass>([
-  ['the request included one or more unsupported or misspelled parameters.', 'unsupported_parameter'],
-  ['one or more parameter values are invalid.', 'invalid_parameter_value'],
-  ['the request is missing a required parameter.', 'missing_required_parameter'],
-  ['message must be a template message.', 'template_message_required'],
-  ['unsupported post request', 'unsupported_request'],
-  ['unsupported post request.', 'unsupported_request'],
-  ['invalid parameter', 'invalid_parameter_value'],
-  ['invalid parameter.', 'invalid_parameter_value']
-]);
-
-const GRAPH_API_ERROR_TEXT_PATTERNS: Array<[RegExp, GraphApiErrorClass]> = [
-  [/^(?:\(#\d+\)\s*)?invalid parameter(?: value)?\.?$/, 'invalid_parameter_value'],
-  [/^(?:\(#\d+\)\s*)?unsupported post request\.?$/, 'unsupported_request'],
-  [/^(?:unsupported post request\.\s*)?object with id ['"][a-z0-9._:+-]{1,128}['"] does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/, 'object_unavailable_or_unsupported']
-];
-
-const GRAPH_API_SAFE_EXPLANATION_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'be', 'business', 'cannot', 'contact', 'does', 'due',
-  'exist', 'for', 'from', 'has', 'id', 'included', 'invalid', 'is', 'loaded',
-  'message', 'messaging', 'misspelled', 'missing', 'more', 'no', 'not', 'object',
-  'of', 'one', 'operation', 'or', 'parameter', 'parameters', 'permissions', 'post',
-  'recipient', 'request', 'required', 'support', 'template', 'the', 'this', 'to',
-  'unsupported', 'user', 'valid', 'value', 'values', 'was', 'were', 'whatsapp',
-  'with'
-]);
-
-// Keep only names present in Meta's official WhatsApp Cloud API Messages reference:
-// https://developers.facebook.com/docs/whatsapp/cloud-api/reference/messages/
-const GRAPH_API_PARAMETER_NAMES = new Set([
-  'action', 'address', 'audio', 'body', 'button', 'buttons',
-  'caption', 'code', 'components', 'context', 'description', 'document',
-  'flow_action', 'flow_action_payload', 'flow_id', 'flow_message_version', 'flow_token',
-  'footer', 'header', 'image', 'interactive', 'language', 'latitude', 'link', 'location',
-  'longitude', 'media', 'messaging_product', 'name', 'parameters',
-  'preview_url', 'product_retailer_id', 'recipient_type', 'rows', 'sections', 'status',
-  'sticker', 'template', 'text', 'title', 'to', 'type',
-  'video'
-]);
-
-function getRequiredGraphApiParameter(value: string): string | undefined {
-  const match = value.replace(/^\(#\d+\)\s*/i, '').match(/\b(?:the\s+)?(?:parameter|param|field)\s+["']?([a-z][a-z0-9_]{0,63})["']?\s+is\s+required\b/i);
-  return match?.[1].toLowerCase();
-}
-
-const GRAPH_API_SAFE_PUNCTUATION = new Set([',', '.', ';', ':', '!', '?', '(', ')', '{', '}', '[', ']', '/', '+', '-']);
-
-function redactGraphApiErrorText(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().replace(/\s+/g, ' ');
-  if (!normalized) return undefined;
-  if (normalized.length > 512) return '[redacted:unclassified]';
-  if (GRAPH_API_ERROR_TEXT_ALLOWLIST.has(normalized.toLowerCase())) return normalized;
-
-  // Preserve the explanation for this known Graph error, never its object ID.
-  if (/^(?:unsupported post request\.\s*)?object with id\s+(['"]).*?\1 does not exist, cannot be loaded due to missing permissions, or does not support this operation\.?$/i.test(normalized)) {
-    return 'Object with ID [redacted] does not exist, cannot be loaded due to missing permissions, or does not support this operation.';
-  }
-
-  // Preserve only an officially allowlisted field name; discard all surrounding provider text.
-  const requiredParameter = getRequiredGraphApiParameter(normalized);
-  if (requiredParameter) {
-    const parameter = requiredParameter;
-    return `The parameter ${GRAPH_API_PARAMETER_NAMES.has(parameter) ? parameter : '[parameter]'} is required.`;
-  }
-  const invalidParameterValue = normalized.replace(/^\(#\d+\)\s*/i, '').match(/^(?:the )?value\s+(['"]).*?\1\s+for parameter ([a-z][a-z0-9_]{0,63}) is invalid\.?$/i);
-  if (invalidParameterValue) {
-    const parameter = invalidParameterValue[2].toLowerCase();
-    return `The value [redacted] for parameter ${GRAPH_API_PARAMETER_NAMES.has(parameter) ? parameter : '[parameter]'} is invalid.`;
-  }
-
-  // Unknown text is token-filtered: only a small vocabulary of explanatory words
-  // and known Graph parameter names can survive; numbers and all other words are masked.
-  let filtered = normalized
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, 'REDACTEDTOKEN')
-    .replace(/\bhttps?:\/\/\S+/gi, 'REDACTEDTOKEN')
-    .replace(/\b(?:bearer\s+)?[A-Za-z0-9_-]{24,}\b/gi, 'REDACTEDTOKEN')
-    .replace(/(?<![A-Za-z0-9])\+?\d(?:[\s().-]*\d){6,}(?!\d)/g, 'REDACTEDTOKEN')
-    .replace(/(?<![A-Za-z0-9_])[+A-Za-z0-9][A-Za-z0-9_:+/@-]{5,}(?![A-Za-z0-9_])/g, (candidate) => {
-      if (candidate.startsWith('REDACTEDTOKEN')) return candidate;
-      const lower = candidate.toLowerCase();
-      if (GRAPH_API_SAFE_EXPLANATION_WORDS.has(lower) || GRAPH_API_PARAMETER_NAMES.has(lower)) return candidate;
-      return /[\d._:+/@-]/.test(candidate) ? 'REDACTEDTOKEN' : candidate;
-    });
-  filtered = filtered.replace(/[A-Za-z][A-Za-z0-9_]*|\d+|[^\sA-Za-z0-9_]+|\s+/g, (token) => {
-    if (/^\s+$/.test(token)) return ' ';
-    if (token === 'REDACTEDTOKEN') return token;
-    if (/^[^A-Za-z0-9_]+$/.test(token)) return [...token].every((character) => GRAPH_API_SAFE_PUNCTUATION.has(character)) ? token : 'REDACTEDTOKEN';
-    const lower = token.toLowerCase();
-    return GRAPH_API_SAFE_EXPLANATION_WORDS.has(lower) || GRAPH_API_PARAMETER_NAMES.has(lower) ? token : 'REDACTEDTOKEN';
-  });
-  filtered = filtered.replace(/REDACTEDTOKEN/g, '[redacted]').replace(/\s+/g, ' ').trim();
-  return filtered.slice(0, 512) || '[redacted:unclassified]';
-}
-
-function classifyGraphApiErrorText(value: unknown): GraphApiErrorClass | undefined {
-  if (typeof value !== 'string') return undefined;
-  if (value.length > 512) return 'unclassified';
-  const normalized = value.trim().replace(/\s+/g, ' ').toLowerCase();
-  if (!normalized) return undefined;
-  const exactClass = GRAPH_API_ERROR_TEXT_ALLOWLIST.get(normalized);
-  if (exactClass) return exactClass;
-  const requiredParameter = getRequiredGraphApiParameter(normalized);
-  if (requiredParameter) {
-    return GRAPH_API_PARAMETER_NAMES.has(requiredParameter) ? 'missing_required_parameter' : 'unclassified';
-  }
-  for (const [pattern, errorClass] of GRAPH_API_ERROR_TEXT_PATTERNS) {
-    if (pattern.test(normalized)) return errorClass;
-  }
-  return 'unclassified';
-}
-
-function extractSafeGraphApiError(payload: unknown): SafeGraphApiError {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return {};
-  const error = (payload as { error?: unknown }).error;
-  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
-
-  const fields = error as Record<string, unknown>;
-  const safeDetails: SafeGraphApiError = {};
-  if (typeof fields.code === 'number' && Number.isSafeInteger(fields.code)) safeDetails.code = fields.code;
-  if (typeof fields.error_subcode === 'number' && Number.isSafeInteger(fields.error_subcode)) safeDetails.subcode = fields.error_subcode;
-  if (typeof fields.is_transient === 'boolean') safeDetails.isTransient = fields.is_transient;
-  const message = redactGraphApiErrorText(fields.message);
-  const userTitle = redactGraphApiErrorText(fields.error_user_title);
-  const userMessage = redactGraphApiErrorText(fields.error_user_msg);
-  if (message) safeDetails.message = message;
-  if (userTitle) safeDetails.userTitle = userTitle;
-  if (userMessage) safeDetails.userMessage = userMessage;
-  const messageClass = classifyGraphApiErrorText(fields.message);
-  const userTitleClass = classifyGraphApiErrorText(fields.error_user_title);
-  const userMessageClass = classifyGraphApiErrorText(fields.error_user_msg);
-  if (messageClass) safeDetails.messageClass = messageClass;
-  if (userTitleClass) safeDetails.userTitleClass = userTitleClass;
-  if (userMessageClass) safeDetails.userMessageClass = userMessageClass;
-  const errorData = fields.error_data;
-  if (errorData && typeof errorData === 'object' && !Array.isArray(errorData)) {
-    const details = redactGraphApiErrorText((errorData as Record<string, unknown>).details);
-    const detailsClass = classifyGraphApiErrorText((errorData as Record<string, unknown>).details);
-    if (details) safeDetails.details = details;
-    if (detailsClass) safeDetails.detailsClass = detailsClass;
-  }
-  return safeDetails;
 }
 
 async function sendWhatsAppText(to: string, text: string, graphApiFetch: typeof fetch = fetch): Promise<void> {
@@ -384,6 +239,7 @@ export interface WebhookDependencies {
   persistCoexistenceEvents?: (events: CoexistenceEvent[]) => Promise<void>;
   persistNormalizedCoexistenceMessages?: (messages: NormalizedCoexistenceMessage[]) => Promise<{ imported: number; skipped_unverified_tenant: number }>;
   generateSupportReply?: (userText: string) => Promise<string>;
+  generateGeminiContent?: GeminiGenerateContent;
   sendWhatsAppText?: (to: string, text: string) => Promise<void>;
   graphApiFetch?: typeof fetch;
 }
@@ -478,7 +334,7 @@ export function createWebhookHandler(dependencies: WebhookDependencies = {}) {
     logWebhook('message_accepted');
     let stage: 'generation' | 'send' = 'generation';
     try {
-      const generateReply = dependencies.generateSupportReply || generateSupportReply;
+      const generateReply = dependencies.generateSupportReply || ((userText) => generateSupportReply(userText, dependencies.generateGeminiContent));
       const sendReply = dependencies.sendWhatsAppText || ((to, text) => sendWhatsAppText(to, text, dependencies.graphApiFetch || fetch));
       const reply = await generateReply(message.text);
       logWebhook('reply_generated');

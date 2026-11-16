@@ -5,6 +5,7 @@ import { after, beforeEach, test } from 'node:test';
 
 const TEST_APP_SECRET = 'webhook-telemetry-test-secret';
 const TEST_ACCESS_TOKEN = 'test-access-token-must-not-be-logged';
+const TEST_GEMINI_KEY = 'test-gemini-key-must-not-be-logged';
 const TEST_PHONE_NUMBER_ID = 'test-phone-number-id';
 const TEST_MESSAGING_ACCOUNT_ID = '1845701716552385';
 const TEST_RECIPIENT = '0000000000';
@@ -18,6 +19,7 @@ const previousEnv = {
 
 process.env.META_APP_SECRET = TEST_APP_SECRET;
 const { createWebhookHandler } = await import('../api/whatsapp/webhook.ts');
+let requestCounter = 0;
 
 beforeEach(() => {
   process.env.META_APP_SECRET = TEST_APP_SECRET;
@@ -31,9 +33,10 @@ after(() => {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
   }
+  delete process.env.GEMINI_API_KEY;
 });
 
-function makeSignedRequest(messageId) {
+function makeSignedRequest(messageId = `wamid.telemetry-${++requestCounter}`) {
   const rawBody = Buffer.from(JSON.stringify({
     entry: [{
       changes: [{
@@ -75,11 +78,24 @@ function makeResponse() {
   };
 }
 
-async function simulateGraphError(errorFields = {}, messageId = 'wamid.telemetry-test') {
+function captureLogs() {
+  const lines = [];
+  const originalInfo = console.info;
+  const originalError = console.error;
+  console.info = (...args) => lines.push(args.map(String).join(' '));
+  console.error = (...args) => lines.push(args.map(String).join(' '));
+  return {
+    lines,
+    restore() {
+      console.info = originalInfo;
+      console.error = originalError;
+    }
+  };
+}
+
+async function simulateGraphError(errorFields = {}) {
   let graphRequest;
-  const logLines = [];
-  const originalConsoleError = console.error;
-  console.error = (line) => logLines.push(String(line));
+  const captured = captureLogs();
   try {
     const handler = createWebhookHandler({
       generateSupportReply: async () => TEST_REPLY,
@@ -87,144 +103,57 @@ async function simulateGraphError(errorFields = {}, messageId = 'wamid.telemetry
         graphRequest = {
           url,
           method: init.method,
-          body: JSON.parse(init.body)
+          headers: init.headers,
+          body: JSON.parse(init.body),
+          signal: init.signal
         };
         return {
           ok: false,
           status: 400,
-          json: async () => ({
-            error: {
-              code: 100,
-              ...errorFields
-            }
-          })
+          json: async () => ({ error: { code: 100, ...errorFields } })
         };
       }
     });
     const response = makeResponse();
-    await handler(makeSignedRequest(messageId), response);
-    return { response, graphRequest, logLines };
+    await handler(makeSignedRequest(), response);
+    return { response, graphRequest, logLines: [...captured.lines] };
   } finally {
-    console.error = originalConsoleError;
+    captured.restore();
   }
 }
 
-test('clasifica un detalle permitido sin registrar detalle libre e incluye la cuenta de mensajería en el payload', async () => {
-  const allowedDetails = 'The request included one or more unsupported or misspelled parameters.';
-  const { response, graphRequest, logLines } = await simulateGraphError({ error_data: { details: allowedDetails } });
+function getEvents(logLines) {
+  return logLines.map((line) => JSON.parse(line));
+}
+
+function assertNoSensitiveFixture(logLines, values) {
+  const combined = logLines.join('\n');
+  for (const value of values) assert.equal(combined.includes(value), false, `sensitive fixture leaked: ${value}`);
+}
+
+test('Graph logs only status, numeric codes, classes and allowlisted parameter names; preserves the send request', async () => {
+  const rawMessage = '(#100) The parameter messaging_account_id is required for PRIVATE-OBJECT-84721; phone +50672061146; token EAAJ_test-token_secret_value1234567890';
+  const rawDetails = 'PRIVATE-DETAIL-912 email servicio@example.test fbtrace_id=FBTRACE-PRIVATE-8821';
+  const rawUserMessage = 'Recipient +50672061146 PRIVATE-DETAIL-912';
+  const { response, graphRequest, logLines } = await simulateGraphError({
+    error_subcode: 33,
+    message: rawMessage,
+    error_user_title: 'Unsupported request for PRIVATE-OBJECT-84721',
+    error_user_msg: rawUserMessage,
+    error_data: { details: rawDetails },
+    fbtrace_id: 'FBTRACE-PRIVATE-8821',
+    is_transient: true
+  });
 
   assert.equal(response.statusCode, 500);
   assert.deepEqual(response.payload, { received: true, replied: false });
-  assert.deepEqual(graphRequest, {
-    url: 'https://graph.facebook.com/v26.0/test-phone-number-id/messages',
-    method: 'POST',
-    body: {
-      messaging_product: 'whatsapp',
-      messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
-      recipient_type: 'individual',
-      to: TEST_RECIPIENT,
-      type: 'text',
-      text: { preview_url: false, body: TEST_REPLY }
-    }
+  assert.equal(graphRequest.url, 'https://graph.facebook.com/v26.0/test-phone-number-id/messages');
+  assert.equal(graphRequest.method, 'POST');
+  assert.deepEqual(graphRequest.headers, {
+    Authorization: `Bearer ${TEST_ACCESS_TOKEN}`,
+    'Content-Type': 'application/json'
   });
-
-  assert.equal(logLines.length, 1);
-  const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, {
-    code: 100,
-    details: allowedDetails,
-    detailsClass: 'unsupported_parameter'
-  });
-  assert.equal(logged.providerError.details, allowedDetails);
-  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
-  assert.equal(logLines[0].includes(TEST_REPLY), false);
-  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
-});
-
-test('mantiene como unclassified cualquier detalle no permitido y no registra su contenido', async () => {
-  const untrustedDetails = 'recipient 0000000000; message text NEVER-LOG-THIS-DETAIL';
-  const { logLines } = await simulateGraphError({ error_data: { details: untrustedDetails } }, 'wamid.telemetry-unknown');
-
-  assert.equal(logLines.length, 1);
-  const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, {
-    code: 100,
-    details: 'recipient [redacted]; message text [redacted]',
-    detailsClass: 'unclassified'
-  });
-  assert.equal(logLines[0].includes(untrustedDetails), false);
-  assert.equal(logLines[0].includes('NEVER-LOG-THIS-DETAIL'), false);
-  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
-  assert.equal(logLines[0].includes(TEST_REPLY), false);
-  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
-});
-
-test('no agrega clasificación cuando Meta no devuelve error_data.details', async () => {
-  const { logLines } = await simulateGraphError({}, 'wamid.telemetry-no-details');
-
-  assert.equal(logLines.length, 1);
-  assert.deepEqual(JSON.parse(logLines[0]).providerError, { code: 100 });
-});
-
-test('clasifica y conserva solo el texto explicativo redactado de los campos Graph', async () => {
-  const providerText = {
-    message: '(#100) The parameter messaging_product is required.',
-    error_user_title: 'Unsupported post request',
-    error_user_msg: "Object with ID 'private-object-84721' does not exist, cannot be loaded due to missing permissions, or does not support this operation."
-  };
-  const { logLines } = await simulateGraphError(providerText, 'wamid.telemetry-allowlisted-fields');
-
-  assert.equal(logLines.length, 1);
-  const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, {
-    code: 100,
-    message: 'The parameter messaging_product is required.',
-    userTitle: 'Unsupported post request',
-    userMessage: 'Object with ID [redacted] does not exist, cannot be loaded due to missing permissions, or does not support this operation.',
-    messageClass: 'missing_required_parameter',
-    userTitleClass: 'unsupported_request',
-    userMessageClass: 'object_unavailable_or_unsupported'
-  });
-  assert.equal(logLines[0].includes('private-object-84721'), false);
-  assert.equal(logLines[0].includes(providerText.error_user_msg), false);
-});
-
-test('detecta un campo requerido dentro de texto adicional y conserva el payload de envío sin cambios', async () => {
-  const providerText = '(#100) The field messaging_product is required but was not supplied for request OPAQUE-VALUE-9281.';
-  const { response, graphRequest, logLines } = await simulateGraphError({ message: providerText }, 'wamid.telemetry-required-field');
-
-  assert.equal(response.statusCode, 500);
-  assert.deepEqual(response.payload, { received: true, replied: false });
-  assert.deepEqual(graphRequest, {
-    url: 'https://graph.facebook.com/v26.0/test-phone-number-id/messages',
-    method: 'POST',
-    body: {
-      messaging_product: 'whatsapp',
-      messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
-      recipient_type: 'individual',
-      to: TEST_RECIPIENT,
-      type: 'text',
-      text: { preview_url: false, body: TEST_REPLY }
-    }
-  });
-  assert.equal(logLines.length, 1);
-  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
-    code: 100,
-    message: 'The parameter messaging_product is required.',
-    messageClass: 'missing_required_parameter'
-  });
-  assert.equal(logLines[0].includes(providerText), false);
-  assert.equal(logLines[0].includes('OPAQUE-VALUE-9281'), false);
-  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
-  assert.equal(logLines[0].includes(TEST_REPLY), false);
-  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
-  assert.equal(logLines[0].includes('INBOUND-TEST-NO-PII'), false);
-});
-
-test('redacta el nombre de campo requerido no documentado y lo deja unclassified', async () => {
-  const providerText = 'The parameter private_unlisted_9281 is required but not available for request OPAQUE-VALUE-1937.';
-  const { graphRequest, logLines } = await simulateGraphError({ message: providerText }, 'wamid.telemetry-unknown-required-field');
-
+  assert.ok(graphRequest.signal instanceof AbortSignal);
   assert.deepEqual(graphRequest.body, {
     messaging_product: 'whatsapp',
     messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
@@ -233,77 +162,210 @@ test('redacta el nombre de campo requerido no documentado y lo deja unclassified
     type: 'text',
     text: { preview_url: false, body: TEST_REPLY }
   });
-  assert.equal(logLines.length, 1);
-  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
+
+  const failure = getEvents(logLines).find((event) => event.event === 'reply_send_failed');
+  assert.ok(failure);
+  assert.equal(failure.statusCode, 400);
+  assert.deepEqual(failure.providerError, {
     code: 100,
-    message: 'The parameter [parameter] is required.',
-    messageClass: 'unclassified'
-  });
-  assert.equal(logLines[0].includes(providerText), false);
-  assert.equal(logLines[0].includes('private_unlisted_9281'), false);
-  assert.equal(logLines[0].includes('OPAQUE-VALUE-1937'), false);
-  assert.equal(logLines[0].includes(TEST_RECIPIENT), false);
-  assert.equal(logLines[0].includes(TEST_REPLY), false);
-  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
-  assert.equal(logLines[0].includes('INBOUND-TEST-NO-PII'), false);
-});
-
-test('clasifica como unclassified los textos no allowlisted y no registra contenido original', async () => {
-  const untrustedFields = {
-    message: 'Unexpected parameter value containing PRIVATE-DETAIL-912.',
-    error_user_title: 'Something failed for private-object-84721',
-    error_user_msg: 'Recipient +50672061146: PRIVATE-DETAIL-912'
-  };
-  const { logLines } = await simulateGraphError(untrustedFields, 'wamid.telemetry-unclassified-fields');
-
-  assert.equal(logLines.length, 1);
-  assert.deepEqual(JSON.parse(logLines[0]).providerError, {
-    code: 100,
-    message: '[redacted] parameter value [redacted] [redacted].',
-    userTitle: '[redacted] [redacted] for [redacted]',
-    userMessage: 'Recipient [redacted]: [redacted]',
-    messageClass: 'unclassified',
-    userTitleClass: 'unclassified',
-    userMessageClass: 'unclassified'
-  });
-  for (const value of Object.values(untrustedFields)) assert.equal(logLines[0].includes(value), false);
-  assert.equal(logLines[0].includes('PRIVATE-DETAIL-912'), false);
-  assert.equal(logLines[0].includes('private-object-84721'), false);
-  assert.equal(logLines[0].includes('+50672061146'), false);
-});
-
-test('redacta teléfono, ID, token y fragmento de usuario en los cuatro campos Graph', async () => {
-  const sensitiveValues = [
-    '+506 7206-1146',
-    '998877665544332211',
-    'EAAJ_test-token_secret_value1234567890',
-    'MAIKOL-ORDER-PRIVATE-88'
-  ];
-  const { response, graphRequest, logLines } = await simulateGraphError({
-    message: 'The parameter messaging_product is required.',
-    error_user_title: 'Invalid parameter value',
-    error_user_msg: `Recipient ${sensitiveValues[0]}: token ${sensitiveValues[2]}; fragment ${sensitiveValues[3]}; ID ${sensitiveValues[1]}`,
-    error_data: {
-      details: `The value '${sensitiveValues[0]}' for parameter to is invalid.`
-    }
-  }, 'wamid.telemetry-sensitive-fixtures');
-
-  assert.equal(response.statusCode, 500);
-  assert.equal(logLines.length, 1);
-  const logged = JSON.parse(logLines[0]);
-  assert.deepEqual(logged.providerError, {
-    code: 100,
-    message: 'The parameter messaging_product is required.',
-    userTitle: 'Invalid parameter value',
-    userMessage: 'Recipient [redacted]: [redacted] [redacted]; [redacted] [redacted]; ID [redacted]',
-    details: 'The value [redacted] for parameter to is invalid.',
+    subcode: 33,
     messageClass: 'missing_required_parameter',
-    userTitleClass: 'invalid_parameter_value',
-    userMessageClass: 'unclassified',
+    detailsClass: 'unclassified',
+    parameters: ['messaging_account_id']
+  });
+  assertNoSensitiveFixture(logLines, [
+    rawMessage,
+    rawDetails,
+    rawUserMessage,
+    'PRIVATE-OBJECT-84721',
+    'PRIVATE-DETAIL-912',
+    '+50672061146',
+    'EAAJ_test-token_secret_value1234567890',
+    'servicio@example.test',
+    'FBTRACE-PRIVATE-8821',
+    TEST_RECIPIENT,
+    TEST_REPLY,
+    TEST_ACCESS_TOKEN,
+    'INBOUND-TEST-NO-PII'
+  ]);
+});
+
+test('Graph ignores unallowlisted parameter names and never logs provider text or transient flags', async () => {
+  const rawMessage = 'The parameter private_unlisted_9281 is required for OPAQUE-VALUE-1937';
+  const { logLines } = await simulateGraphError({
+    error_subcode: 7,
+    message: rawMessage,
+    error_data: { details: 'secret detail PII-PRIVATE-114' },
+    is_transient: false
+  });
+
+  const failure = getEvents(logLines).find((event) => event.event === 'reply_send_failed');
+  assert.ok(failure);
+  assert.deepEqual(failure.providerError, {
+    code: 100,
+    subcode: 7,
+    messageClass: 'unclassified',
     detailsClass: 'unclassified'
   });
-  for (const value of sensitiveValues) assert.equal(logLines[0].includes(value), false);
-  assert.equal(graphRequest.body.to, TEST_RECIPIENT);
-  assert.deepEqual(graphRequest.body.text, { preview_url: false, body: TEST_REPLY });
-  assert.equal(logLines[0].includes(TEST_ACCESS_TOKEN), false);
+  assertNoSensitiveFixture(logLines, [rawMessage, 'private_unlisted_9281', 'OPAQUE-VALUE-1937', 'secret detail', 'PII-PRIVATE-114']);
+});
+
+test('Gemini sin clave registra solo ausencia de clave y mantiene el fallback existente', async () => {
+  delete process.env.GEMINI_API_KEY;
+  let contentCalls = 0;
+  const sent = [];
+  const captured = captureLogs();
+  try {
+    const handler = createWebhookHandler({
+      generateGeminiContent: async () => {
+        contentCalls += 1;
+        throw new Error('this should not be called');
+      },
+      sendWhatsAppText: async (to, text) => sent.push({ to, text })
+    });
+    const response = makeResponse();
+    await handler(makeSignedRequest(), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.payload, { received: true, replied: true });
+    assert.equal(contentCalls, 0);
+    assert.deepEqual(sent, [{
+      to: TEST_RECIPIENT,
+      text: 'En este momento el soporte inteligente no está configurado. Por favor, deja tu mensaje y un integrante de Saborai te ayudará pronto.'
+    }]);
+    const diagnostic = getEvents(captured.lines).find((event) => event.event === 'reply_generation_failed');
+    assert.ok(diagnostic);
+    assert.deepEqual(diagnostic.gemini, {
+      apiKeyPresent: false,
+      model: 'not_attempted',
+      timedOut: false,
+      timeoutMs: 0,
+      generationTimeoutMs: 9000,
+      maxAttemptsPerModel: 0,
+      retryCount: 0
+    });
+    assertNoSensitiveFixture(captured.lines, [TEST_RECIPIENT, TEST_ACCESS_TOKEN, 'INBOUND-TEST-NO-PII']);
+  } finally {
+    captured.restore();
+  }
+});
+
+test('Gemini registra cada modelo con status/código allowlisted, timeout y retry; no filtra errores ni prompt', async () => {
+  process.env.GEMINI_API_KEY = TEST_GEMINI_KEY;
+  const rawErrorMessage = 'private provider detail +50672061146 PRIVATE-GEMINI-ERROR-471';
+  const calls = [];
+  const sent = [];
+  const fakeError = Object.assign(new Error(rawErrorMessage), {
+    status: 429,
+    code: 'QUOTA_EXCEEDED',
+    response: { status: 429 },
+    stack: `Error: ${rawErrorMessage}`
+  });
+  const captured = captureLogs();
+  try {
+    const handler = createWebhookHandler({
+      generateGeminiContent: async (request) => {
+        calls.push({
+          model: request.model,
+          timeout: request.config.httpOptions.timeout,
+          attempts: request.config.httpOptions.retryOptions.attempts,
+          maxOutputTokens: request.config.maxOutputTokens
+        });
+        throw fakeError;
+      },
+      sendWhatsAppText: async (to, text) => sent.push({ to, text })
+    });
+    const response = makeResponse();
+    await handler(makeSignedRequest(), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.payload, { received: true, replied: true });
+    assert.deepEqual(calls, [
+      { model: 'gemini-3.8-flash', timeout: 7000, attempts: 1, maxOutputTokens: 512 },
+      { model: 'gemini-3.5-flash-lite', timeout: 7000, attempts: 1, maxOutputTokens: 512 }
+    ]);
+    assert.deepEqual(sent, [{
+      to: TEST_RECIPIENT,
+      text: 'Recibí tu mensaje, pero Nyza está temporalmente ocupada. Intenta nuevamente en unos minutos o deja el detalle del problema para que soporte humano lo revise.'
+    }]);
+
+    const attempts = getEvents(captured.lines).filter((event) => event.event === 'gemini_attempt_failed');
+    assert.equal(attempts.length, 2);
+    for (const [index, event] of attempts.entries()) {
+      assert.deepEqual(event.gemini, {
+        apiKeyPresent: true,
+        model: calls[index].model,
+        httpStatus: 429,
+        errorCode: 'quota_exceeded',
+        timedOut: false,
+        timeoutMs: 7000,
+        generationTimeoutMs: 9000,
+        maxAttemptsPerModel: 1,
+        retryCount: 0
+      });
+    }
+    assertNoSensitiveFixture(captured.lines, [
+      TEST_GEMINI_KEY,
+      rawErrorMessage,
+      'PRIVATE-GEMINI-ERROR-471',
+      '+50672061146',
+      TEST_RECIPIENT,
+      TEST_ACCESS_TOKEN,
+      'INBOUND-TEST-NO-PII'
+    ]);
+  } finally {
+    captured.restore();
+    delete process.env.GEMINI_API_KEY;
+  }
+});
+
+test('Gemini marca timeout y mantiene redacciones cuando un modelo responde correctamente', async () => {
+  process.env.GEMINI_API_KEY = TEST_GEMINI_KEY;
+  const calls = [];
+  const sent = [];
+  const timeoutError = Object.assign(new Error('PRIVATE-TIMEOUT-DETAIL-717'), {
+    name: 'TimeoutError',
+    code: 'ETIMEDOUT',
+    stack: 'PRIVATE-STACK-928'
+  });
+  const captured = captureLogs();
+  try {
+    const handler = createWebhookHandler({
+      generateGeminiContent: async (request) => {
+        calls.push(request.model);
+        if (calls.length === 1) throw timeoutError;
+        return { text: 'GEMINI-REPLY-TEST-NO-PII' };
+      },
+      sendWhatsAppText: async (to, text) => sent.push({ to, text })
+    });
+    const response = makeResponse();
+    await handler(makeSignedRequest(), response);
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.payload, { received: true, replied: true });
+    assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.5-flash-lite']);
+    assert.deepEqual(sent, [{ to: TEST_RECIPIENT, text: 'GEMINI-REPLY-TEST-NO-PII' }]);
+    const event = getEvents(captured.lines).find((item) => item.event === 'gemini_attempt_failed');
+    assert.ok(event);
+    assert.deepEqual(event.gemini, {
+      apiKeyPresent: true,
+      model: 'gemini-3.8-flash',
+      timedOut: true,
+      timeoutMs: 7000,
+      generationTimeoutMs: 9000,
+      maxAttemptsPerModel: 1,
+      retryCount: 0
+    });
+    assertNoSensitiveFixture(captured.lines, [
+      TEST_GEMINI_KEY,
+      'PRIVATE-TIMEOUT-DETAIL-717',
+      'PRIVATE-STACK-928',
+      'GEMINI-REPLY-TEST-NO-PII',
+      TEST_RECIPIENT,
+      'INBOUND-TEST-NO-PII'
+    ]);
+  } finally {
+    captured.restore();
+    delete process.env.GEMINI_API_KEY;
+  }
 });

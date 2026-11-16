@@ -380,7 +380,15 @@ test('registra códigos, clases y solo texto Graph redactado sin cuerpos ni dato
 
     assert.equal(response.statusCode, 500);
     const serializedLogs = logs.join('\n');
-    assert.match(serializedLogs, /"statusCode":400,"providerError":\{"code":130429,"subcode":909090,"isTransient":false,"message":"\[redacted\]","messageClass":"unclassified","details":"\[redacted\]","detailsClass":"unclassified"\}/);
+    const failureEvent = serializedLogs.split('\n').map((line) => JSON.parse(line)).find((event) => event.event === 'reply_send_failed');
+    assert.ok(failureEvent);
+    assert.equal(failureEvent.statusCode, 400);
+    assert.deepEqual(failureEvent.providerError, {
+      code: 130429,
+      subcode: 909090,
+      messageClass: 'unclassified',
+      detailsClass: 'unclassified'
+    });
     for (const privateValue of [
       'PRIVATE_TEST_TOKEN',
       'PRIVATE_TEST_PHONE_NUMBER_ID',
