@@ -319,6 +319,7 @@ async function sendWhatsAppText(to: string, text: string, graphApiFetch: typeof 
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
+      messaging_account_id: '1845701716552385',
       recipient_type: 'individual',
       to,
       type: 'text',

@@ -6,6 +6,7 @@ import { after, beforeEach, test } from 'node:test';
 const TEST_APP_SECRET = 'webhook-telemetry-test-secret';
 const TEST_ACCESS_TOKEN = 'test-access-token-must-not-be-logged';
 const TEST_PHONE_NUMBER_ID = 'test-phone-number-id';
+const TEST_MESSAGING_ACCOUNT_ID = '1845701716552385';
 const TEST_RECIPIENT = '0000000000';
 const TEST_REPLY = 'AUTOMATED-REPLY-NO-PII';
 const previousEnv = {
@@ -108,7 +109,7 @@ async function simulateGraphError(errorFields = {}, messageId = 'wamid.telemetry
   }
 }
 
-test('clasifica un detalle permitido sin registrar detalle libre ni alterar el formato oficial de envío', async () => {
+test('clasifica un detalle permitido sin registrar detalle libre e incluye la cuenta de mensajería en el payload', async () => {
   const allowedDetails = 'The request included one or more unsupported or misspelled parameters.';
   const { response, graphRequest, logLines } = await simulateGraphError({ error_data: { details: allowedDetails } });
 
@@ -119,6 +120,7 @@ test('clasifica un detalle permitido sin registrar detalle libre ni alterar el f
     method: 'POST',
     body: {
       messaging_product: 'whatsapp',
+      messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
       recipient_type: 'individual',
       to: TEST_RECIPIENT,
       type: 'text',
@@ -198,6 +200,7 @@ test('detecta un campo requerido dentro de texto adicional y conserva el payload
     method: 'POST',
     body: {
       messaging_product: 'whatsapp',
+      messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
       recipient_type: 'individual',
       to: TEST_RECIPIENT,
       type: 'text',
@@ -224,6 +227,7 @@ test('redacta el nombre de campo requerido no documentado y lo deja unclassified
 
   assert.deepEqual(graphRequest.body, {
     messaging_product: 'whatsapp',
+    messaging_account_id: TEST_MESSAGING_ACCOUNT_ID,
     recipient_type: 'individual',
     to: TEST_RECIPIENT,
     type: 'text',
