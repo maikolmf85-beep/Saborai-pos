@@ -40,7 +40,18 @@ export function formatDinerNames(
   const names = getDinerNames(items, fallbackName);
   if (names.length === 0) return undefined;
 
-  return `${names.length === 1 ? 'Comensal' : 'Comensales'}: ${names.join(', ')}`;
+  return `${names.length === 1 ? 'Cuenta' : 'Cuentas'}: ${names.join(', ')}`;
+}
+
+/** Formats the account name attached to one kitchen/bar ticket item. */
+export function formatDinerNameForTicket(value?: string | null): string | undefined {
+  const name = getDisplayableDinerName(value);
+  return name ? `Cuenta: ${name}` : undefined;
+}
+
+/** Internal account names must not appear on customer-facing cash receipts. */
+export function formatDinerNameForPrinter(value: string | null | undefined, role: PrinterRole): string | undefined {
+  return role === 'caja' ? undefined : formatDinerNameForTicket(value);
 }
 
 /** Customer-facing cash receipts must never show internal diner labels. */

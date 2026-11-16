@@ -1204,7 +1204,7 @@ export function App() {
     return user;
   };
 
-  const handleSwitchWaiter = async (staff: UserProfile, pin?: string): Promise<UserProfile> => {
+  const handleSwitchWaiter = async (staff: UserProfile, pin: string): Promise<UserProfile> => {
     const user = await activateStaffSession(staff, pin);
     const activeShift = cashShiftService.registerUserOnActiveShift(user);
     if (activeShift) broadcastShifts(cashShiftService.getAllActiveShiftsMap());

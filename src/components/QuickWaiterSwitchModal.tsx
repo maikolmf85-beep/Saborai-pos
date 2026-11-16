@@ -16,8 +16,6 @@ import {
   CheckCircle2,
   UserPlus,
   Phone,
-  Lock,
-  Unlock,
   Dices,
   Users
 } from 'lucide-react';
@@ -31,7 +29,7 @@ interface QuickWaiterSwitchModalProps {
   staffList: UserProfile[];
   currentUser: UserProfile | null;
   tenantId: string;
-  onSwitchUser: (staff: UserProfile, pin?: string) => void | Promise<void>;
+  onSwitchUser: (staff: UserProfile, pin: string) => void | Promise<void>;
   onAddStaffMember?: (newMember: UserProfile) => void | Promise<void>;
   restaurantName?: string;
 }
@@ -48,27 +46,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
 }) => {
   // Modal active tab: 'switch' (Cambio Rápido) or 'new_user' (Formulario Nuevo Usuario)
   const [modalTab, setModalTab] = useState<'switch' | 'new_user'>('switch');
-
-  // Fast 1-click mode (Instant switch without requiring PIN) vs PIN protection
-  const [fastModeWithoutPin, setFastModeWithoutPin] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('saborai_fast_user_switch_no_pin') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const canUseFastMode = currentUser?.role === 'ADMIN';
-  const effectiveFastMode = canUseFastMode && fastModeWithoutPin;
-
-  const toggleFastMode = () => {
-    if (!canUseFastMode) return;
-    const nextVal = !fastModeWithoutPin;
-    setFastModeWithoutPin(nextVal);
-    try {
-      localStorage.setItem('saborai_fast_user_switch_no_pin', String(nextVal));
-    } catch {}
-    soundService.playKeyClickSound();
-  };
+  const canManageStaff = currentUser?.role === 'ADMIN';
 
   // Only active staff
   const activeStaff = useMemo(() => {
@@ -145,24 +123,6 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
     setErrorMessage(null);
   };
 
-  const handleInstantSwitch = async (staff: UserProfile) => {
-    if (!canUseFastMode) {
-      setErrorMessage('Solo un administrador puede entrar sin PIN.');
-      return;
-    }
-    setSelectedStaff(staff);
-    setIsVerifying(true);
-    try {
-      await onSwitchUser(staff);
-      soundService.playSuccessChime();
-      setIsSuccess(true);
-      setTimeout(onClose, 350);
-    } catch (error: any) {
-      setErrorMessage(error?.message || 'No se pudo iniciar la sesión del colaborador.');
-      setIsVerifying(false);
-    }
-  };
-
   const validatePin = async (inputPin: string) => {
     if (!selectedStaff) {
       setErrorMessage('Selecciona primero al colaborador');
@@ -234,7 +194,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
     e.preventDefault();
     setNewFormError(null);
 
-    if (!canUseFastMode) {
+    if (!canManageStaff) {
       setNewFormError('Solo un administrador puede registrar usuarios nuevos.');
       return;
     }
@@ -265,7 +225,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
 
     try {
       if (onAddStaffMember) await onAddStaffMember(newMember);
-      await onSwitchUser(newMember);
+      await onSwitchUser(newMember, newPin);
       soundService.playSuccessChime();
       onClose();
     } catch (error: any) {
@@ -367,7 +327,7 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
 
               <button
                 type="button"
-                disabled={!canUseFastMode}
+                disabled={!canManageStaff}
                 onClick={() => {
                   setModalTab('new_user');
                   soundService.playKeyClickSound();
@@ -407,21 +367,6 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                   <UserCheck className="w-4 h-4 text-[#588157]" />
                   <span>1. Selecciona al Colaborador:</span>
                 </label>
-
-                {/* Fast Mode Toggle: exclusivo para ADMIN */}
-                {canUseFastMode && <button
-                  type="button"
-                  onClick={toggleFastMode}
-                  className={`text-[10px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 transition-all ${
-                    effectiveFastMode
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                      : 'bg-stone-100 border-stone-200 text-stone-500 hover:text-stone-800'
-                  }`}
-                  title={effectiveFastMode ? 'Cambio instantáneo en 1 clic activado' : 'Requiere digitar PIN de 4 dígitos'}
-                >
-                  {effectiveFastMode ? <Unlock className="w-3 h-3 text-emerald-600" /> : <Lock className="w-3 h-3 text-stone-500" />}
-                  <span>{effectiveFastMode ? '1-Clic (Sin PIN)' : 'Con PIN'}</span>
-                </button>}
               </div>
 
               {/* Search & Role Filter Pills */}
@@ -485,14 +430,10 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                     <div
                       key={staff.id}
                       onClick={() => {
-                        if (effectiveFastMode) {
-                          handleInstantSwitch(staff);
-                        } else {
-                          setSelectedStaff(staff);
-                          setPin('');
-                          setErrorMessage(null);
-                          soundService.playKeyClickSound();
-                        }
+                        setSelectedStaff(staff);
+                        setPin('');
+                        setErrorMessage(null);
+                        soundService.playKeyClickSound();
                       }}
                       className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center justify-between group cursor-pointer ${
                         isSelected
@@ -543,18 +484,11 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 ml-2">
-                        {effectiveFastMode ? (
-                          <button
-                            type="button"
-                            className="px-2.5 py-1 bg-[#a9b994] hover:bg-[#97a783] text-stone-950 font-black text-[10px] rounded-lg shadow-2xs transition-transform active:scale-95"
-                          >
-                            Entrar
-                          </button>
-                        ) : isSelected ? (
+                        {isSelected && (
                           <div className="w-6 h-6 rounded-full bg-[#a9b994] text-stone-950 flex items-center justify-center animate-in zoom-in-50 duration-100">
                             <Check className="w-3.5 h-3.5 stroke-[3]" />
                           </div>
-                        ) : null}
+                        )}
                       </div>
                     </div>
                   );
@@ -681,21 +615,6 @@ export const QuickWaiterSwitchModal: React.FC<QuickWaiterSwitchModalProps> = ({
                   <Delete className="w-4 h-4" />
                 </button>
               </div>
-
-              {/* Direct Instant Action: exclusivo para ADMIN */}
-              {canUseFastMode && <button
-                type="button"
-                onClick={() => {
-                  if (selectedStaff) {
-                    handleInstantSwitch(selectedStaff);
-                  }
-                }}
-                disabled={!selectedStaff || isSuccess}
-                className="w-full mt-3 py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 text-[11px] font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-600" />
-                <span>Entrar directo sin digitar PIN</span>
-              </button>}
 
             </div>
 

@@ -1,6 +1,6 @@
 import { PrinterConfig, PrinterRole, PrintReceiptData, PrintResult } from '../types/printer';
 import { getTenantItem, setTenantItem } from './tenantStorage';
-import { escapeHtmlText, formatDinerNamesForPrinter } from '../utils/orderDiners';
+import { escapeHtmlText, formatDinerNameForPrinter, formatDinerNamesForPrinter } from '../utils/orderDiners';
 
 const PRINTERS_STORAGE_KEY = 'printers_config_v2';
 const DEFAULT_PRINT_RELAY_URL = 'http://127.0.0.1:8080/print';
@@ -393,7 +393,11 @@ export class PrinterService {
     data.items.forEach(item => {
       const cantStr = `${item.quantity}x `.padEnd(4, ' ');
       const priceStr = item.subtotal !== undefined ? item.subtotal.toLocaleString() : (item.price ? (item.price * item.quantity).toLocaleString() : '');
+      const accountNameLabel = formatDinerNameForPrinter(item.dinerName, config.role);
       builder.twoColumnRow(`${cantStr}${item.name}`, priceStr, cols);
+      if (accountNameLabel) {
+        builder.line(`  ${accountNameLabel}`);
+      }
 
       if (item.modifiers && item.modifiers.length > 0) {
         item.modifiers.forEach(m => {
@@ -754,15 +758,19 @@ export class PrinterService {
     const widthPx = is58 ? '48mm' : '72mm';
     const dinerNamesLabel = formatDinerNamesForPrinter(data.items, config.role);
 
-    const itemsHtml = data.items.map(item => `
+    const itemsHtml = data.items.map(item => {
+      const accountNameLabel = formatDinerNameForPrinter(item.dinerName, config.role);
+      return `
       <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
         <span style="font-weight: bold; width: 22px;">${item.quantity}x</span>
         <span style="flex: 1; padding: 0 4px;">${item.name}</span>
         <span style="font-weight: bold;">${item.subtotal !== undefined ? item.subtotal.toLocaleString() : (item.price ? (item.price * item.quantity).toLocaleString() : '')}</span>
       </div>
+      ${accountNameLabel ? `<div style="font-size: 9px; padding-left: 26px; font-weight: bold; color: #588157;">${escapeHtmlText(accountNameLabel)}</div>` : ''}
       ${item.modifiers && item.modifiers.length > 0 ? `<div style="font-size: 9px; padding-left: 26px; color: #555;">${item.modifiers.join(', ')}</div>` : ''}
       ${item.notes ? `<div style="font-size: 9px; padding-left: 26px; font-weight: bold;">* NOTA: ${item.notes}</div>` : ''}
-    `).join('');
+    `;
+    }).join('');
 
     return `
       <!DOCTYPE html>

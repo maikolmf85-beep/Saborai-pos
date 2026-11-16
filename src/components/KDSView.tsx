@@ -14,7 +14,7 @@ import {
 import { KDSOrder, MenuItem } from '../types';
 import { soundService } from '../services/soundEffects';
 import { PosNotification } from './NotificationToast';
-import { formatDinerNames } from '../utils/orderDiners';
+import { formatDinerNameForTicket, formatDinerNames } from '../utils/orderDiners';
 
 interface KDSViewProps {
   orders: KDSOrder[];
@@ -369,7 +369,9 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
 
                 {/* Items List */}
                 <div className="space-y-2 mb-4">
-                  {order.items.map((it, idx) => (
+                  {order.items.map((it, idx) => {
+                    const accountNameLabel = formatDinerNameForTicket(it.dinerName);
+                    return (
                     <div 
                       key={idx} 
                       onClick={() => order.status !== 'SERVED' && it.id && handleToggleItemCompletion(order.id, it.id)}
@@ -394,6 +396,9 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                             <span className="text-sm font-black w-7">{it.quantity}x</span>
                             <span className="flex-1">{it.name}</span>
                           </div>
+                          {accountNameLabel && (
+                            <p className="text-[11px] font-bold text-[#588157] mt-1 pl-7">{accountNameLabel}</p>
+                          )}
                           {it.notes && (
                             <p className={`text-[11px] font-medium italic mt-1 pl-7 ${it.completed ? 'text-stone-400 line-through' : 'text-amber-800'}`}>
                               Nota: {it.notes}
@@ -411,7 +416,8 @@ export const KDSView: React.FC<KDSViewProps> = ({ orders, onUpdateStatus, onTogg
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

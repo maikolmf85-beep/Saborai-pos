@@ -1,8 +1,10 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { hasActiveShiftForZone, shouldOpenOrderOnTableSelect } from './tableMapOrderFlow';
 import { TableLayoutDragDraft } from '../services/tableLayoutDrag';
-import { Table, TableStatus, UserProfile } from '../types';
+import { Table, UserProfile } from '../types';
+import { WaiterAssignmentModal } from './WaiterAssignmentModal';
 import { WaiterPinModal } from './WaiterPinModal';
+import { assignTableWaiter } from '../services/waiterTableAssignment';
 import { TableReservationsModal } from './TableReservationsModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { hasPendingTableReservationSync, loadTableReservations, subscribeToTableReservations, updateTableReservation } from '../services/tableReservationService';
@@ -254,7 +256,9 @@ export const TableMap: React.FC<TableMapProps> = ({
     }
   };
 
-  // Waiter PIN selection modal state
+  // First table assignment selects a waiter only; changing the active user remains a separate PIN flow.
+  const [tableForAssignment, setTableForAssignment] = useState<Table | null>(null);
+  const [isWaiterAssignmentOpen, setIsWaiterAssignmentOpen] = useState<boolean>(false);
   const [tableForPinAuth, setTableForPinAuth] = useState<Table | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
 
@@ -581,88 +585,47 @@ export const TableMap: React.FC<TableMapProps> = ({
       });
       return;
     }
-    if (table.status === 'AVAILABLE') {
-      // Si el usuario actual ya es un salonero logueado, asignar directamente la mesa a su nombre
-      const isLoggedWaiter = currentUser && (currentUser.role === 'SALONERO' || currentUser.role === 'SALONERO_CAJA' || currentUser.role === 'WAITER');
-      if (isLoggedWaiter && currentUser.name) {
-        const updated = tables.map(t => {
-          if (t.id === table.id) {
-            return {
-              ...t,
-              status: 'OCCUPIED' as TableStatus,
-              activeOrder: {
-                orderNumber: t.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-                server: currentUser.name,
-                openedAt: t.activeOrder?.openedAt || new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
-                subAccounts: t.activeOrder?.subAccounts || [{ id: 1, name: 'Cuenta 1' }],
-                items: t.activeOrder?.items || []
-              }
-            };
-          }
-          return t;
-        });
+    const needsInitialAssignment = table.status === 'AVAILABLE'
+      || ((table.status === 'OCCUPIED' || table.status === 'PRE_CHECK')
+        && (!table.activeOrder || !table.activeOrder.server
+          || table.activeOrder.server === 'Mesero General'
+          || table.activeOrder.server === 'Salonero general'));
 
-        setTables(updated);
-        if (onUpdateTables) onUpdateTables(updated);
-
-        const updatedTbl = updated.find(t => t.id === table.id) || table;
-        setSelectedTable(updatedTbl);
-        onOpenOrder(updatedTbl);
-        return;
-      }
-
-      // Si es Admin o no hay salonero logueado, permitir seleccionar salonero con PIN
-      setTableForPinAuth(table);
-      setIsPinModalOpen(true);
-    } else {
-      // Si la mesa ya estaba ocupada pero no tenía server asignado, asegurar que tenga el nombre correcto
-      if (table.activeOrder && (!table.activeOrder.server || table.activeOrder.server === 'Mesero General' || table.activeOrder.server === 'Salonero general')) {
-        const effectiveName = currentUser?.name || staffList[0]?.name || 'Salonero Encargado';
-        const updatedTbl: Table = {
-          ...table,
-          activeOrder: {
-            ...table.activeOrder,
-            server: effectiveName
-          }
-        };
-        const nextTables = tables.map(t => t.id === table.id ? updatedTbl : t);
-        setTables(nextTables);
-        if (onUpdateTables) onUpdateTables(nextTables);
-        setSelectedTable(updatedTbl);
-        onOpenOrder(updatedTbl);
-        return;
-      }
-      onOpenOrder(table);
+    if (needsInitialAssignment) {
+      setTableForAssignment(table);
+      setIsWaiterAssignmentOpen(true);
+      return;
     }
+
+    onOpenOrder(table);
+  };
+
+  const handleWaiterAssigned = (staff: UserProfile) => {
+    if (!tableForAssignment) return;
+
+    const sourceTable = tables.find(t => t.id === tableForAssignment.id) || tableForAssignment;
+    const assignedTable = assignTableWaiter(sourceTable, staff);
+    const updated = tables.map(t => t.id === assignedTable.id ? assignedTable : t);
+    setTables(updated);
+    onUpdateTables?.(updated);
+    setSelectedTable(assignedTable);
+    setTableForAssignment(null);
+    setIsWaiterAssignmentOpen(false);
+    onOpenOrder(assignedTable);
   };
 
   const handlePinValidated = (staff: UserProfile) => {
     if (!tableForPinAuth) return;
 
-    const updated = tables.map(t => {
-      if (t.id === tableForPinAuth.id) {
-        return {
-          ...t,
-          status: 'OCCUPIED' as TableStatus,
-          activeOrder: {
-            orderNumber: t.activeOrder?.orderNumber || `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
-            server: staff.name,
-            openedAt: t.activeOrder?.openedAt || new Date().toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' }),
-            subAccounts: t.activeOrder?.subAccounts || [{ id: 1, name: 'Cuenta 1' }],
-            items: t.activeOrder?.items || []
-          }
-        };
-      }
-      return t;
-    });
-
+    const sourceTable = tables.find(t => t.id === tableForPinAuth.id) || tableForPinAuth;
+    const reassignedTable = assignTableWaiter(sourceTable, staff);
+    const updated = tables.map(t => t.id === reassignedTable.id ? reassignedTable : t);
     setTables(updated);
-    if (onUpdateTables) onUpdateTables(updated);
-
-    const updatedTbl = updated.find(t => t.id === tableForPinAuth.id) || tableForPinAuth;
-    setSelectedTable(updatedTbl);
-    onOpenOrder(updatedTbl);
+    onUpdateTables?.(updated);
+    setSelectedTable(reassignedTable);
     setTableForPinAuth(null);
+    setIsPinModalOpen(false);
+    onOpenOrder(reassignedTable);
   };
 
   const openTransferAccountModal = () => {
@@ -1731,7 +1694,19 @@ export const TableMap: React.FC<TableMapProps> = ({
         </div>
       )}
 
-      {/* Modal: Asignar Salonero con PIN */}
+      {/* Modal: asignación inicial de salonero (sin cambio de sesión ni PIN) */}
+      <WaiterAssignmentModal
+        isOpen={isWaiterAssignmentOpen}
+        onClose={() => {
+          setIsWaiterAssignmentOpen(false);
+          setTableForAssignment(null);
+        }}
+        table={tableForAssignment}
+        staffList={staffList}
+        currentUser={currentUser}
+        onSelectWaiter={handleWaiterAssigned}
+      />
+
       <WaiterPinModal
         isOpen={isPinModalOpen}
         onClose={() => {

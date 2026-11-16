@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, Table, UserRole } from '../types';
 import { isCloudTenantId } from '../services/employeeSessionService';
+import { isAssignableTableWaiter } from '../services/waiterTableAssignment';
 
 interface WaiterPinModalProps {
   isOpen: boolean;
@@ -32,8 +33,8 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   tenantId,
   onConfirm
 }) => {
-  // Filter eligible staff (Saloneros, Salonero con Caja, Admins, etc.)
-  const eligibleStaff = staffList.filter(s => s.active !== false);
+  // Only active saloneros can be assigned to or switched on a table.
+  const eligibleStaff = staffList.filter(isAssignableTableWaiter);
 
   const [selectedStaff, setSelectedStaff] = useState<UserProfile | null>(eligibleStaff[0] || null);
   const [pin, setPin] = useState<string>('');
@@ -165,13 +166,13 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-stone-900 flex items-center gap-1.5">
-                <span>Asignar Salonero Encargado</span>
+                <span>Cambiar Salonero Encargado</span>
                 <span className="text-xs px-2 py-0.5 rounded-lg bg-stone-200 text-stone-700 font-semibold">
                   {table.name}
                 </span>
               </h3>
               <p className="text-[11px] text-stone-500">
-                Selecciona al salonero responsable e ingresa su PIN para abrir la comanda.
+                Selecciona al salonero que atenderá esta mesa e ingresa su PIN para confirmar el cambio.
               </p>
             </div>
           </div>

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
   escapeHtmlText,
+  formatDinerNameForPrinter,
+  formatDinerNameForTicket,
   formatDinerNames,
   formatDinerNamesForPrinter,
   getDinerNames,
@@ -15,7 +17,7 @@ test('muestra un solo nombre aunque esté repetido en varios artículos', () => 
     { dinerName: 'Miguelina' },
     { dinerName: ' Miguelina ' },
     { dinerName: 'MIGUELINA' }
-  ]), 'Comensal: Miguelina');
+  ]), 'Cuenta: Miguelina');
 });
 
 test('muestra nombres distintos una sola vez y en el orden de la comanda', () => {
@@ -27,14 +29,14 @@ test('muestra nombres distintos una sola vez y en el orden de la comanda', () =>
   assert.equal(formatDinerNames([
     { dinerName: 'Miguelina' },
     { dinerName: 'Ana' }
-  ]), 'Comensales: Miguelina, Ana');
+  ]), 'Cuentas: Miguelina, Ana');
 });
 
 test('prefiere el nombre actual de la cuenta para artículos históricos sin nombre o con nombre anterior', () => {
   assert.equal(formatDinerNames([
     { dinerName: undefined },
     { dinerName: 'Nombre anterior' }
-  ], 'María P.'), 'Comensal: María P.');
+  ], 'María P.'), 'Cuenta: María P.');
 });
 
 test('omite campos vacíos y etiquetas genéricas de cuenta', () => {
@@ -55,11 +57,19 @@ test('escapa los nombres antes de insertarlos en el HTML de impresión', () => {
   assert.equal(escapeHtmlText('<Ana & "Luis">'), '&lt;Ana &amp; &quot;Luis&quot;&gt;');
 });
 
-test('conserva los nombres en tickets de cocina/bar y los excluye del rol de caja', () => {
+test('formatea una cuenta por artículo y la conserva solo en tickets internos', () => {
+  assert.equal(formatDinerNameForTicket('Miguel'), 'Cuenta: Miguel');
+  assert.equal(formatDinerNameForTicket('Cuenta 1'), undefined);
+  assert.equal(formatDinerNameForPrinter('Miguel', 'cocina'), 'Cuenta: Miguel');
+  assert.equal(formatDinerNameForPrinter('Miguel', 'bar'), 'Cuenta: Miguel');
+  assert.equal(formatDinerNameForPrinter('Miguel', 'caja'), undefined);
+});
+
+test('conserva los nombres agregados en tickets de cocina/bar y los excluye del rol de caja', () => {
   const items = [{ name: 'Sopa', quantity: 1, dinerName: 'ETIQUETA SOLO INTERNA' }];
 
-  assert.equal(formatDinerNamesForPrinter(items, 'cocina'), 'Comensal: ETIQUETA SOLO INTERNA');
-  assert.equal(formatDinerNamesForPrinter(items, 'bar'), 'Comensal: ETIQUETA SOLO INTERNA');
+  assert.equal(formatDinerNamesForPrinter(items, 'cocina'), 'Cuenta: ETIQUETA SOLO INTERNA');
+  assert.equal(formatDinerNamesForPrinter(items, 'bar'), 'Cuenta: ETIQUETA SOLO INTERNA');
   assert.equal(formatDinerNamesForPrinter(items, 'caja'), undefined);
 });
 
@@ -144,6 +154,10 @@ test('conecta la proyección segura con recibo, factura, emisión y sync fiscal'
   assert.doesNotMatch(billing, /COMPROBANTE RÉGIMEN SIMPLIFICADO - CUENTA|FACTURA ELECTRÓNICA - CUENTA|TIQUETE ELECTRÓNICO - CUENTA/i);
   assert.doesNotMatch(billing, /CABYS:\s*\{item\.cabysCode\}\s*\(Cuenta/i);
   assert.equal((printer.match(/formatDinerNamesForPrinter\(data\.items, config\.role\)/g) || []).length, 2);
+  assert.equal((printer.match(/formatDinerNameForPrinter\(item\.dinerName, config\.role\)/g) || []).length, 2);
+  assert.match(printer, /builder\.line\(`  \$\{accountNameLabel\}`\)/);
+  assert.match(printer, /escapeHtmlText\(accountNameLabel\)/);
+  assert.match(printer, /formatDinerNameForPrinter\(item\.dinerName, config\.role\)/);
   assert.match(offlineSync, /invoice_data:\s*sanitizeFiscalInvoiceData\(payload\.invoiceData\)/);
   assert.match(haciendaApi, /const invoiceData = sanitizeFiscalInvoiceData\(/);
   assert.match(historyApi, /invoiceData:\s*sanitizeFiscalInvoiceData\(row\.invoice_data\)/);
@@ -151,4 +165,5 @@ test('conecta la proyección segura con recibo, factura, emisión y sync fiscal'
   assert.match(posCloud, /invoiceData:\s*sanitizeFiscalInvoiceData\(sale\.invoice\)/);
   assert.match(orderTaking, /dinerName:\s*i\.dinerName/);
   assert.match(kds, /formatDinerNames\(order\.items\)/);
+  assert.match(kds, /formatDinerNameForTicket\(it\.dinerName\)/);
 });
