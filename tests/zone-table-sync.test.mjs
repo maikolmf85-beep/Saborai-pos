@@ -10,6 +10,7 @@ import {
 import { canRespondToRealtimeSync, readTableSnapshot, resolveRealtimeTablePayload, resolveRealtimeTables } from '../src/services/tableSync.ts';
 import { validateTableLayout } from '../src/services/tableLayoutValidation.ts';
 import { mergeConcurrentTableLayouts, persistTableLayoutWithClient } from '../src/services/tableLayoutConcurrency.ts';
+import { restoreTablePositionsFromSnapshot } from '../src/services/tableLayoutPersistence.ts';
 import { cleanTenantZones, updateTenantZonesInSupabase } from '../api/_utils/tenantZones.ts';
 
 const layoutItem = (id, x, y = 25) => ({
@@ -218,6 +219,36 @@ test('merge concurrente conserva cambios independientes, adiciones y borrados, c
     mergeConcurrentTableLayouts([layoutItem('A', 10)], [layoutItem('A', 30)], [layoutItem('A', 40)]),
     [layoutItem('A', 40)]
   );
+});
+
+test('un plano guardado antes de salir reaparece al reingresar; una instantánea vieja no lo revierte', async () => {
+  const tenantId = 'tenant-one';
+  let activeTenantId = tenantId;
+  const base = [layoutItem('A', 10)];
+  const latestPlan = [layoutItem('A', 35), layoutItem('B', 70)];
+  const { client, state } = createLayoutClient({
+    initialRow: { tenant_id: tenantId, layout: base, updated_at: 't1' }
+  });
+
+  const savedBeforeExit = await persistTableLayoutWithClient(client, tenantId, latestPlan, base, parseLayoutRow);
+  assert.ok(savedBeforeExit);
+  assert.deepEqual(state.row.layout, latestPlan);
+
+  activeTenantId = null; // logout limpia la sesión, no el layout persistido del tenant
+  assert.equal(activeTenantId, null);
+  assert.equal(state.row.tenant_id, tenantId);
+  const oldIndexedDbSnapshot = [layoutItem('A', 10)];
+  const restoredAfterLocalStorageClear = restoreTablePositionsFromSnapshot(oldIndexedDbSnapshot, null);
+  assert.deepEqual(
+    mergeConcurrentTableLayouts(base, restoredAfterLocalStorageClear, parseLayoutRow(state.row).layout),
+    latestPlan
+  );
+
+  activeTenantId = state.row.tenant_id; // el backend vuelve a identificar el mismo tenant
+  assert.equal(activeTenantId, tenantId);
+  const restoredAfterReentry = restoreTablePositionsFromSnapshot(oldIndexedDbSnapshot, latestPlan);
+  assert.deepEqual(restoredAfterReentry, latestPlan);
+  assert.deepEqual(parseLayoutRow(state.row).layout, latestPlan);
 });
 
 test('compare-and-swap reintenta tras carrera y conserva cambios remotos en otras mesas sin salir del tenant', async () => {

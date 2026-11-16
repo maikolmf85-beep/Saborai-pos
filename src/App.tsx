@@ -51,7 +51,8 @@ import { getTenantItem, hasTenantItem, isLocalDemoTenantId, migrateLegacyDataToT
 import { DEMO_TENANT_ID } from './services/demoSeed';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
-import { restoreTablePositionsFromSnapshot } from './services/tableLayoutPersistence';
+import { restoreTablePositionsFromSnapshot, TABLE_LAYOUT_SYNC_WARNING_EVENT, TABLE_LAYOUT_SYNC_WARNING_KEY, TABLE_LAYOUT_SYNC_WARNING_MESSAGE } from './services/tableLayoutPersistence';
+import { isNewerTableLayoutTimestamp } from './services/tableLayoutFreshness';
 import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
 import { getTransferableZonesForBranch, transferTableAccount } from './services/tableAccountTransfer';
@@ -255,6 +256,24 @@ export function App() {
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== notif.id));
     }, 7000);
+  }, []);
+  const layoutSyncFailureTenantRef = useRef<string | null>(null);
+  const notifyLayoutSyncFailure = useCallback(() => {
+    if (layoutSyncFailureTenantRef.current === tenant.id) return;
+    layoutSyncFailureTenantRef.current = tenant.id;
+    try { localStorage.setItem(TABLE_LAYOUT_SYNC_WARNING_KEY, 'pending'); } catch {}
+    addNotification({
+      id: `table_layout_sync_error_${tenant.id}_${Date.now()}`,
+      type: 'SYNC_ERROR',
+      title: 'Plano pendiente de sincronizar',
+      message: TABLE_LAYOUT_SYNC_WARNING_MESSAGE,
+      timestamp: new Date()
+    });
+  }, [addNotification, tenant.id]);
+  const clearTableLayoutSyncWarning = useCallback(() => {
+    layoutSyncFailureTenantRef.current = null;
+    try { localStorage.removeItem(TABLE_LAYOUT_SYNC_WARNING_KEY); } catch {}
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event(TABLE_LAYOUT_SYNC_WARNING_EVENT));
   }, []);
 
   useEffect(() => {
@@ -747,6 +766,7 @@ export function App() {
   const pendingLayoutSignatureRef = useRef<string | null>(null);
   const layoutRetryAttemptsRef = useRef(0);
   const layoutReadRetryAttemptsRef = useRef(0);
+  const logoutInFlightRef = useRef(false);
 
   const handleUpdateTables = (updatedTables: Table[], skipBroadcast = false) => {
     let nextTables = updatedTables;
@@ -888,9 +908,8 @@ export function App() {
 
     const applyRemoteLayout = (record: { layout: TableLayoutItem[]; updatedAt: string | null }) => {
       if (cancelled || tableLayoutSyncRef.current !== syncState) return;
-      const incomingTime = record.updatedAt ? Date.parse(record.updatedAt) : 0;
-      const acceptedTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
-      if (syncState.remoteUpdatedAt && incomingTime < acceptedTime) return;
+      if (syncState.remoteUpdatedAt
+        && !isNewerTableLayoutTimestamp(record.updatedAt, syncState.remoteUpdatedAt)) return;
       const currentLayout = projectTableLayout(tablesRef.current);
       const currentSignature = tableLayoutSignature(currentLayout);
       const offlineBase = offlineSnapshotBaseRef.current?.tenantId === tenantId
@@ -915,6 +934,7 @@ export function App() {
       // a persistir únicamente las ediciones locales no conflictivas.
       syncState.signature = tableLayoutSignature(record.layout);
       syncState.ready = true;
+      if (signature === syncState.signature) clearTableLayoutSyncWarning();
       if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
       layoutWriteTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
@@ -972,9 +992,8 @@ export function App() {
           return;
         }
         if (initial.exists && initial.record) {
-          const incomingTime = initial.record.updatedAt ? Date.parse(initial.record.updatedAt) : 0;
-          const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
-          if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(initial.record);
+          if (!syncState.remoteUpdatedAt
+            || isNewerTableLayoutTimestamp(initial.record.updatedAt, syncState.remoteUpdatedAt)) applyRemoteLayout(initial.record);
           else syncState.ready = true;
           return;
         }
@@ -987,9 +1006,8 @@ export function App() {
         );
         if (cancelled || tableLayoutSyncRef.current !== syncState) return;
         if (seeded.available && seeded.exists && seeded.record) {
-          const incomingTime = seeded.record.updatedAt ? Date.parse(seeded.record.updatedAt) : 0;
-          const listenerTime = syncState.remoteUpdatedAt ? Date.parse(syncState.remoteUpdatedAt) : 0;
-          if (!syncState.remoteUpdatedAt || incomingTime >= listenerTime) applyRemoteLayout(seeded.record);
+          if (!syncState.remoteUpdatedAt
+            || isNewerTableLayoutTimestamp(seeded.record.updatedAt, syncState.remoteUpdatedAt)) applyRemoteLayout(seeded.record);
           else syncState.ready = true;
         } else {
           scheduleInitialReadRetry();
@@ -1018,7 +1036,7 @@ export function App() {
       layoutReadRetryTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
     };
-  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId]);
+  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId, clearTableLayoutSyncWarning]);
 
   // Persist only geometry changes; frequent order/status updates project to the
   // same signature and therefore do not generate cloud writes.
@@ -1051,6 +1069,9 @@ export function App() {
         if (saved) {
           const savedSignature = tableLayoutSignature(saved.layout);
           const pendingSignature = pendingLayoutSignatureRef.current;
+          if (tableLayoutSignature(projectTableLayout(tablesRef.current)) === savedSignature) {
+            clearTableLayoutSyncWarning();
+          }
           latestState.signature = savedSignature;
           latestState.remoteLayout = saved.layout;
           latestState.remoteUpdatedAt = saved.updatedAt || latestState.remoteUpdatedAt;
@@ -1075,6 +1096,7 @@ export function App() {
           return;
         }
         if (pendingLayoutSignatureRef.current !== signature) return;
+        notifyLayoutSyncFailure();
         // Retry with bounded backoff while this tenant remains open; IndexedDB
         // also retains the latest offline snapshot for recovery after a reload.
         layoutRetryAttemptsRef.current += 1;
@@ -1086,7 +1108,7 @@ export function App() {
       };
       void persist();
     }, 450);
-  }, [tables, tenant.id]);
+  }, [tables, tenant.id, notifyLayoutSyncFailure, clearTableLayoutSyncWarning]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -1354,10 +1376,10 @@ export function App() {
       }
       const snapshotTableList = readTableSnapshot(snapshot.tables);
       if (snapshotTableList) {
-        const snapshotTables = restoreTablePositionsFromSnapshot(
+        const snapshotTables = normalizeTablePositions(restoreTablePositionsFromSnapshot(
           normalizeTablePositions(snapshotTableList as Table[]),
           getTenantItem<Table[]>('tables', tenant.id)
-        );
+        ));
         const syncState = tableLayoutSyncRef.current;
         const snapshotBase = validateTableLayout(snapshot.tableLayoutBase);
         let restoredTables = snapshotTables;
@@ -1491,16 +1513,71 @@ export function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (logoutInFlightRef.current) return;
+    logoutInFlightRef.current = true;
+    const tenantId = tenant.id;
+    const syncState = tableLayoutSyncRef.current;
+    let remoteConfirmed = !isCloudTenantUuid(tenantId);
+
     try {
-      if (!isLocalDemoTenantId(tenant.id)) void supabaseClient?.auth.signOut().catch(() => {});
-      localStorage.removeItem('saborai_user');
-      localStorage.removeItem('saborai_token');
-      localStorage.removeItem('saborai_tenant');
-      localStorage.removeItem('saborai_account_user_id');
-      localStorage.removeItem('saborai_employee_id');
-    } catch {}
-    setCurrentUser(null);
+      if (isCloudTenantUuid(tenantId) && syncState.tenantId === tenantId && syncState.ready) {
+        const submittedLayout = projectTableLayout(tablesRef.current);
+        try {
+          const saved = await upsertTableLayout(tenantId, submittedLayout, syncState.remoteLayout || []);
+          if (saved && tableLayoutSyncRef.current === syncState) {
+            const currentLayout = projectTableLayout(tablesRef.current);
+            const reconciledLayout = mergeConcurrentTableLayouts(submittedLayout, currentLayout, saved.layout);
+            const reconciledTables = mergeCloudLayoutIntoTables(tablesRef.current, reconciledLayout);
+            tablesRef.current = reconciledTables;
+            setTables(reconciledTables);
+            try { setTenantItem('tables', reconciledTables, tenantId); } catch {}
+            syncState.signature = tableLayoutSignature(saved.layout);
+            syncState.remoteLayout = saved.layout;
+            syncState.remoteUpdatedAt = saved.updatedAt || syncState.remoteUpdatedAt;
+            remoteConfirmed = tableLayoutSignature(reconciledLayout) === tableLayoutSignature(saved.layout);
+            if (remoteConfirmed) {
+              if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
+              layoutWriteTimerRef.current = null;
+              pendingLayoutSignatureRef.current = null;
+              layoutRetryAttemptsRef.current = 0;
+              clearTableLayoutSyncWarning();
+            }
+          }
+        } catch {}
+      }
+
+      try {
+        await localDB.saveTenantSnapshot({
+          tenantId,
+          version: 1,
+          updatedAt: new Date().toISOString(),
+          tenant,
+          menuItems,
+          tables: tablesRef.current,
+          ...(syncState.tenantId === tenantId && syncState.remoteLayout !== null
+            ? { tableLayoutBase: syncState.remoteLayout }
+            : {}),
+          staff: isCloudTenantUuid(tenantId) ? redactEmployeePins(staffList) : staffList,
+          kdsOrders
+        });
+      } catch {}
+
+      if (isCloudTenantUuid(tenantId) && !remoteConfirmed) notifyLayoutSyncFailure();
+      if (!isLocalDemoTenantId(tenantId)) {
+        try { await supabaseClient?.auth.signOut(); } catch {}
+      }
+      try {
+        localStorage.removeItem('saborai_user');
+        localStorage.removeItem('saborai_token');
+        localStorage.removeItem('saborai_tenant');
+        localStorage.removeItem('saborai_account_user_id');
+        localStorage.removeItem('saborai_employee_id');
+      } catch {}
+      setCurrentUser(null);
+    } finally {
+      logoutInFlightRef.current = false;
+    }
   };
 
   const handleStartDemo = async (plan: SubscriptionPlan) => {

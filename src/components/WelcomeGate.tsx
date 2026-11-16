@@ -11,6 +11,7 @@ import { setTenantItem, startCleanDemoSession } from '../services/tenantStorage'
 import { DEMO_TENANT_ID } from '../services/demoSeed';
 import { localDB } from '../services/db';
 import { supabaseClient } from '../lib/supabaseClient';
+import { TABLE_LAYOUT_SYNC_WARNING_EVENT, TABLE_LAYOUT_SYNC_WARNING_KEY, TABLE_LAYOUT_SYNC_WARNING_MESSAGE } from '../services/tableLayoutPersistence';
 
 export interface SaboraiSubscription {
   mode: 'DEMO' | 'TRIAL' | 'ACTIVE';
@@ -102,6 +103,21 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [layoutSyncWarning, setLayoutSyncWarning] = useState<string | null>(() => {
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem(TABLE_LAYOUT_SYNC_WARNING_KEY) === 'pending'
+        ? TABLE_LAYOUT_SYNC_WARNING_MESSAGE
+        : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    const handleLayoutSyncSaved = () => setLayoutSyncWarning(null);
+    window.addEventListener(TABLE_LAYOUT_SYNC_WARNING_EVENT, handleLayoutSyncSaved);
+    return () => window.removeEventListener(TABLE_LAYOUT_SYNC_WARNING_EVENT, handleLayoutSyncSaved);
+  }, []);
 
   const resetError = () => {
     setError(null);
@@ -412,6 +428,12 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
           El punto de venta gastronómico más avanzado de Costa Rica. ¿Cómo quieres comenzar?
         </p>
 
+        {layoutSyncWarning && (
+          <div role="status" className="max-w-4xl w-full mb-6 rounded-xl border border-amber-700/60 bg-amber-950/50 px-4 py-3 text-sm text-amber-200">
+            <strong>Plano pendiente de sincronizar.</strong> {layoutSyncWarning}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl w-full">
           {/* Demo */}
           <div className="group flex flex-col p-6 rounded-2xl bg-white/4 border border-white/10 hover:border-white/20 hover:bg-white/6 transition-all duration-200">
@@ -711,6 +733,12 @@ export const WelcomeGate: React.FC<WelcomeGateProps> = ({ onSubscriptionActivate
           <p className="text-xs text-stone-500">Accede con tu correo y contraseña</p>
         </div>
       </div>
+
+      {layoutSyncWarning && (
+        <div role="status" className="mb-4 rounded-xl border border-amber-700/60 bg-amber-950/50 px-3.5 py-3 text-xs text-amber-200">
+          <strong>Plano pendiente de sincronizar.</strong> {layoutSyncWarning}
+        </div>
+      )}
 
       {error && (
         <div className="p-3.5 bg-red-950/50 border border-red-800/50 rounded-xl text-xs text-red-400 mb-4 space-y-2">
