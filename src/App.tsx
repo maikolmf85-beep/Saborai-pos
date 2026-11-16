@@ -51,7 +51,7 @@ import { getTenantItem, hasTenantItem, isLocalDemoTenantId, migrateLegacyDataToT
 import { DEMO_TENANT_ID } from './services/demoSeed';
 import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
 import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
-import { restoreTablePositionsFromSnapshot, TABLE_LAYOUT_SYNC_WARNING_EVENT, TABLE_LAYOUT_SYNC_WARNING_KEY, TABLE_LAYOUT_SYNC_WARNING_MESSAGE } from './services/tableLayoutPersistence';
+import { resolveTableLayoutAfterCloudRead, restoreTablePositionsFromSnapshot, TABLE_LAYOUT_SYNC_WARNING_EVENT, TABLE_LAYOUT_SYNC_WARNING_KEY, TABLE_LAYOUT_SYNC_WARNING_MESSAGE } from './services/tableLayoutPersistence';
 import { isNewerTableLayoutTimestamp } from './services/tableLayoutFreshness';
 import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
@@ -604,6 +604,7 @@ export function App() {
 
         if (res.ok && data.success) {
           activeTenantIdRef.current = data.tenant.id;
+          localDB.setActiveTenantId(data.tenant.id);
           try {
             localStorage.setItem('saborai_account_user_id', String(data.accountUserId || data.user.id));
             if (data.employeeSession && data.employeeId) localStorage.setItem('saborai_employee_id', String(data.employeeId));
@@ -672,6 +673,9 @@ export function App() {
             setTenantItem('tenant_profile', tenantObj, tenantObj.id);
             setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
           } catch {}
+          void localDB.syncPendingAfterSessionRestore(tenantObj.id).catch(error => {
+            console.warn('Could not resume pending sync after session restore.', error);
+          });
         } else {
           // Token invalid or expired
           localStorage.removeItem('saborai_token');
@@ -889,7 +893,8 @@ export function App() {
       remoteLayout: null as TableLayoutItem[] | null
     };
     tableLayoutSyncRef.current = syncState;
-    offlineSnapshotBaseRef.current = null;
+    const cachedLayoutBase = validateTableLayout(getTenantItem<unknown>('table_layout_base', tenantId));
+    offlineSnapshotBaseRef.current = cachedLayoutBase ? { tenantId, layout: cachedLayoutBase } : null;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
     layoutWriteTimerRef.current = null;
     if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
@@ -918,12 +923,11 @@ export function App() {
       const knownBase = syncState.remoteLayout ?? offlineBase;
       const hasLocalChanges = knownBase !== null
         && currentSignature !== tableLayoutSignature(knownBase);
-      const resolvedLayout = hasLocalChanges
-        ? mergeConcurrentTableLayouts(knownBase || [], currentLayout, record.layout)
-        : record.layout;
+      const resolvedLayout = resolveTableLayoutAfterCloudRead(knownBase, currentLayout, record.layout);
       if (offlineBase) offlineSnapshotBaseRef.current = null;
       syncState.remoteUpdatedAt = record.updatedAt || syncState.remoteUpdatedAt;
       syncState.remoteLayout = record.layout;
+      setTenantItem('table_layout_base', record.layout, tenantId);
       clearLegacyTablePositions(tenantId);
       if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
       layoutReadRetryTimerRef.current = null;
@@ -958,6 +962,7 @@ export function App() {
     if (!cloudClient) {
       syncState.ready = true;
       syncState.signature = tableLayoutSignature(projectTableLayout(tablesRef.current));
+      notifyLayoutSyncFailure();
       return () => { cancelled = true; };
     }
 
@@ -988,6 +993,7 @@ export function App() {
         if (cancelled || tableLayoutSyncRef.current !== syncState) return;
         if (!initial.available) {
           // A failed read is not evidence that the row is absent: keep local positions and retry.
+          notifyLayoutSyncFailure();
           scheduleInitialReadRetry();
           return;
         }
@@ -1010,9 +1016,11 @@ export function App() {
             || isNewerTableLayoutTimestamp(seeded.record.updatedAt, syncState.remoteUpdatedAt)) applyRemoteLayout(seeded.record);
           else syncState.ready = true;
         } else {
+          notifyLayoutSyncFailure();
           scheduleInitialReadRetry();
         }
       } catch {
+        notifyLayoutSyncFailure();
         scheduleInitialReadRetry();
       } finally {
         readInFlight = false;
@@ -1036,7 +1044,7 @@ export function App() {
       layoutReadRetryTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
     };
-  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId, clearTableLayoutSyncWarning]);
+  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId, clearTableLayoutSyncWarning, notifyLayoutSyncFailure]);
 
   // Persist only geometry changes; frequent order/status updates project to the
   // same signature and therefore do not generate cloud writes.
@@ -1052,15 +1060,13 @@ export function App() {
       layoutRetryAttemptsRef.current = 0;
       return;
     }
-    // Don't restart a pending debounce for operational updates that leave the
+    // Don't restart a pending retry for operational updates that leave the
     // projected layout unchanged.
     if (pendingLayoutSignatureRef.current === signature) return;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
     pendingLayoutSignatureRef.current = signature;
     layoutRetryAttemptsRef.current = 0;
-    layoutWriteTimerRef.current = window.setTimeout(() => {
-      layoutWriteTimerRef.current = null;
-      const persist = async () => {
+    const persist = async () => {
         const latestState = tableLayoutSyncRef.current;
         const latestLayout = projectTableLayout(tablesRef.current);
         if (latestState !== syncState || !latestState.ready || tableLayoutSignature(latestLayout) !== signature || pendingLayoutSignatureRef.current !== signature) return;
@@ -1075,6 +1081,7 @@ export function App() {
           latestState.signature = savedSignature;
           latestState.remoteLayout = saved.layout;
           latestState.remoteUpdatedAt = saved.updatedAt || latestState.remoteUpdatedAt;
+          setTenantItem('table_layout_base', saved.layout, tenant.id);
           layoutRetryAttemptsRef.current = 0;
           if (pendingSignature === signature) {
             pendingLayoutSignatureRef.current = null;
@@ -1088,7 +1095,7 @@ export function App() {
               } catch {}
             }
           } else if (!pendingSignature && tableLayoutSignature(projectTableLayout(tablesRef.current)) !== savedSignature) {
-            // Un evento Realtime pudo haber cancelado el debounce mientras este
+            // Un evento Realtime pudo haber cambiado la base mientras este
             // request estaba en vuelo; vuelve a evaluar el estado actual.
             tablesRef.current = [...tablesRef.current];
             setTables(tablesRef.current);
@@ -1105,9 +1112,9 @@ export function App() {
           layoutWriteTimerRef.current = null;
           void persist();
         }, retryDelay);
-      };
-      void persist();
-    }, 450);
+    };
+    // No debounce: start the cloud write as soon as this layout edit commits.
+    void persist();
   }, [tables, tenant.id, notifyLayoutSyncFailure, clearTableLayoutSyncWarning]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
@@ -1199,9 +1206,13 @@ export function App() {
     if (isCloudTenantUuid(tenant.id)) {
       const session = await createEmployeeSession(tenant.id, staff.id, pin);
       user = session.user;
+      localDB.setActiveTenantId(tenant.id);
       localStorage.setItem('saborai_token', session.token);
       localStorage.setItem('saborai_account_user_id', session.accountUserId);
       localStorage.setItem('saborai_employee_id', session.employeeId);
+      void localDB.syncPendingAfterSessionRestore(tenant.id).catch(error => {
+        console.warn('Could not resume pending sync after employee session restore.', error);
+      });
       if (staffList.some(member => Boolean(member.pin))) {
         handleUpdateStaff(redactEmployeePins(staffList));
       }
@@ -1350,7 +1361,7 @@ export function App() {
   useEffect(() => {
     if (!localDbReady) return;
     const syncWhenOnline = () => {
-      if (localDB.isOnline()) void localDB.syncAllPending(tenant.id);
+      if (localDB.isOnline()) void localDB.syncPendingAfterSessionRestore(tenant.id);
     };
     window.addEventListener('online', syncWhenOnline);
     syncWhenOnline();
@@ -1382,14 +1393,16 @@ export function App() {
         ));
         const syncState = tableLayoutSyncRef.current;
         const snapshotBase = validateTableLayout(snapshot.tableLayoutBase);
+        const cachedLayoutBase = validateTableLayout(getTenantItem<unknown>('table_layout_base', tenant.id));
+        const confirmedBase = cachedLayoutBase || snapshotBase;
         let restoredTables = snapshotTables;
         if (syncState.tenantId === tenant.id && syncState.remoteLayout !== null) {
-          const resolvedLayout = snapshotBase
-            ? mergeConcurrentTableLayouts(snapshotBase, projectTableLayout(snapshotTables), syncState.remoteLayout)
+          const resolvedLayout = confirmedBase
+            ? resolveTableLayoutAfterCloudRead(confirmedBase, projectTableLayout(snapshotTables), syncState.remoteLayout)
             : syncState.remoteLayout;
           restoredTables = mergeCloudLayoutIntoTables(snapshotTables, resolvedLayout);
-        } else if (snapshotBase) {
-          offlineSnapshotBaseRef.current = { tenantId: tenant.id, layout: snapshotBase };
+        } else if (confirmedBase) {
+          offlineSnapshotBaseRef.current = { tenantId: tenant.id, layout: confirmedBase };
         }
         tablesRef.current = restoredTables;
         setTables(restoredTables);
@@ -1469,6 +1482,7 @@ export function App() {
     };
 
     activeTenantIdRef.current = restoredTenant.id;
+    localDB.setActiveTenantId(restoredTenant.id);
     setActiveTenantId(restoredTenant.id);
     migrateLegacyDataToTenant(restoredTenant.id);
     cashShiftService.setTenantContext(restoredTenant.id, isLocalDemoTenantId(restoredTenant.id));
@@ -1486,6 +1500,9 @@ export function App() {
       setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
       setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
     } catch {}
+    void localDB.syncPendingAfterSessionRestore(restoredTenant.id).catch(error => {
+      console.warn('Could not resume pending sync after login.', error);
+    });
     // La suscripción se resuelve por tenant, nunca desde el estado de la cuenta anterior.
     const tenantSubscription = getTenantItem<SaboraiSubscription>('subscription', restoredTenant.id);
     if (!tenantSubscription) {
@@ -1535,6 +1552,7 @@ export function App() {
             syncState.signature = tableLayoutSignature(saved.layout);
             syncState.remoteLayout = saved.layout;
             syncState.remoteUpdatedAt = saved.updatedAt || syncState.remoteUpdatedAt;
+            setTenantItem('table_layout_base', saved.layout, tenantId);
             remoteConfirmed = tableLayoutSignature(reconciledLayout) === tableLayoutSignature(saved.layout);
             if (remoteConfirmed) {
               if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);

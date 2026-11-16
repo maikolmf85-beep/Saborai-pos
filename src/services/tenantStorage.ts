@@ -5,6 +5,7 @@ const STORAGE_PREFIX = 'saborai:tenant:';
 const OPERATIONAL_KEYS = [
   'menu',
   'tables',
+  'table_layout_base',
   'staff',
   'zones',
   'inventory_ingredients',

@@ -1,8 +1,22 @@
 import type { Table } from '../types';
+import { mergeConcurrentTableLayouts } from './tableLayoutConcurrency.ts';
+import { tableLayoutSignature, type TableLayoutItem } from './tableLayoutValidation.ts';
 
 export const TABLE_LAYOUT_SYNC_WARNING_KEY = 'saborai_pending_table_layout_sync_warning';
 export const TABLE_LAYOUT_SYNC_WARNING_EVENT = 'saborai_table_layout_sync_saved';
-export const TABLE_LAYOUT_SYNC_WARNING_MESSAGE = 'La nube no confirmó el último cambio del plano. Los cambios siguen en este dispositivo y se reintentará; no borres sus datos locales hasta confirmar la sincronización.';
+export const TABLE_LAYOUT_SYNC_WARNING_MESSAGE = 'La nube no confirmó el último cambio del plano. El plano se conserva en este dispositivo y se reintentará; no borres sus datos locales hasta confirmar la sincronización.';
+
+/** Reconciles a cached local plan against a newer cloud read using its last confirmed base. */
+export function resolveTableLayoutAfterCloudRead(
+  confirmedBase: readonly TableLayoutItem[] | null,
+  localLayout: readonly TableLayoutItem[],
+  remoteLayout: readonly TableLayoutItem[]
+): TableLayoutItem[] {
+  if (!confirmedBase || tableLayoutSignature([...localLayout]) === tableLayoutSignature([...confirmedBase])) {
+    return [...remoteLayout];
+  }
+  return mergeConcurrentTableLayouts(confirmedBase, localLayout, remoteLayout);
+}
 
 /**
  * IndexedDB es un respaldo demorado; la caché scoped de localStorage se escribe

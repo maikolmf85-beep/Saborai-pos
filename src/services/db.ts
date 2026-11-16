@@ -34,6 +34,8 @@ export interface OfflineSyncQueueItem {
   description: string;
 }
 
+const MISSING_SYNC_SESSION_ERROR = 'No hay una sesión autenticada que permita verificar la identidad original.';
+
 export function filterPendingItemsForTenant(items: OfflineSyncQueueItem[], tenantId: string): OfflineSyncQueueItem[] {
   if (!tenantId) return [];
   return items
@@ -344,6 +346,34 @@ export class SaboraiLocalDB {
     return filterPendingItemsForTenant(all, tenantId);
   }
 
+  async syncPendingAfterSessionRestore(tenantId: string): Promise<{ syncedCount: number; failedCount: number; remainingCount: number }> {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
+    const accountUserId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_account_user_id') : null;
+    const employeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
+    if (!isCloudTenantId(tenantId) || !token || !accountUserId || this.activeTenantId !== tenantId) {
+      return { syncedCount: 0, failedCount: 0, remainingCount: await this.getPendingCount(tenantId) };
+    }
+
+    const pending = await this.getPendingItems(tenantId);
+    for (const item of pending) {
+      if (item.tenantId !== tenantId
+        || item.actorUserId !== accountUserId
+        || (item.actorEmployeeId || null) !== (employeeId || null)
+        || item.lastError !== MISSING_SYNC_SESSION_ERROR) continue;
+
+      // Solo se libera el backoff creado por la falta de sesión para el mismo actor.
+      // Payload, operationId, tenant y actor originales permanecen intactos.
+      await this.updateQueueItem({
+        ...item,
+        status: 'PENDING',
+        synced: false,
+        nextAttemptAt: undefined,
+        lastError: undefined
+      });
+    }
+    return this.syncAllPending(tenantId);
+  }
+
   private async updateQueueItem(item: OfflineSyncQueueItem): Promise<void> {
     await this.saveItem('sync_queue', item);
   }
@@ -401,7 +431,7 @@ export class SaboraiLocalDB {
     const employeeId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_employee_id') : null;
     const activeTenantId = typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_active_tenant_id') : null;
     if (!token || !accountUserId) {
-      for (const item of pending) await this.markFailed(item, 'No hay una sesión autenticada que permita verificar la identidad original.');
+      for (const item of pending) await this.markFailed(item, MISSING_SYNC_SESSION_ERROR);
       const remainingCount = await this.getPendingCount(tenantId);
       await this.notifyActiveTenantCount();
       this.syncInFlight = false;

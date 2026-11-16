@@ -10,7 +10,7 @@ import {
 import { canRespondToRealtimeSync, readTableSnapshot, resolveRealtimeTablePayload, resolveRealtimeTables } from '../src/services/tableSync.ts';
 import { validateTableLayout } from '../src/services/tableLayoutValidation.ts';
 import { mergeConcurrentTableLayouts, persistTableLayoutWithClient } from '../src/services/tableLayoutConcurrency.ts';
-import { restoreTablePositionsFromSnapshot } from '../src/services/tableLayoutPersistence.ts';
+import { resolveTableLayoutAfterCloudRead, restoreTablePositionsFromSnapshot } from '../src/services/tableLayoutPersistence.ts';
 import { cleanTenantZones, updateTenantZonesInSupabase } from '../api/_utils/tenantZones.ts';
 
 const layoutItem = (id, x, y = 25) => ({
@@ -230,7 +230,9 @@ test('un plano guardado antes de salir reaparece al reingresar; una instantánea
     initialRow: { tenant_id: tenantId, layout: base, updated_at: 't1' }
   });
 
-  const savedBeforeExit = await persistTableLayoutWithClient(client, tenantId, latestPlan, base, parseLayoutRow);
+  const savePromise = persistTableLayoutWithClient(client, tenantId, latestPlan, base, parseLayoutRow);
+  assert.equal(state.calls.length, 1, 'el write empieza al invocarse, sin esperar un timer');
+  const savedBeforeExit = await savePromise;
   assert.ok(savedBeforeExit);
   assert.deepEqual(state.row.layout, latestPlan);
 
@@ -249,6 +251,19 @@ test('un plano guardado antes de salir reaparece al reingresar; una instantánea
   const restoredAfterReentry = restoreTablePositionsFromSnapshot(oldIndexedDbSnapshot, latestPlan);
   assert.deepEqual(restoredAfterReentry, latestPlan);
   assert.deepEqual(parseLayoutRow(state.row).layout, latestPlan);
+});
+
+test('tras recargar, una lectura remota antigua no borra la edición local aún pendiente', () => {
+  const confirmedBase = [layoutItem('A', 10), layoutItem('B', 20)];
+  const oldIndexedDbSnapshot = [layoutItem('A', 10), layoutItem('B', 20)];
+  const latestLocalCache = [layoutItem('A', 35), layoutItem('C', 60)];
+  const remoteRead = [layoutItem('A', 10), layoutItem('B', 20), layoutItem('D', 80)];
+
+  const restoredLocal = restoreTablePositionsFromSnapshot(oldIndexedDbSnapshot, latestLocalCache);
+  const recovered = resolveTableLayoutAfterCloudRead(confirmedBase, restoredLocal, remoteRead);
+
+  assert.deepEqual(recovered, [layoutItem('A', 35), layoutItem('D', 80), layoutItem('C', 60)]);
+  assert.ok(!recovered.some(item => item.id === 'B'));
 });
 
 test('compare-and-swap reintenta tras carrera y conserva cambios remotos en otras mesas sin salir del tenant', async () => {
