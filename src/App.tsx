@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useSessionTenantState } from './hooks/useSessionTenantState';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { NyzaSetupGuide } from './components/NyzaSetupGuide';
 import { TableMap } from './components/TableMap';
@@ -32,15 +33,16 @@ import { sanitizeFiscalInvoiceData } from './utils/fiscalInvoiceItems';
 import { nyzaUIAgent } from './services/nyzaUIAgent';
 import { ZReportData, ConsolidatedZReportData } from './types/cashShift';
 import { SaboraiSubscription } from './components/WelcomeGate';
-import { initialTenant, initialTables, sampleMenuItems } from './data/mockData';
-import { HaciendaConfig, Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
+import { initialTables, sampleMenuItems } from './data/mockData';
+import { Table, TenantInfo, SubscriptionPlan, SubscriptionStatus, UserProfile, MenuItem, KDSOrder } from './types';
 import { localDB } from './services/db';
 import { PosCloudSyncError, posCloudService, SaleCloudPayload, SaleRegistrationResult, salePaymentOperationId } from './services/posCloudService';
 import { inventoryService } from './services/inventoryService';
 import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
 import { getQuickPaymentAttemptByOperationId, isQuickPaymentEffectApplied, markQuickPaymentEffectApplied } from './services/quickPaymentAttempt';
-import { createEmployeeSession, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster, withoutEmployeePin } from './services/employeeSessionService';
+import { createEmployeeSession, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster } from './services/employeeSessionService';
+import { getTenantProfileWithLegacyFallback, redactEmployeePins, restoreStoredSession, withPublicHaciendaConfig, withoutHaciendaSecrets } from './services/sessionTenant';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { NotificationToastContainer, PosNotification } from './components/NotificationToast';
@@ -127,48 +129,6 @@ function mergeCloudLayoutIntoTables(current: Table[], layout: TableLayoutItem[])
   }));
 }
 
-function withoutHaciendaSecrets(config?: HaciendaConfig | null): HaciendaConfig | undefined {
-  if (!config) return undefined;
-  return {
-    ...config,
-    atvUsername: undefined,
-    atvPassword: undefined,
-    pinP12: undefined,
-    p12Base64: undefined
-  };
-}
-
-function withPublicHaciendaConfig(tenant: TenantInfo): TenantInfo {
-  return { ...tenant, haciendaConfig: withoutHaciendaSecrets(tenant.haciendaConfig) };
-}
-
-function getTenantProfileWithLegacyFallback(tenantId: string): TenantInfo | null {
-  const scopedTenant = getTenantItem<TenantInfo>('tenant_profile', tenantId);
-  const storedZones = getTenantItem<string[]>('zones', tenantId);
-  if (scopedTenant) {
-    return withPublicHaciendaConfig({
-      ...scopedTenant,
-      zones: Array.isArray(storedZones) ? storedZones : (scopedTenant.zones || [])
-    });
-  }
-
-  // Compatibilidad con sesiones anteriores: antes de esta reparación el
-  // tenant completo se guardaba solamente en saborai_tenant.
-  try {
-    const rawTenant = localStorage.getItem('saborai_tenant');
-    const legacyTenant = rawTenant ? JSON.parse(rawTenant) as TenantInfo : null;
-    return legacyTenant && String(legacyTenant.id) === String(tenantId)
-      ? withPublicHaciendaConfig({ ...legacyTenant, zones: Array.isArray(storedZones) ? storedZones : (legacyTenant.zones || []) })
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function redactEmployeePins(staff: UserProfile[]): UserProfile[] {
-  return staff.map(member => withoutEmployeePin(member) as UserProfile);
-}
-
 function getAccountUserId(fallback?: string | null): string | null {
   try {
     return localStorage.getItem('saborai_account_user_id') || fallback || null;
@@ -193,46 +153,20 @@ export function App() {
   );
 
   // Authentication & Session state
-  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    try {
-      const saved = localStorage.getItem('saborai_user');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return null;
-  });
-
-  const [subscription, setSubscription] = useState<SaboraiSubscription | null>(() => {
-    try {
-      return getTenantItem<SaboraiSubscription>('subscription') || null;
-    } catch {
-      return null;
-    }
-  });
-  const [skipSubscriptionGate, setSkipSubscriptionGate] = useState(false);
-
-  const [tenant, setTenant] = useState<TenantInfo>(() => {
-    try {
-      const saved = localStorage.getItem('saborai_tenant');
-      const savedZones = getTenantItem<string[]>('zones');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return withPublicHaciendaConfig({
-          ...initialTenant,
-          ...parsed,
-          zones: Array.isArray(savedZones) ? savedZones : (parsed.zones || []),
-          taxRegime: parsed.taxRegime || 'TRADITIONAL',
-          includeService10ByDefault: parsed.includeService10ByDefault ?? true,
-          haciendaConfig: parsed.haciendaConfig
-        });
-      }
-      return withPublicHaciendaConfig({ ...initialTenant, zones: savedZones || [] });
-    } catch {
-      return initialTenant;
-    }
-  });
+  const {
+    isLoadingAuth,
+    setIsLoadingAuth,
+    currentUser,
+    setCurrentUser,
+    subscription,
+    setSubscription,
+    skipSubscriptionGate,
+    setSkipSubscriptionGate,
+    tenant,
+    setTenant,
+    activeTenantIdRef
+  } = useSessionTenantState();
   const [isNyzaSetupGuideOpen, setIsNyzaSetupGuideOpen] = useState(false);
-  const activeTenantIdRef = useRef(tenant.id);
 
   useEffect(() => {
     if (isLoadingAuth || currentUser?.role !== 'ADMIN' || tenant.onboardingCompleted) {
@@ -585,108 +519,30 @@ export function App() {
   // JWT Token validation on load
   useEffect(() => {
     const validateSession = async () => {
-      const activeTenantId = localStorage.getItem('saborai_active_tenant_id');
-      if (isLocalDemoTenantId(activeTenantId)) {
-        setIsLoadingAuth(false);
-        return;
-      }
-      const token = localStorage.getItem('saborai_token');
-      if (!token) {
-        setIsLoadingAuth(false);
-        return;
-      }
-
-      try {
-        const res = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        const data = await res.json();
-
-        if (res.ok && data.success) {
-          activeTenantIdRef.current = data.tenant.id;
-          localDB.setActiveTenantId(data.tenant.id);
-          try {
-            localStorage.setItem('saborai_account_user_id', String(data.accountUserId || data.user.id));
-            if (data.employeeSession && data.employeeId) localStorage.setItem('saborai_employee_id', String(data.employeeId));
-            else localStorage.removeItem('saborai_employee_id');
-          } catch {}
-          setActiveTenantId(data.tenant.id);
-          migrateLegacyDataToTenant(data.tenant.id);
-          cashShiftService.setTenantContext(data.tenant.id);
-          printerService.setTenantContext(data.tenant.id);
-          const user: UserProfile = {
-            id: data.user.id,
-            name: data.user.name,
-            email: data.user.email,
-            phone: data.user.phone,
-            restaurantName: data.user.restaurant_name,
-            role: data.user.role,
-            active: data.user.active
-          };
-          const savedTenant = getTenantProfileWithLegacyFallback(data.tenant.id);
-
-          const tenantObj: TenantInfo = {
-            id: data.tenant.id,
-            name: data.tenant.name,
-            cedulaJuridica: data.tenant.cedula_juridica || savedTenant?.cedulaJuridica || '',
-            email: data.tenant.email,
-            phone: data.tenant.phone,
-            location: data.tenant.location || 'Costa Rica',
-            plan: data.tenant.plan,
-            status: data.tenant.status,
-            currency: data.tenant.currency,
-            monthlyFee: data.tenant.monthly_fee || 45000,
-            onboardingCompleted: data.tenant.onboardingCompleted,
-            taxRegime: savedTenant?.taxRegime || 'TRADITIONAL',
-            includeService10ByDefault: savedTenant?.includeService10ByDefault ?? true,
-            haciendaConfig: withoutHaciendaSecrets(savedTenant?.haciendaConfig),
-            zones: resolveTenantZones(
-              data.tenant.zones,
-              getTenantItem<string[]>('zones', data.tenant.id) ?? savedTenant?.zones
-            ),
-            menuCategories: savedTenant?.menuCategories || []
-          };
-          const sub: SaboraiSubscription = { 
-            mode: data.subscription?.mode === 'TRIAL' ? 'TRIAL' : 'ACTIVE', 
-            email: user.email, 
-            activatedAt: data.subscription?.activated_at || new Date().toISOString(),
-            trialEndsAt: data.subscription?.trial_ends_at
-          };
-          
-          // La identidad y el rol efectivo vienen del JWT/backend. No aceptar
-          // un usuario o rol alternativo desde localStorage.
-          const effectiveUser = user;
-          setCurrentUser(effectiveUser);
-          activeTenantIdRef.current = tenantObj.id;
-          setTenant(tenantObj);
-          setMenuItems(getTenantItem<MenuItem[]>('menu', tenantObj.id) || []);
-          setTables(normalizeTablePositions(getTenantItem<Table[]>('tables', tenantObj.id) || []));
-          const cachedStaff = getTenantItem<UserProfile[]>('staff', tenantObj.id) || [effectiveUser];
-          const effectiveStaff = data.employeeSession ? redactEmployeePins(cachedStaff) : cachedStaff;
-          setStaffList(effectiveStaff);
-          if (data.employeeSession) setTenantItem('staff', effectiveStaff, tenantObj.id);
-          setSubscription(sub);
-          persistSubscription(sub, tenantObj.id);
-          try {
-            localStorage.setItem('saborai_user', JSON.stringify(effectiveUser));
-            localStorage.setItem('saborai_tenant', JSON.stringify(tenantObj));
-            setTenantItem('tenant_profile', tenantObj, tenantObj.id);
-            setTenantItem('zones', tenantObj.zones || [], tenantObj.id);
-          } catch {}
-          void localDB.syncPendingAfterSessionRestore(tenantObj.id).catch(error => {
+      await restoreStoredSession({
+        activeTenantIdRef,
+        setIsLoadingAuth,
+        setCurrentUser,
+        setTenant,
+        setMenuItems: items => setMenuItems(items),
+        setTables: tables => setTables(tables),
+        setStaffList: staff => setStaffList(staff),
+        setSubscription,
+        persistSubscription: (value, tenantId) => persistSubscription(value, tenantId),
+        normalizeTablePositions,
+        setLocalDbTenant: tenantId => localDB.setActiveTenantId(tenantId),
+        activateTenant: tenantId => {
+          setActiveTenantId(tenantId);
+          migrateLegacyDataToTenant(tenantId);
+          cashShiftService.setTenantContext(tenantId);
+          printerService.setTenantContext(tenantId);
+        },
+        resumePendingSync: tenantId => {
+          void localDB.syncPendingAfterSessionRestore(tenantId).catch(error => {
             console.warn('Could not resume pending sync after session restore.', error);
           });
-        } else {
-          // Token invalid or expired
-          localStorage.removeItem('saborai_token');
-          localStorage.removeItem('saborai_account_user_id');
-          localStorage.removeItem('saborai_employee_id');
         }
-      } catch (err) {
-        console.error('Failed to validate session', err);
-      } finally {
-        setIsLoadingAuth(false);
-      }
+      });
     };
 
     if (appDomain === 'POS') {
