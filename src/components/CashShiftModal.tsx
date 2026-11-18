@@ -380,7 +380,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       const latestDailyStatus = await cashControlCloudService.getDailyCashStatus(tenant.id, regIdToUse);
       setDailyCashStatus(latestDailyStatus);
       if (!latestDailyStatus.isOpen || latestDailyStatus.isClosed) {
-        throw new Error('Primero abre la caja para la fecha local actual. La apertura de turno es un paso separado.');
+        throw new Error('Primero abre la sesión diaria de caja. La apertura de turno es un paso separado.');
       }
       const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
       const newShift = cashShiftService.openShift(
@@ -546,8 +546,8 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     }
     setConfirmConfig({
       isOpen: true,
-      title: '¿Abrir la caja para todo el día?',
-      message: `Se habilitará ${currentRegisterObj?.name || 'la caja'} para operar durante el ${dailyCashStatus?.businessDate || 'día local actual'}. Esto no abre ni cambia el turno; registra el fondo inicial por separado en cada apertura de turno.`,
+      title: '¿Iniciar la sesión diaria de caja?',
+      message: `Se habilitará ${currentRegisterObj?.name || 'la caja'} desde el ${dailyCashStatus?.businessDate || 'día local actual'}. La sesión seguirá abierta aunque cambie la fecha y solo podrá cerrarla quien la abrió. Esto no abre ni cambia el turno; el fondo inicial se registra por separado en cada turno.`,
       confirmLabel: 'Abrir caja del día',
       type: 'info',
       onConfirm: () => {
@@ -685,7 +685,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
     setConfirmConfig({
       isOpen: true,
       title: '¿Confirmar cierre diario de caja?',
-      message: `Se guardará una sola vez el cierre de ${currentRegisterObj?.name || 'la caja'} (${businessDate}), con sus cobros y movimientos del día. Hazlo al terminar las operaciones: no cierra el turno y no se recalcula si después registras más cobros. El servidor volverá a validar que no queden mesas o comandas abiertas.`,
+      message: `Se guardará una sola vez el cierre de la sesión de ${currentRegisterObj?.name || 'la caja'} (apertura del ${businessDate}), con sus cobros y movimientos desde que se abrió, aunque hayan pasado las 12. Solo quien abrió esta sesión puede cerrarla; el servidor lo validará. El cierre no cierra el turno y el resumen cubre hasta el instante del cierre.`,
       confirmLabel: 'Cerrar caja del día',
       type: 'warning',
       onConfirm: () => {
@@ -910,7 +910,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               onClick={handleOpenDailyCash}
               disabled={isOpeningDailyCash || isLoadingDailyCashStatus || !selectedRegisterId}
               className="px-3 py-1 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 disabled:text-stone-500 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
-              title="Abre una vez la caja seleccionada para la fecha local de la sucursal; no abre un turno."
+              title="Inicia una sesión diaria; permanece abierta tras medianoche hasta que la cierre quien la abrió."
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-[#a9b994]" />
               <span>{isOpeningDailyCash ? 'Abriendo caja…' : 'Abrir caja'}</span>
@@ -921,7 +921,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
             onClick={handleCloseDailyCash}
             disabled={isClosingDailyCash || registers.length === 0 || hasOpenDiningTables || !dailyCashStatus?.isOpen || dailyCashStatus.isClosed}
             className="px-3 py-1 bg-[#588157] hover:bg-[#466b45] disabled:bg-stone-300 disabled:text-stone-900 text-white rounded-xl font-bold text-[11px] flex items-center gap-1.5 shadow-xs transition-colors"
-            title="Cierra una vez la caja seleccionada para la fecha local de la sucursal; requiere apertura diaria y que no haya mesas abiertas."
+            title="Cierra la sesión original; el servidor valida que quien cierra sea quien la abrió y que no haya mesas abiertas."
           >
             <LockKeyhole className="w-3.5 h-3.5" />
             <span>{isLoadingDailyCashStatus ? 'Verificando caja…' : isClosingDailyCash ? 'Guardando cierre…' : hasOpenDiningTables ? 'Cierre diario: hay mesas abiertas' : dailyCashStatus?.isClosed ? 'Caja del día cerrada' : !dailyCashStatus?.isOpen ? 'Abrir caja del día primero' : 'Cerrar caja del día'}</span>

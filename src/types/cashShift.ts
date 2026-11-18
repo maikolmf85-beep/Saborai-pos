@@ -76,6 +76,7 @@ export interface DailyCashStatus {
   timezone: string;
   isOpen: boolean;
   isClosed: boolean;
+  openingId?: string | null;
   openedAt?: string | null;
   openedBy?: string | null;
   closedAt?: string | null;

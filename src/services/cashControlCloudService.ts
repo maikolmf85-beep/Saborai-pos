@@ -184,12 +184,13 @@ class CashControlCloudService {
   async getDailyCashStatus(tenantId: string, registerId: string): Promise<DailyCashStatus> {
     if (!isCloudTenantId(tenantId)) {
       const cached = this.getCachedDailyCashStatus(tenantId, registerId);
-      if (cached && this.isDailyCashStatusForCurrentDate(cached)) return cached;
+      const currentBusinessDate = costaRicaBusinessDate();
+      if (cached && ((cached.isOpen && !cached.isClosed) || cached.businessDate === currentBusinessDate)) return cached;
       const registers = getTenantItem<CashRegister[]>('cash_registers', tenantId) || [];
       const status: DailyCashStatus = {
         registerId,
         registerName: registers.find(register => register.id === registerId)?.name || 'Caja Demo',
-        businessDate: costaRicaBusinessDate(),
+        businessDate: currentBusinessDate,
         timezone: 'America/Costa_Rica',
         isOpen: false,
         isClosed: false
@@ -230,19 +231,8 @@ class CashControlCloudService {
     }
   }
 
-  isDailyCashStatusForCurrentDate(status: DailyCashStatus): boolean {
-    try {
-      const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: status.timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).formatToParts(new Date());
-      const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-      return `${values.year}-${values.month}-${values.day}` === status.businessDate;
-    } catch {
-      return false;
-    }
+  isDailyCashStatusOpen(status: DailyCashStatus | null | undefined): boolean {
+    return Boolean(status?.isOpen && !status.isClosed);
   }
 
   async openDailyCashInCloud(tenantId: string, registerId: string): Promise<DailyCashOpeningResult> {

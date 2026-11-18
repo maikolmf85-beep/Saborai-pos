@@ -815,9 +815,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     else if (action === 'ADJUST_INVENTORY') result = await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'EMIT_INVOICE') result = await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
     else if (action === 'CLOSE_CASH_SHIFT') result = await closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
-    else if (action === 'CLOSE_DAILY_CASH') result = await closeDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
+    else if (action === 'CLOSE_DAILY_CASH') result = await closeDailyCash(supabaseAdmin, tenantId, auth.employeeId || auth.userId, body.payload);
     else if (action === 'GET_DAILY_CASH_STATUS') result = await getDailyCashStatus(supabaseAdmin, tenantId, body.payload);
-    else if (action === 'OPEN_DAILY_CASH') result = await openDailyCash(supabaseAdmin, tenantId, auth.userId, body.payload);
+    else if (action === 'OPEN_DAILY_CASH') result = await openDailyCash(supabaseAdmin, tenantId, auth.employeeId || auth.userId, body.payload);
     else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
     else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
     else if (action === 'REASSIGN_CASH_TERMINAL') result = await reassignCashTerminal(supabaseAdmin, tenantId, body.payload);

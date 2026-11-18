@@ -90,6 +90,31 @@ test('cierra caja diaria con contexto exacto sin exigir un turno abierto', async
   ]);
 });
 
+test('cierra después de medianoche la sesión original y envía su fecha de negocio original', async () => {
+  const overnightStatus = {
+    ...dailyStatus,
+    businessDate: '2026-11-05',
+    openedAt: '2026-11-06T05:50:00.000Z'
+  };
+  const targets = [];
+  const result = await closeDailyCashAfterSync(flowOptions({
+    status: overnightStatus,
+    flushCloudSync: async closeTarget => { targets.push(['flush', closeTarget]); },
+    closeRemotely: async closeTarget => {
+      targets.push(['close', closeTarget]);
+      return { businessDate: closeTarget.businessDate, closedAt: '2026-11-06T06:10:00.000Z' };
+    }
+  }));
+  assert.equal(result.businessDate, '2026-11-05');
+  assert.deepEqual(targets.map(([stage, closeTarget]) => [stage, closeTarget.businessDate]), [
+    ['flush', '2026-11-05'], ['close', '2026-11-05']
+  ]);
+  assert.equal(isConfirmedOpenDailyCashForRegister(overnightStatus, 'tenant-1', {
+    ...target,
+    businessDate: '2026-11-05'
+  }), true);
+});
+
 test('no cierra si quedan cobros pendientes después de sincronizar', async () => {
   const calls = [];
   await assert.rejects(closeDailyCashAfterSync(flowOptions({

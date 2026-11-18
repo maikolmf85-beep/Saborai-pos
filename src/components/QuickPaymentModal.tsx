@@ -270,16 +270,14 @@ export const QuickPaymentModal: React.FC<QuickPaymentModalProps> = ({
       const dailyCashStatus = isOffline
         ? cashControlCloudService.getCachedDailyCashStatus(tenant.id, currentRegister.id)
         : await cashControlCloudService.getDailyCashStatus(tenant.id, currentRegister.id);
-      const isCurrentBusinessDate = Boolean(dailyCashStatus
-        && cashControlCloudService.isDailyCashStatusForCurrentDate(dailyCashStatus));
-      if (!dailyCashStatus || !isCurrentBusinessDate || !dailyCashStatus.isOpen || dailyCashStatus.isClosed) {
+      if (!cashControlCloudService.isDailyCashStatusOpen(dailyCashStatus)) {
         isProcessingRef.current = false;
         setIsProcessing(false);
         const message = isOffline
           ? 'No hay una apertura diaria vigente y confirmada para esta caja. Conecta el dispositivo y abre la caja del día antes de cobrar.'
           : dailyCashStatus?.isClosed
-            ? `La caja ya tiene cierre diario para ${dailyCashStatus.businessDate}. No se registró el cobro.`
-            : 'Primero abre la caja para la fecha local actual. Después podrás cobrar desde el turno abierto.';
+            ? `La sesión de caja ya tiene cierre diario para ${dailyCashStatus.businessDate}. No se registró el cobro.`
+            : 'Primero abre la caja diaria. La apertura sigue vigente hasta su cierre; después podrás cobrar desde el turno abierto.';
         onNotify?.({
           id: `daily_cash_gate_${++dailyCashNotificationCounter.current}`,
           type: 'SYNC_ERROR',

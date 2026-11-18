@@ -34,7 +34,7 @@ function mockAdmin(responses, rpcResponses = []) {
       return typeof response === 'function' ? response(call) : response;
     },
     from(table) {
-      const call = { table, method: null, values: null, options: null, filters: [], selection: null, limit: null };
+      const call = { table, method: null, values: null, options: null, filters: [], selection: null, limit: null, orderBy: [] };
       calls.push(call);
       const response = responses[calls.length - 1] || { data: null, error: null };
       const builder = {
@@ -43,6 +43,8 @@ function mockAdmin(responses, rpcResponses = []) {
         insert(values) { call.method = 'insert'; call.values = values; return builder; },
         upsert(values, options) { call.method = 'upsert'; call.values = values; call.options = options; return builder; },
         eq(column, value) { call.filters.push([column, value]); return builder; },
+        lte(column, value) { call.filters.push([column, value, 'lte']); return builder; },
+        order(column, options) { call.orderBy.push([column, options]); return builder; },
         limit(value) { call.limit = value; return builder; },
         async maybeSingle() { return typeof response === 'function' ? response(call, 'maybeSingle') : response; },
         async single() { return typeof response === 'function' ? response(call, 'single') : response; }
@@ -197,99 +199,102 @@ test('abre la caja una vez por RPC con caja, tenant y responsable autenticado', 
   );
 });
 
-test('consulta el estado diario por la fecha local devuelta por la sucursal', async () => {
-  const now = new Date().toISOString();
-  const expectedDate = getBusinessDateForInstant(now, 'America/Costa_Rica');
+test('conserva abierta la misma sesión diaria tras medianoche en la zona de la sucursal', async () => {
+  const now = '2026-11-06T06:01:00.000Z'; // 00:01 del 6 de noviembre en Costa Rica
   const { admin, calls } = mockAdmin([
     { data: { id: registerId, branch_id: branchId, name: 'Caja Principal' }, error: null },
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: { id: 'daily-opening', opened_at: now, opened_by: actorId, timezone: 'America/Costa_Rica' }, error: null },
+    { data: { id: 'daily-opening', business_date: '2026-11-05', opened_at: '2026-11-06T05:50:00.000Z', opened_by: actorId, timezone: 'America/Costa_Rica' }, error: null },
     { data: null, error: null }
   ]);
-  const status = await getDailyCashStatus(admin, tenantId, { registerId });
+  const status = await getDailyCashStatus(admin, tenantId, { registerId }, now);
   assert.equal(status.isOpen, true);
   assert.equal(status.isClosed, false);
-  assert.equal(status.businessDate, expectedDate);
+  assert.equal(getBusinessDateForInstant(now, 'America/Costa_Rica'), '2026-11-06');
+  assert.equal(status.businessDate, '2026-11-05');
   assert.equal(status.openedBy, actorId);
+  assert.equal(status.openedAt, '2026-11-06T05:50:00.000Z');
+  assert.equal(status.openingId, 'daily-opening');
   assert.deepEqual(calls[2].filters, [
-    ['tenant_id', tenantId], ['branch_id', branchId], ['cash_register_id', registerId], ['business_date', expectedDate]
+    ['tenant_id', tenantId], ['branch_id', branchId], ['cash_register_id', registerId], ['opened_at', now, 'lte']
   ]);
+  assert.deepEqual(calls[2].orderBy, [['opened_at', { ascending: false }], ['id', { ascending: false }]]);
+  assert.deepEqual(calls[3].filters.at(-1), ['business_date', '2026-11-05']);
   assert.equal(calls[3].table, 'pos_daily_cash_closures');
 });
 
-test('rechaza un cobro en línea de caja/fecha local ya cerrada con mensaje claro', async () => {
+test('un cobro después de medianoche sigue asociado a la apertura original si aún no se cerró', async () => {
+  const paidAt = '2026-11-06T06:01:00.000Z';
   const { admin, calls } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: { id: 'daily-closure' }, error: null }
+    { data: { id: 'daily-opening', business_date: '2026-11-05', opened_at: '2026-11-06T05:50:00.000Z' }, error: null },
+    { data: null, error: null }
   ]);
-  await assert.rejects(
-    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-05T18:00:00.000Z'),
-    error => error instanceof DailyCashClosedError
-      && error.code === 'DAILY_CASH_CLOSED'
-      && /Caja Principal/.test(error.message)
-      && /2026-11-05/.test(error.message)
-      && /contacte al administrador/i.test(error.message)
-  );
+  assert.equal(await assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', paidAt), '2026-11-05');
+  assert.equal(getBusinessDateForInstant(paidAt, 'America/Costa_Rica'), '2026-11-06');
   assert.deepEqual(calls[1].filters, [
     ['tenant_id', tenantId],
     ['branch_id', branchId],
     ['cash_register_id', registerId],
-    ['business_date', '2026-11-05']
+    ['opened_at', paidAt, 'lte']
   ]);
+  assert.deepEqual(calls[1].orderBy, [['opened_at', { ascending: false }], ['id', { ascending: false }]]);
+  assert.deepEqual(calls[2].filters.at(-1), ['business_date', '2026-11-05']);
 });
 
-test('rechaza un cobro del día si falta la apertura diaria de caja', async () => {
+test('rechaza un cobro en línea después del cierre de su sesión aunque el calendario ya cambió', async () => {
   const { admin, calls } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: null, error: null },
+    { data: { id: 'daily-opening', business_date: '2026-11-05', opened_at: '2026-11-06T05:50:00.000Z' }, error: null },
+    { data: { id: 'daily-closure' }, error: null }
+  ]);
+  await assert.rejects(
+    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T06:11:00.000Z'),
+    error => error instanceof DailyCashClosedError
+      && error.code === 'DAILY_CASH_CLOSED'
+      && /2026-11-05/.test(error.message)
+  );
+  assert.deepEqual(calls[1].filters.at(-1), ['opened_at', '2026-11-06T06:11:00.000Z', 'lte']);
+  assert.deepEqual(calls[2].filters.at(-1), ['business_date', '2026-11-05']);
+});
+
+test('rechaza un cobro si no existe una apertura anterior a su instante', async () => {
+  const { admin, calls } = mockAdmin([
+    { data: { timezone: 'America/Costa_Rica' }, error: null },
     { data: null, error: null }
   ]);
   await assert.rejects(
-    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T18:00:00.000Z'),
+    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T05:49:00.000Z'),
     error => error instanceof DailyCashNotOpenError
       && error.code === 'DAILY_CASH_NOT_OPEN'
       && /Caja Principal/.test(error.message)
-      && /2026-11-06/.test(error.message)
   );
-  assert.equal(calls[2].table, 'pos_daily_cash_openings');
+  assert.equal(calls[1].table, 'pos_daily_cash_openings');
+  assert.equal(calls.length, 2);
 });
 
-test('rechaza el cobro offline si su instante es anterior a la apertura diaria', async () => {
+test('rechaza sincronización offline tardía si la sesión temporal de su pago ya está cerrada', async () => {
+  const paidAt = '2026-11-06T05:55:00.000Z';
   const { admin } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: null, error: null },
-    { data: { id: 'daily-opening', opened_at: '2026-11-06T17:00:00.000Z' }, error: null }
-  ]);
-  await assert.rejects(
-    assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T16:59:00.000Z'),
-    error => error.code === 'DAILY_CASH_NOT_OPEN' && /anterior a la apertura/i.test(error.message)
-  );
-});
-
-test('rechaza la sincronización tardía offline cuyo paidAt sigue perteneciendo al día local ya cerrado', async () => {
-  const paidAt = '2026-11-06T05:30:00.000Z'; // 23:30 del 5 de noviembre en Costa Rica
-  assert.equal(getBusinessDateForInstant(paidAt, 'America/Costa_Rica'), '2026-11-05');
-  const { admin, calls } = mockAdmin([
-    { data: { timezone: 'America/Costa_Rica' }, error: null },
+    { data: { id: 'daily-opening', business_date: '2026-11-05', opened_at: '2026-11-06T05:50:00.000Z' }, error: null },
     { data: { id: 'daily-closure' }, error: null }
   ]);
   await assert.rejects(
     assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', paidAt),
     error => error.code === 'DAILY_CASH_CLOSED' && /2026-11-05/.test(error.message)
   );
-  assert.deepEqual(calls[1].filters.at(-1), ['business_date', '2026-11-05']);
 });
 
-test('el bloqueo de caja/fecha local no afecta a la misma caja en el siguiente día', async () => {
-  const { admin } = mockAdmin([
+test('una nueva sesión posterior al cierre anterior acepta pagos en su propio día', async () => {
+  const paidAt = '2026-11-06T06:30:00.000Z';
+  const { admin, calls } = mockAdmin([
     { data: { timezone: 'America/Costa_Rica' }, error: null },
-    { data: null, error: null },
-    { data: { id: 'daily-opening', opened_at: '2026-11-06T06:00:00.000Z' }, error: null }
+    { data: { id: 'daily-opening-next', business_date: '2026-11-06', opened_at: '2026-11-06T06:10:00.000Z' }, error: null },
+    { data: null, error: null }
   ]);
-  const nextDay = await assertCashRegisterOpenForPayment(
-    admin, tenantId, branchId, registerId, 'Caja Principal', '2026-11-06T06:30:00.000Z'
-  );
-  assert.equal(nextDay, '2026-11-06');
+  assert.equal(await assertCashRegisterOpenForPayment(admin, tenantId, branchId, registerId, 'Caja Principal', paidAt), '2026-11-06');
+  assert.deepEqual(calls[2].filters.at(-1), ['business_date', '2026-11-06']);
 });
 
 test('un reintento con todos los pagos ya aplicados evita el guard y no crea una segunda venta', async () => {
@@ -543,6 +548,43 @@ test('la migración atómica conserva la regla de terminal única y no modifica 
   assert.doesNotMatch(migration, /\b(?:insert\s+into|update|delete\s+from)\s+public\.pos_cash_shifts/i);
 });
 
+test('la propuesta SQL usa la última apertura, valida al abridor y resume solo el intervalo de sesión', async () => {
+  const sql = await readFile(new URL('../supabase/migrations/20261118120000_daily_cash_opening_session_persistence.sql', import.meta.url), 'utf8');
+  const openStart = sql.indexOf('create or replace function public.pos_open_daily_cash(');
+  const closeStart = sql.indexOf('create or replace function public.pos_close_daily_cash(');
+  const closureGuardStart = sql.indexOf('create or replace function public.guard_pos_daily_cash_closure_opening()');
+  const shiftGuardStart = sql.indexOf('create or replace function public.guard_pos_cash_shift_daily_opening()');
+  const paymentGuardStart = sql.indexOf('create or replace function public.guard_pos_payment_daily_cash_opening()');
+  const paymentClosureGuardStart = sql.indexOf('create or replace function public.guard_pos_payment_daily_cash_closure()');
+  const paymentClosureGuard = sql.slice(paymentClosureGuardStart);
+  assert.ok(openStart >= 0 && closeStart > openStart && closureGuardStart > closeStart);
+  const openFunction = sql.slice(openStart, closeStart);
+  const closeFunction = sql.slice(closeStart, closureGuardStart);
+  const shiftGuard = sql.slice(shiftGuardStart, paymentGuardStart);
+  const paymentGuard = sql.slice(paymentGuardStart, paymentClosureGuardStart);
+  assert.match(sql, /20261106100000_daily_cash_openings\.sql/);
+  assert.match(openFunction, /order by o\.opened_at desc, o\.id desc[\s\S]*select c\.\* into v_closure[\s\S]*c\.business_date = v_existing\.business_date/);
+  assert.doesNotMatch(openFunction, /and not exists\s*\(\s*select 1 from public\.pos_daily_cash_closures/i);
+  assert.match(closeFunction, /p_closed_by is distinct from v_opening\.opened_by/);
+  assert.ok(closeFunction.indexOf('select o.* into v_latest_opening') >= 0);
+  assert.ok(closeFunction.indexOf('select * into v_existing') > closeFunction.indexOf('select o.* into v_latest_opening'));
+  assert.match(closeFunction, /v_latest_opening\.id is distinct from v_opening\.id/);
+  assert.match(closeFunction, /p\.paid_at >= v_opening\.opened_at and p\.paid_at < v_closed_at/);
+  assert.match(closeFunction, /s\.opened_at < v_closed_at and coalesce\(s\.closed_at,'infinity'::timestamptz\) > v_opening\.opened_at/);
+  const closureGuard = sql.slice(closureGuardStart, shiftGuardStart);
+  assert.match(closureGuard, /new\.closed_by is distinct from v_opening\.opened_by/);
+  assert.match(closureGuard, /order by o\.opened_at desc,o\.id desc limit 1[\s\S]*v_latest\.id is distinct from v_opening\.id/);
+  assert.match(shiftGuard, /order by o\.opened_at desc,o\.id desc limit 1/);
+  assert.doesNotMatch(shiftGuard, /and not exists\s*\(select 1 from public\.pos_daily_cash_closures/i);
+  assert.match(paymentGuard, /order by o\.opened_at desc,o\.id desc limit 1[\s\S]*if exists \(select 1 from public\.pos_daily_cash_closures/);
+  assert.match(paymentClosureGuard, /opened_at <= v_paid_at order by o\.opened_at desc,o\.id desc limit 1 for update[\s\S]*if not found[\s\S]*exists \(select 1 from public\.pos_daily_cash_closures/);
+  assert.match(paymentClosureGuard, /opened_at <= v_old_paid_at order by o\.opened_at desc,o\.id desc limit 1[\s\S]*exists \(select 1 from public\.pos_daily_cash_closures/);
+  assert.match(sql, /DAILY_CASH_OWNER_ONLY\|/);
+  assert.match(sql, /DAILY_CASH_CLOSED\|/);
+  assert.match(sql, /23:59[\s\S]*medianoche[\s\S]*\[opened_at, closed_at\)/i);
+  assert.doesNotMatch(sql, /create or replace function public\.pos_close_cash_shift\(/i);
+});
+
 test('el permiso de caja no se concede a roles sin caja y el handler enruta acciones autenticadas', async () => {
   for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']) {
     assert.equal(hasRolePermission('ADMIN', ROLE_PERMISSIONS.offlineSync[action]), true);
@@ -554,6 +596,8 @@ test('el permiso de caja no se concede a roles sin caja y el handler enruta acci
   assert.match(handler, /requireAuth\(req, res\)/);
   assert.match(handler, /tenantId !== auth\.tenantId/);
   assert.match(handler, /employeeSessionActorMatches\(/);
+  assert.match(handler, /closeDailyCash\(supabaseAdmin, tenantId, auth\.employeeId \|\| auth\.userId, body\.payload\)/);
+  assert.match(handler, /openDailyCash\(supabaseAdmin, tenantId, auth\.employeeId \|\| auth\.userId, body\.payload\)/);
   assert.match(handler, /CLOSE_CASH_SHIFT/);
   assert.match(handler, /CLOSE_DAILY_CASH/);
   assert.match(handler, /GET_DAILY_CASH_STATUS/);
@@ -587,10 +631,13 @@ test('el pago rápido verifica apertura diaria antes de registrar ventas y manti
   const localSale = quickPayment.indexOf('cashShiftService.recordSalePayment');
   assert.ok(preflight >= 0 && localSale > preflight);
   assert.match(quickPayment, /getCachedDailyCashStatus\(tenant\.id, currentRegister\.id\)/);
-  assert.match(quickPayment, /isDailyCashStatusForCurrentDate\(dailyCashStatus\)/);
+  assert.match(quickPayment, /isDailyCashStatusOpen\(dailyCashStatus\)/);
+  assert.doesNotMatch(quickPayment, /isDailyCashStatusForCurrentDate/);
   const service = await readFile(new URL('../src/services/cashControlCloudService.ts', import.meta.url), 'utf8');
   assert.match(service, /cacheDailyCashStatus\(tenantId, registerId, status\)/);
   assert.match(service, /getCachedDailyCashStatus\(tenantId: string, registerId: string\)/);
+  assert.match(service, /cached\.isOpen && !cached\.isClosed/);
+  assert.match(service, /isDailyCashStatusOpen\(status: DailyCashStatus \| null \| undefined\)/);
 });
 
 test('la interfaz exige confirmación de que la terminal anterior está apagada y sus cobros sincronizados', async () => {

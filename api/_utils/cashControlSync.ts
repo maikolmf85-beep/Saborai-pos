@@ -64,36 +64,37 @@ export async function assertCashRegisterOpenForPayment(
     throw new Error('No se pudo verificar la fecha local de la sucursal; el cobro no se registró. Contacte al administrador.');
   }
 
-  const businessDate = getBusinessDateForInstant(paidAt, branch.data.timezone);
+  const paymentCalendarDate = getBusinessDateForInstant(paidAt, branch.data.timezone);
+  const opening = await admin.from('pos_daily_cash_openings')
+    .select('id, business_date, opened_at')
+    .eq('tenant_id', tenantId)
+    .eq('branch_id', branchId)
+    .eq('cash_register_id', registerId)
+    .lte('opened_at', paidAt)
+    .order('opened_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (opening.error) {
+    throw new Error('No se pudo verificar la apertura diaria vigente; el cobro no se registró. Intente de nuevo o contacte al administrador.');
+  }
+  if (!opening.data) throw new DailyCashNotOpenError(registerName, paymentCalendarDate);
+  if (opening.data.opened_at && Date.parse(paidAt) < Date.parse(opening.data.opened_at)) {
+    throw new DailyCashNotOpenError(registerName, opening.data.business_date, `El cobro es anterior a la apertura diaria de "${registerName || 'Caja'}" para el ${opening.data.business_date}; el cobro no se registró.`);
+  }
   const closure = await admin.from('pos_daily_cash_closures')
     .select('id')
     .eq('tenant_id', tenantId)
     .eq('branch_id', branchId)
     .eq('cash_register_id', registerId)
-    .eq('business_date', businessDate)
+    .eq('business_date', opening.data.business_date)
     .limit(1)
     .maybeSingle();
   if (closure.error) {
-    throw new Error('No se pudo verificar si la caja tiene cierre diario; el cobro no se registró. Intente de nuevo o contacte al administrador.');
+    throw new Error('No se pudo verificar si la apertura diaria tiene cierre; el cobro no se registró. Intente de nuevo o contacte al administrador.');
   }
-  if (closure.data) throw new DailyCashClosedError(registerName, businessDate);
-
-  const opening = await admin.from('pos_daily_cash_openings')
-    .select('id, opened_at')
-    .eq('tenant_id', tenantId)
-    .eq('branch_id', branchId)
-    .eq('cash_register_id', registerId)
-    .eq('business_date', businessDate)
-    .limit(1)
-    .maybeSingle();
-  if (opening.error) {
-    throw new Error('No se pudo verificar si la caja fue abierta para el día; el cobro no se registró. Intente de nuevo o contacte al administrador.');
-  }
-  if (!opening.data) throw new DailyCashNotOpenError(registerName, businessDate);
-  if (opening.data.opened_at && Date.parse(paidAt) < Date.parse(opening.data.opened_at)) {
-    throw new DailyCashNotOpenError(registerName, businessDate, `El cobro es anterior a la apertura diaria de "${registerName || 'Caja'}" para el ${businessDate}; el cobro no se registró.`);
-  }
-  return businessDate;
+  if (closure.data) throw new DailyCashClosedError(registerName, opening.data.business_date);
+  return opening.data.business_date;
 }
 
 function asRecord(value: unknown, label: string): RecordValue {
@@ -280,10 +281,11 @@ export async function closeCashShift(
 export async function closeDailyCash(
   admin: CashControlAdminClient,
   tenantId: string,
-  actorUserId: string,
+  actorIdentityId: string,
   value: unknown
 ): Promise<RecordValue> {
   const input = asRecord(value, 'El cierre diario');
+  const actorId = requiredUuid(actorIdentityId, 'La identidad autenticada');
   const registerId = requiredText(input.registerId, 'La caja', 120);
   if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) {
     throw new Error('El identificador de la caja tiene un formato inválido.');
@@ -308,7 +310,7 @@ export async function closeDailyCash(
     p_tenant_id: tenantId,
     p_cash_register_id: register.data.id,
     p_business_date: businessDate,
-    p_closed_by: actorUserId
+    p_closed_by: actorId
   });
   if (result.error || !result.data) {
     throw new Error(result.error?.message || 'No se confirmó el cierre diario de caja.');
@@ -319,7 +321,8 @@ export async function closeDailyCash(
 export async function getDailyCashStatus(
   admin: CashControlAdminClient,
   tenantId: string,
-  value: unknown
+  value: unknown,
+  now = new Date().toISOString()
 ): Promise<RecordValue> {
   const input = asRecord(value, 'La consulta del estado diario');
   const registerId = requiredText(input.registerId, 'La caja', 120);
@@ -341,35 +344,50 @@ export async function getDailyCashStatus(
     .limit(1)
     .maybeSingle();
   if (branch.error || !branch.data?.timezone) throw new Error('No se pudo determinar la fecha local de la sucursal.');
-  const businessDate = getBusinessDateForInstant(new Date().toISOString(), branch.data.timezone);
-  const filters = (query: any) => query
+  const currentBusinessDate = getBusinessDateForInstant(now, branch.data.timezone);
+  const opening = await admin.from('pos_daily_cash_openings')
+    .select('id, business_date, opened_at, opened_by, timezone')
     .eq('tenant_id', tenantId)
     .eq('branch_id', register.data.branch_id)
     .eq('cash_register_id', register.data.id)
-    .eq('business_date', businessDate)
+    .lte('opened_at', now)
+    .order('opened_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(1)
     .maybeSingle();
-  const opening = await filters(admin.from('pos_daily_cash_openings').select('id, opened_at, opened_by, timezone'));
   if (opening.error) throw new Error('No se pudo consultar la apertura diaria de la caja.');
-  const closure = await filters(admin.from('pos_daily_cash_closures').select('id, closed_at, closed_by'));
+  const openingDate = opening.data?.business_date || currentBusinessDate;
+  const closure = opening.data
+    ? await admin.from('pos_daily_cash_closures')
+      .select('id, closed_at, closed_by')
+      .eq('tenant_id', tenantId)
+      .eq('branch_id', register.data.branch_id)
+      .eq('cash_register_id', register.data.id)
+      .eq('business_date', openingDate)
+      .limit(1)
+      .maybeSingle()
+    : { data: null, error: null };
   if (closure.error) throw new Error('No se pudo consultar el cierre diario de la caja.');
+  const sessionOpen = Boolean(opening.data && !closure.data);
+  const sessionClosedToday = Boolean(closure.data && openingDate === currentBusinessDate);
   return {
     registerId: register.data.id,
     registerName: register.data.name,
-    businessDate,
+    businessDate: sessionOpen || sessionClosedToday ? openingDate : currentBusinessDate,
     timezone: branch.data.timezone,
-    isOpen: Boolean(opening.data),
-    isClosed: Boolean(closure.data),
-    openedAt: opening.data?.opened_at || null,
-    openedBy: opening.data?.opened_by || null,
-    closedAt: closure.data?.closed_at || null
+    isOpen: sessionOpen,
+    isClosed: sessionClosedToday,
+    openedAt: sessionOpen || sessionClosedToday ? opening.data?.opened_at || null : null,
+    openedBy: sessionOpen || sessionClosedToday ? opening.data?.opened_by || null : null,
+    closedAt: sessionClosedToday ? closure.data?.closed_at || null : null,
+    openingId: sessionOpen || sessionClosedToday ? opening.data?.id || null : null
   };
 }
 
 export async function openDailyCash(
   admin: CashControlAdminClient,
   tenantId: string,
-  actorUserId: string,
+  actorIdentityId: string,
   value: unknown
 ): Promise<RecordValue> {
   const input = asRecord(value, 'La apertura diaria');
@@ -377,7 +395,7 @@ export async function openDailyCash(
   if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) {
     throw new Error('El identificador de la caja tiene un formato inválido.');
   }
-  const actorId = requiredUuid(actorUserId, 'El usuario autenticado');
+  const actorId = requiredUuid(actorIdentityId, 'La identidad autenticada');
   let lookup = admin.from('pos_cash_registers')
     .select('id')
     .eq('tenant_id', tenantId)

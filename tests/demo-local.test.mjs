@@ -96,6 +96,28 @@ test('operaciones Demo son locales, no agregan cola offline y caja diaria no lla
   });
 });
 
+test('la caché demo conserva una sesión abierta de fecha anterior hasta su cierre explícito', async () => {
+  await withFakeBrowser(async () => {
+    startCleanDemoSession(DEMO_TENANT_ID);
+    const registerId = getTenantItem('cash_registers', DEMO_TENANT_ID)[0].id;
+    const overnightStatus = {
+      registerId,
+      registerName: 'Caja demo',
+      businessDate: '2026-11-05',
+      timezone: 'America/Costa_Rica',
+      isOpen: true,
+      isClosed: false,
+      openedAt: '2026-11-06T05:50:00.000Z',
+      openedBy: 'synthetic-opener'
+    };
+    cashControlCloudService.cacheDailyCashStatus(DEMO_TENANT_ID, registerId, overnightStatus);
+
+    const status = await cashControlCloudService.getDailyCashStatus(DEMO_TENANT_ID, registerId);
+    assert.deepEqual(status, overnightStatus);
+    assert.equal(cashControlCloudService.isDailyCashStatusOpen(status), true);
+  });
+});
+
 test('un tenant real conserva la ruta normal de sincronización autenticada', async () => {
   await withFakeBrowser(async storage => {
     storage.setItem('saborai_token', 'test-token');
