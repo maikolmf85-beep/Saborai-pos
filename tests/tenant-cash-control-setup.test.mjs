@@ -306,7 +306,8 @@ test('las columnas consultadas o insertadas existen en las migraciones versionad
 });
 
 test('la ruta de onboarding exige sesión y ADMIN; el cliente envía la operación al servidor sin insertar sucursales/cajas', async () => {
-  const onboarding = await readFile(new URL('../api/tenant/onboarding.ts', import.meta.url), 'utf8');
+  const onboarding = await readFile(new URL('../api/_utils/tenantOnboarding.ts', import.meta.url), 'utf8');
+  const router = await readFile(new URL('../api/tenant.ts', import.meta.url), 'utf8');
   const clientService = await readFile(new URL('../src/services/cashControlCloudService.ts', import.meta.url), 'utf8');
 
   assert.match(onboarding, /await requireAuth\(req, res\)/);
@@ -314,6 +315,8 @@ test('la ruta de onboarding exige sesión y ADMIN; el cliente envía la operaci�
   assert.match(onboarding, /body\.action === 'ensure-cash-control-setup'/);
   assert.match(onboarding, /ensureTenantCashControlSetup\(supabase, auth, body\)/);
   assert.match(onboarding, /onboarding_completed: true/);
+  assert.match(router, /action === 'onboarding'/);
+  assert.match(router, /onboardingHandler\(req, res\)/);
   assert.match(clientService, /fetch\('\/api\/tenant\/onboarding'/);
   assert.match(clientService, /printers: localPrinters\.map/);
   assert.match(clientService, /assignedPrinterId: local\.assignedPrinterId \|\| null/);

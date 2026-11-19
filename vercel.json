@@ -30,6 +30,14 @@
       "destination": "/api/offline/sync?action=employee-credit"
     },
     {
+      "source": "/api/tenant/onboarding",
+      "destination": "/api/tenant?action=onboarding"
+    },
+    {
+      "source": "/api/tenant/profile",
+      "destination": "/api/tenant?action=profile"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

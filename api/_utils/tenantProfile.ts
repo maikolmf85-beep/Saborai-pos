@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin as supabase } from '../_utils/supabase.js';
-import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
-import { cleanTenantZones, updateTenantZonesInSupabase } from '../_utils/tenantZones.js';
+import { supabaseAdmin as supabase } from './supabase.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from './security.js';
+import { cleanTenantZones, updateTenantZonesInSupabase } from './tenantZones.js';
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function profileHandler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
   if (!['GET', 'PATCH', 'POST'].includes(req.method || '')) {

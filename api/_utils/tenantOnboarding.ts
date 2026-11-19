@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdmin as supabase } from '../_utils/supabase.js';
-import { handleOptions, requireAuth, requireRole, setCorsHeaders } from '../_utils/security.js';
-import { ensureTenantCashControlSetup } from '../_utils/tenantCashControlSetup.js';
+import { supabaseAdmin as supabase } from './supabase.js';
+import { handleOptions, requireAuth, requireRole, setCorsHeaders } from './security.js';
+import { ensureTenantCashControlSetup } from './tenantCashControlSetup.js';
 
 function requestBody(body: unknown): Record<string, any> {
   if (body && typeof body === 'object' && !Array.isArray(body)) return body as Record<string, any>;
@@ -16,7 +16,7 @@ function requestBody(body: unknown): Record<string, any> {
   return {};
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function onboardingHandler(req: VercelRequest, res: VercelResponse) {
   setCorsHeaders(req, res);
   if (handleOptions(req, res)) return;
 
