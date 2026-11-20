@@ -10,7 +10,7 @@ import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
 import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, closeDailyCashV2Aware, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
-import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.ts';
+import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.js';
 import { CashShiftV2ServiceError, dispatchCashShiftV2AwareWrite, executeCashShiftV2Operation, isCashShiftV2RoutingEnabled, type CashShiftV2WriteMode } from '../_utils/cashShiftV2Service.js';
 import { isCashShiftV2DailyCloseEnabled } from '../_utils/cashShiftV2DailyClose.js';
 import { createCashShiftV2Repository } from '../_utils/cashShiftV2Repository.js';

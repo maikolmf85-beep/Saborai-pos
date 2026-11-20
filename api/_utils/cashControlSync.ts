@@ -1,5 +1,5 @@
 import { dispatchCashShiftV2AwareDailyClose } from './cashShiftV2DailyClose.js';
-import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.ts';
+import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.js';
 import { isCashShiftV2RoutingEnabled } from './cashShiftV2Service.js';
 
 type CashControlAdminClient = {

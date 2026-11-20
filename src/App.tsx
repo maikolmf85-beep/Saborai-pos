@@ -2452,7 +2452,7 @@ export function App() {
                       onClick={() => handleOpenCashShift('status')}
                       className="px-8 py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-stone-800 transition-colors shadow-xl shadow-stone-900/20 active:scale-95"
                     >
-                      Abrir Turno Ahora
+                      Abrir turno
                     </button>
                   ) : (
                     <div className="px-6 py-4 bg-amber-100/50 text-amber-800 border border-amber-200 rounded-2xl font-bold text-sm shadow-sm">

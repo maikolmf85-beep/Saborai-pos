@@ -12,7 +12,7 @@ import {
   type CashShiftV2SessionReconciliation,
   type CashShiftV2DailyOpeningIdentity,
   type CashShiftV2Currency
-} from '../../src/services/cashShiftV2Contract.ts';
+} from '../../src/services/cashShiftV2Contract.js';
 
 export type CashShiftV2DailyCloseMode = 'OFF' | 'PREPARED' | 'ACTIVE' | 'QUIESCING' | 'FROZEN';
 

@@ -748,7 +748,7 @@ Medio de Pago: ${paymentMethod}
                   onClick={() => onOpenCashShift('status')} 
                   className="underline font-bold text-amber-950 hover:opacity-80 cursor-pointer"
                 >
-                  Abrir Turno Ahora
+                  Abrir turno
                 </button>
               )}
             </div>

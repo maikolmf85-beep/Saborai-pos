@@ -548,7 +548,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
       isOpen: true,
       title: '¿Iniciar la sesión diaria de caja?',
       message: `Se habilitará ${currentRegisterObj?.name || 'la caja'} desde el ${dailyCashStatus?.businessDate || 'día local actual'}. La sesión seguirá abierta aunque cambie la fecha y solo podrá cerrarla quien la abrió. Esto no abre ni cambia el turno; el fondo inicial se registra por separado en cada turno.`,
-      confirmLabel: 'Abrir caja del día',
+      confirmLabel: 'Abrir caja',
       type: 'info',
       onConfirm: () => {
         setConfirmConfig(prev => ({ ...prev, isOpen: false }));
@@ -1055,7 +1055,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
               )}
               {!dailyCashStatus?.isClosed && !isLoadingDailyCashStatus && (
                 <p className="text-[11px] text-stone-500">
-                  Usa <strong>Abrir caja del día</strong> en la barra superior. Esta acción requiere conexión y no modifica ni abre un turno.
+                  Usa <strong>Abrir caja</strong> en la barra superior. Esta acción requiere conexión y no modifica ni abre un turno.
                 </p>
               )}
             </div>
@@ -1575,7 +1575,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Abrir Turno Ahora</span>
+                  <span>Abrir turno</span>
                 </button>
               </div>
             </div>
@@ -1856,7 +1856,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Abrir Turno en esta Caja</span>
+                  <span>Abrir turno</span>
                 </button>
                 <button
                   type="button"
@@ -2399,7 +2399,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                             onClick={() => setActiveTab('status')}
                             className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
                           >
-                            {regShift ? 'Gestionar Turno Activo' : 'Abrir Turno Aquí'}
+                            {regShift ? 'Gestionar Turno Activo' : 'Abrir turno'}
                           </button>
                         )}
                         {regShift && (

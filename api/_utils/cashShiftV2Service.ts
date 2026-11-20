@@ -12,7 +12,7 @@ import {
   type CashShiftV2OpenShiftCommand,
   type CashShiftV2OrderSyncCommand,
   type CashShiftV2Role
-} from '../../src/services/cashShiftV2Contract.ts';
+} from '../../src/services/cashShiftV2Contract.js';
 
 export type CashShiftV2Operation = 'OPEN_SHIFT' | 'SYNC_ORDER' | 'CAPTURE_PAYMENT' | 'CLOSE_SHIFT' | 'HELD_LINE_RESOLUTION';
 export type CashShiftV2RpcName =

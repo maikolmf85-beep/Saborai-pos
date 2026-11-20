@@ -12,7 +12,7 @@ import { validateHaciendaXmlDocumentAgainstBranchProfile } from './_utils/hacien
 import { classifyHaciendaStatusQuery, isConfirmedHaciendaRejection } from './_utils/haciendaStatus.js';
 import { canReserveHaciendaSubmission, claimHaciendaOperationLock, finishHaciendaOperationLock, updateHaciendaInvoiceIfSnapshot, type HaciendaInvoiceSnapshot } from './_utils/haciendaInvoiceConcurrency.js';
 import { createHaciendaOperationLockToken, isHaciendaOperationLock, isHaciendaOperationLockStale } from './_utils/haciendaOperationLock.js';
-import { CASH_SHIFT_V2_ENABLED } from '../src/services/cashShiftV2Contract.ts';
+import { CASH_SHIFT_V2_ENABLED } from '../src/services/cashShiftV2Contract.js';
 import { CashShiftV2ServiceError, dispatchCashShiftV2AwareWrite, isCashShiftV2RoutingEnabled, type CashShiftV2WriteMode } from './_utils/cashShiftV2Service.js';
 import {
   decryptHaciendaConfig,
