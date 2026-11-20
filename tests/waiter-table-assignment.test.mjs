@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { getAssignableTableWaiters, assignTableWaiter } from '../src/services/waiterTableAssignment.ts';
+import { getAssignableTableWaiters, getTableAssigneeRoleLabel, assignTableWaiter } from '../src/services/waiterTableAssignment.ts';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const tableMapSource = read('../src/components/TableMap.tsx');
@@ -34,7 +34,7 @@ const table = (overrides = {}) => ({
   ...overrides
 });
 
-test('la lista de asignación incluye solo saloneros activos, sin roles de caja o administración', () => {
+test('la lista de asignación incluye roles activos del equipo y excluye cualquier persona inactiva', () => {
   const currentUser = staff('current-waiter', 'WAITER');
   const eligible = getAssignableTableWaiters([
     staff('waiter', 'SALONERO'),
@@ -42,11 +42,29 @@ test('la lista de asignación incluye solo saloneros activos, sin roles de caja 
     staff('inactive', 'SALONERO', { active: false }),
     staff('cashier', 'CAJERO'),
     staff('waiter-cashier', 'SALONERO_CAJA'),
-    staff('admin', 'ADMIN')
+    staff('admin', 'ADMIN'),
+    staff('inactive-cashier', 'CAJERO', { active: false }),
+    staff('inactive-waiter-cashier', 'SALONERO_CAJA', { active: false }),
+    staff('inactive-admin', 'ADMIN', { active: false }),
+    currentUser
   ], currentUser);
 
-  assert.deepEqual(eligible.map((person) => person.id), ['waiter', 'legacy-waiter', 'current-waiter']);
-  assert.deepEqual(eligible.map((person) => person.role), ['SALONERO', 'WAITER', 'WAITER']);
+  assert.deepEqual(eligible.map((person) => person.id), [
+    'waiter', 'legacy-waiter', 'cashier', 'waiter-cashier', 'admin', 'current-waiter'
+  ]);
+  assert.deepEqual(eligible.map((person) => person.role), [
+    'SALONERO', 'WAITER', 'CAJERO', 'SALONERO_CAJA', 'ADMIN', 'WAITER'
+  ]);
+});
+
+test('el selector muestra etiquetas de rol claras para todos los responsables admitidos', () => {
+  assert.deepEqual([
+    getTableAssigneeRoleLabel('SALONERO'),
+    getTableAssigneeRoleLabel('WAITER'),
+    getTableAssigneeRoleLabel('SALONERO_CAJA'),
+    getTableAssigneeRoleLabel('CAJERO'),
+    getTableAssigneeRoleLabel('ADMIN')
+  ], ['Salonero', 'Salonero', 'Salonero con Caja', 'Cajero', 'Administrador']);
 });
 
 test('la primera asignación crea la comanda sin PIN y solo cambia el salonero de mesa', () => {
@@ -92,6 +110,7 @@ test('asignar un salonero a una comanda existente conserva cuenta, artículos y 
 test('el selector inicial es una selección de nombre sin PIN, PII ni activación de sesión', () => {
   assert.match(assignmentModalSource, /onClick=\{\(\) => onSelectWaiter\(staff\)\}/);
   assert.match(assignmentModalSource, /getAssignableTableWaiters\(staffList, currentUser\)/);
+  assert.match(assignmentModalSource, /getTableAssigneeRoleLabel\(staff\.role\)/);
   assert.doesNotMatch(assignmentModalSource, /\bpin\b|onAuthenticateStaff|activateStaffSession|createEmployeeSession|\bemail\b|\bphone\b/i);
   assert.match(tableMapSource, /needsInitialAssignment/);
   assert.match(tableMapSource, /onSelectWaiter=\{handleWaiterAssigned\}/);

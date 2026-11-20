@@ -10,7 +10,6 @@ export interface NormalizedEmployeeRosterEntry {
   email: string | null;
   phone: string | null;
   role: EmployeeRole;
-  active: boolean;
   pin: string | null;
 }
 
@@ -65,11 +64,8 @@ export function normalizeEmployeeRoster(value: unknown): NormalizedEmployeeRoste
       pin = raw.pin.trim();
     }
 
-    if (raw.active !== undefined && typeof raw.active !== 'boolean') {
-      throw new Error('El estado del colaborador no es válido.');
-    }
-
-    return { externalId, name, email, phone, role: raw.role, active: raw.active !== false, pin };
+    // The client may still send `active` for backward compatibility, but it cannot control lifecycle.
+    return { externalId, name, email, phone, role: raw.role, pin };
   });
 }
 

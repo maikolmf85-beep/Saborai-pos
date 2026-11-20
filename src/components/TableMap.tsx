@@ -1332,7 +1332,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                   <div className="flex items-center justify-between text-xs text-stone-600">
                     <div className="flex items-center gap-1">
                       <User className="w-3.5 h-3.5 text-stone-400" />
-                      <span>Salonero: <strong>{(selectedTable.activeOrder.server && selectedTable.activeOrder.server !== 'Mesero General' && selectedTable.activeOrder.server !== 'Salonero general') ? selectedTable.activeOrder.server : (currentUser?.name || staffList[0]?.name || 'Salonero')}</strong></span>
+                      <span>Responsable: <strong>{(selectedTable.activeOrder.server && selectedTable.activeOrder.server !== 'Mesero General' && selectedTable.activeOrder.server !== 'Salonero general') ? selectedTable.activeOrder.server : (currentUser?.name || staffList[0]?.name || 'Sin asignar')}</strong></span>
                     </div>
                     <button
                       type="button"
@@ -1341,7 +1341,7 @@ export const TableMap: React.FC<TableMapProps> = ({
                         setIsPinModalOpen(true);
                       }}
                       className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline"
-                      title="Cambiar salonero encargado con PIN"
+                      title="Cambiar responsable de la mesa con PIN"
                     >
                       Reasignar
                     </button>
@@ -1694,7 +1694,7 @@ export const TableMap: React.FC<TableMapProps> = ({
         </div>
       )}
 
-      {/* Modal: asignación inicial de salonero (sin cambio de sesión ni PIN) */}
+      {/* Modal: asignación inicial de responsable (sin cambio de sesión ni PIN) */}
       <WaiterAssignmentModal
         isOpen={isWaiterAssignmentOpen}
         onClose={() => {

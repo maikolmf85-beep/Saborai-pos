@@ -19,7 +19,7 @@ const employee = {
 const tenant = { id: 'tenant-uuid', user_id: 'owner-uuid' };
 const owner = { id: 'owner-uuid', email: 'owner@example.cr', active: true };
 
-test('normaliza colaboradores y conserva solo campos permitidos', () => {
+test('normaliza colaboradores e ignora el estado activo enviado por el cliente', () => {
   const roster = normalizeEmployeeRoster([{
     id: ' staff-1 ',
     name: ' Ana Rojas ',
@@ -38,7 +38,6 @@ test('normaliza colaboradores y conserva solo campos permitidos', () => {
     email: 'ana@example.cr',
     phone: '+506 8000-0000',
     role: 'CAJERO',
-    active: false,
     pin: '0427'
   }]);
 });

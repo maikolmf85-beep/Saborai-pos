@@ -1,6 +1,27 @@
 import type { Table, UserProfile } from '../types';
 
-const TABLE_WAITER_ROLES = new Set<UserProfile['role']>(['SALONERO', 'WAITER']);
+const TABLE_WAITER_ROLES = new Set<UserProfile['role']>([
+  'SALONERO',
+  'WAITER',
+  'SALONERO_CAJA',
+  'CAJERO',
+  'ADMIN'
+]);
+
+export const getTableAssigneeRoleLabel = (role: UserProfile['role']): string => {
+  switch (role) {
+    case 'ADMIN':
+      return 'Administrador';
+    case 'CAJERO':
+      return 'Cajero';
+    case 'SALONERO_CAJA':
+      return 'Salonero con Caja';
+    case 'SALONERO':
+    case 'WAITER':
+    default:
+      return 'Salonero';
+  }
+};
 
 export const isAssignableTableWaiter = (staff: UserProfile): boolean =>
   staff.active !== false && TABLE_WAITER_ROLES.has(staff.role);

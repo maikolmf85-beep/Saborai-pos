@@ -14,7 +14,9 @@ import {
   CheckCircle2, 
   Sparkles, 
   ArrowRightLeft,
-  UserCheck
+  UserCheck,
+  Trash2,
+  TriangleAlert
 } from 'lucide-react';
 import { UserProfile, TenantInfo, UserRole } from '../types';
 import { notionService, formatUserRole } from '../services/notionService';
@@ -23,9 +25,11 @@ interface StaffModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUser: UserProfile | null;
+  ownerUserId?: string | null;
   currentTenant: TenantInfo;
   staffList: UserProfile[];
   onAddStaffMember: (newMember: UserProfile) => void | Promise<void>;
+  onRemoveStaffMember?: (userId: string) => void | Promise<void>;
   onResetStaffPin?: (userId: string, newPin: string) => void | Promise<void>;
   onSelectUser: (user: UserProfile) => void;
   onToggleUserActive?: (userId: string) => void;
@@ -36,9 +40,11 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   isOpen,
   onClose,
   currentUser,
+  ownerUserId,
   currentTenant,
   staffList,
   onAddStaffMember,
+  onRemoveStaffMember,
   onResetStaffPin,
   onSelectUser,
   onToggleUserActive,
@@ -51,8 +57,11 @@ export const StaffModal: React.FC<StaffModalProps> = ({
   const [pin, setPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackIsError, setFeedbackIsError] = useState(false);
   const [resetPinFor, setResetPinFor] = useState<UserProfile | null>(null);
   const [resetPin, setResetPin] = useState('');
+  const [removeStaffFor, setRemoveStaffFor] = useState<UserProfile | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   if (!isOpen) return null;
 
@@ -103,6 +112,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
 
     setIsSubmitting(true);
     setFeedback(null);
+    setFeedbackIsError(false);
 
     const newStaff: UserProfile = {
       id: `usr_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
@@ -128,6 +138,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
       setTimeout(() => setFeedback(null), 3500);
     } catch (error: any) {
       setFeedback(error?.message || 'No se pudo sincronizar el colaborador con el servidor.');
+      setFeedbackIsError(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -138,9 +149,29 @@ export const StaffModal: React.FC<StaffModalProps> = ({
     if (currentUser?.role !== 'ADMIN' || !resetPinFor || !/^\d{4}$/.test(resetPin)) return;
     onResetStaffPin?.(resetPinFor.id, resetPin);
     setFeedback(`PIN restablecido para "${resetPinFor.name}". El PIN anterior quedó invalidado.`);
+    setFeedbackIsError(false);
     setResetPinFor(null);
     setResetPin('');
     setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleConfirmRemoveStaff = async () => {
+    if (currentUser?.role !== 'ADMIN' || !removeStaffFor || !onRemoveStaffMember || isRemoving) return;
+    setIsRemoving(true);
+    setFeedback(null);
+    try {
+      await onRemoveStaffMember(removeStaffFor.id);
+      setFeedback(`Acceso de "${removeStaffFor.name}" desactivado. Su historial se conservó.`);
+      setFeedbackIsError(false);
+      setRemoveStaffFor(null);
+      setResetPinFor(null);
+      setTimeout(() => setFeedback(null), 5000);
+    } catch (error: any) {
+      setFeedback(error?.message || 'No se pudo eliminar al colaborador.');
+      setFeedbackIsError(true);
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   return (
@@ -178,8 +209,10 @@ export const StaffModal: React.FC<StaffModalProps> = ({
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {feedback && (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-2xl text-xs font-semibold flex items-center gap-2 animate-in slide-in-from-top-2 duration-150">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div className={`p-3.5 border rounded-2xl text-xs font-semibold flex items-center gap-2 animate-in slide-in-from-top-2 duration-150 ${feedbackIsError ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900'}`}>
+              {feedbackIsError
+                ? <TriangleAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                : <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
               <span>{feedback}</span>
             </div>
           )}
@@ -327,11 +360,13 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                     ) : (
                       staffList.map((member) => {
                       const isCurrent = currentUser?.id === member.id;
+                      const isOwner = ownerUserId === member.id;
+                      const isActive = member.active !== false;
                       const roleDef = roleDefinitions.find(r => r.id === member.role) || roleDefinitions[1];
                       const Icon = roleDef.icon;
 
                       return (
-                        <tr key={member.id} className={`hover:bg-stone-50/60 transition-colors ${isCurrent ? 'bg-[#a9b994]/10' : ''}`}>
+                        <tr key={member.id} className={`transition-colors ${!isActive ? 'bg-stone-50/80 text-stone-500' : isCurrent ? 'bg-[#a9b994]/10' : 'hover:bg-stone-50/60'}`}>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               <div className="w-8 h-8 rounded-full bg-stone-200 text-stone-700 flex items-center justify-center font-bold text-xs">
@@ -343,6 +378,16 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                                   {isCurrent && (
                                     <span className="px-1.5 py-0.5 rounded-md bg-stone-900 text-white text-[9px] font-bold">
                                       En Turno
+                                    </span>
+                                  )}
+                                  {isOwner && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[9px] font-bold">
+                                      Cuenta propietaria
+                                    </span>
+                                  )}
+                                  {!isActive && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-stone-200 text-stone-700 text-[9px] font-bold">
+                                      Acceso desactivado
                                     </span>
                                   )}
                                 </div>
@@ -365,7 +410,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
 
                           <td className="px-4 py-3 font-mono text-stone-500 text-[11px]">
                             <span className="text-stone-400">PIN protegido</span>
-                            {currentUser?.role === 'ADMIN' && onResetStaffPin && !isCurrent && (
+                            {currentUser?.role === 'ADMIN' && onResetStaffPin && !isCurrent && !isOwner && isActive && (
                               <button
                                 type="button"
                                 onClick={() => { setResetPinFor(member); setResetPin(''); }}
@@ -378,7 +423,7 @@ export const StaffModal: React.FC<StaffModalProps> = ({
 
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-2">
-                              {!isCurrent && (
+                              {isActive && !isCurrent && !isOwner && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -396,6 +441,23 @@ export const StaffModal: React.FC<StaffModalProps> = ({
                                   <span>Cambiar Turno</span>
                                 </button>
                               )}
+                              {currentUser?.role === 'ADMIN' && onRemoveStaffMember && isActive && !isCurrent && !isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFeedback(null);
+                                    setRemoveStaffFor(member);
+                                    setResetPinFor(null);
+                                  }}
+                                  className="px-3 py-1 border border-stone-400 bg-white hover:bg-stone-800 hover:border-stone-800 hover:text-white text-stone-800 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 shadow-2xs"
+                                  title={`Eliminar a ${member.name} del restaurante; su historial se conservará`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>Eliminar</span>
+                                </button>
+                              )}
+                              {!isActive && <span className="text-[10px] font-semibold text-stone-500">Sin acceso al POS</span>}
+                              {isOwner && <span className="text-[10px] font-semibold text-blue-700">No eliminable</span>}
                             </div>
                           </td>
                         </tr>
@@ -406,6 +468,50 @@ export const StaffModal: React.FC<StaffModalProps> = ({
               </div>
             </div>
           </div>
+
+          {removeStaffFor && currentUser?.role === 'ADMIN' && onRemoveStaffMember && (
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="staff-removal-title"
+              className="p-4 rounded-2xl bg-stone-50 border border-stone-300 space-y-3"
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-stone-200 text-stone-800 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 id="staff-removal-title" className="text-sm font-bold text-stone-950">
+                    ¿Eliminar a {removeStaffFor.name} del restaurante?
+                  </h3>
+                  <p className="mt-1 text-xs text-stone-800">
+                    Se desactivará únicamente a este colaborador y se bloqueará su acceso al POS. Su perfil y su historial operativo y fiscal se conservarán; no se eliminarán otros colaboradores ni la cuenta propietaria.
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold text-stone-700">
+                    El cambio aplica a todas las sucursales de este restaurante. Si tiene comandas abiertas o es el último administrador activo, el sistema no permitirá continuar.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={isRemoving}
+                  onClick={() => setRemoveStaffFor(null)}
+                  className="px-4 py-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 disabled:opacity-50 text-stone-800 text-xs font-bold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isRemoving}
+                  onClick={() => void handleConfirmRemoveStaff()}
+                  className="px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 disabled:bg-stone-400 text-white text-xs font-bold"
+                >
+                  {isRemoving ? 'Eliminando…' : 'Eliminar del restaurante'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {resetPinFor && currentUser?.role === 'ADMIN' && (
             <form onSubmit={handleResetPin} className="p-4 rounded-2xl bg-amber-50 border border-amber-200 space-y-3">

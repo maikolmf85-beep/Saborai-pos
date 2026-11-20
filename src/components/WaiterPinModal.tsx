@@ -33,7 +33,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   tenantId,
   onConfirm
 }) => {
-  // Only active saloneros can be assigned to or switched on a table.
+  // Only active staff with a table-assignable role can be assigned or switched.
   const eligibleStaff = staffList.filter(isAssignableTableWaiter);
 
   const [selectedStaff, setSelectedStaff] = useState<UserProfile | null>(eligibleStaff[0] || null);
@@ -104,7 +104,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
   const validatePin = async (inputPin: string) => {
     if (isVerifying) return;
     if (!selectedStaff) {
-      setErrorMessage('Por favor selecciona un salonero');
+      setErrorMessage('Por favor selecciona a la persona responsable');
       return;
     }
 
@@ -145,12 +145,12 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
       case 'WAITER':
         return { label: 'Salonero', color: 'bg-emerald-50 text-emerald-800 border-emerald-200', icon: ChefHat };
       case 'SALONERO_CAJA':
-        return { label: 'Salonero c/ Caja', color: 'bg-purple-50 text-purple-800 border-purple-200', icon: Zap };
+        return { label: 'Salonero con Caja', color: 'bg-purple-50 text-purple-800 border-purple-200', icon: Zap };
       case 'CAJERO':
         return { label: 'Cajero', color: 'bg-amber-50 text-amber-800 border-amber-200', icon: Receipt };
       case 'ADMIN':
       default:
-        return { label: 'Admin', color: 'bg-blue-50 text-blue-800 border-blue-200', icon: ShieldCheck };
+        return { label: 'Administrador', color: 'bg-blue-50 text-blue-800 border-blue-200', icon: ShieldCheck };
     }
   };
 
@@ -166,13 +166,13 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-stone-900 flex items-center gap-1.5">
-                <span>Cambiar Salonero Encargado</span>
+                <span>Cambiar responsable de la mesa</span>
                 <span className="text-xs px-2 py-0.5 rounded-lg bg-stone-200 text-stone-700 font-semibold">
                   {table.name}
                 </span>
               </h3>
               <p className="text-[11px] text-stone-500">
-                Selecciona al salonero que atenderá esta mesa e ingresa su PIN para confirmar el cambio.
+                Selecciona a la persona que atenderá esta mesa e ingresa su PIN para confirmar el cambio.
               </p>
             </div>
           </div>
@@ -191,7 +191,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
           {/* Step 1: Select Waiter */}
           <div>
             <label className="block text-[11px] font-bold text-stone-600 uppercase mb-2">
-              1. Selecciona el Salonero en Turno:
+              1. Selecciona quién queda a cargo:
             </label>
             <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-1">
               {eligibleStaff.map((staff) => {
@@ -237,7 +237,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
             <div className="text-center">
               <span className="text-[11px] font-bold text-stone-700 uppercase flex items-center justify-center gap-1">
                 <KeyRound className="w-3.5 h-3.5 text-stone-500" />
-                2. Ingresa el PIN de {selectedStaff?.name.split(' ')[0] || 'Salonero'}
+                2. Ingresa el PIN de {selectedStaff?.name.split(' ')[0] || 'la persona responsable'}
               </span>
               <span className="text-[10px] text-stone-400 block mt-0.5">
                 PIN de cuatro dígitos protegido en el servidor
@@ -330,7 +330,7 @@ export const WaiterPinModal: React.FC<WaiterPinModalProps> = ({
             className="px-5 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold hover:bg-stone-800 disabled:opacity-40 transition-colors shadow-xs flex items-center gap-1.5"
           >
             <Check className="w-3.5 h-3.5 text-[#a9b994]" />
-            <span>Confirmar Salonero</span>
+            <span>Confirmar responsable</span>
           </button>
         </div>
 

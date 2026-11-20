@@ -1,7 +1,7 @@
 import React from 'react';
 import { ChefHat, UtensilsCrossed, X } from 'lucide-react';
 import type { Table, UserProfile } from '../types';
-import { getAssignableTableWaiters } from '../services/waiterTableAssignment';
+import { getAssignableTableWaiters, getTableAssigneeRoleLabel } from '../services/waiterTableAssignment';
 
 interface WaiterAssignmentModalProps {
   isOpen: boolean;
@@ -39,13 +39,13 @@ export const WaiterAssignmentModal: React.FC<WaiterAssignmentModalProps> = ({
                   {table.name}
                 </span>
               </h3>
-              <p className="text-[11px] text-stone-500">Seleccioná al salonero para iniciar la comanda.</p>
+              <p className="text-[11px] text-stone-500">Seleccioná quién quedará a cargo de esta mesa para iniciar la comanda.</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar selección de salonero"
+            aria-label="Cerrar selección de responsable"
             className="p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -65,13 +65,16 @@ export const WaiterAssignmentModal: React.FC<WaiterAssignmentModalProps> = ({
                   <span className="w-9 h-9 rounded-xl bg-stone-900 text-[#a9b994] flex items-center justify-center shrink-0">
                     <ChefHat className="w-4 h-4" />
                   </span>
-                  <span className="min-w-0 text-sm font-bold text-stone-900 truncate">{staff.name}</span>
+                  <span className="min-w-0 flex flex-col text-left">
+                    <span className="text-sm font-bold text-stone-900 truncate">{staff.name}</span>
+                    <span className="text-[10px] font-semibold text-stone-500">{getTableAssigneeRoleLabel(staff.role)}</span>
+                  </span>
                 </button>
               ))}
             </div>
           ) : (
             <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              No hay saloneros activos disponibles para asignar a esta mesa.
+              No hay personal activo disponible para asignar a esta mesa.
             </p>
           )}
         </div>

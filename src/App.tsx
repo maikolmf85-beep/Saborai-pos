@@ -41,7 +41,7 @@ import { inventoryService } from './services/inventoryService';
 import { createDispatchOperationId, getUndispatchedItems, toInventoryDispatchItem } from './services/inventoryDispatch';
 import { employeeCreditService } from './services/employeeCreditService';
 import { getQuickPaymentAttemptByOperationId, isQuickPaymentEffectApplied, markQuickPaymentEffectApplied } from './services/quickPaymentAttempt';
-import { createEmployeeSession, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster } from './services/employeeSessionService';
+import { createEmployeeSession, deactivateEmployee, fetchEmployeeRoster, fetchEmployeeRosterAdmin, syncEmployeeRoster } from './services/employeeSessionService';
 import { getTenantProfileWithLegacyFallback, redactEmployeePins, restoreStoredSession, withPublicHaciendaConfig, withoutHaciendaSecrets } from './services/sessionTenant';
 import { soundService } from './services/soundEffects';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
@@ -1057,7 +1057,32 @@ export function App() {
     }
   };
 
+  const handleRemoveStaffMember = async (employeeExternalId: string) => {
+    if (currentUser?.role !== 'ADMIN') throw new Error('Solo un administrador puede eliminar colaboradores.');
+    const ownerUserId = getAccountUserId(currentUser.id);
+    if (employeeExternalId === ownerUserId) throw new Error('La cuenta propietaria no se puede eliminar como colaborador.');
+    if (employeeExternalId === currentUser.id) throw new Error('No puedes eliminar el usuario con el que tienes la sesión abierta.');
+    const member = staffList.find(staff => staff.id === employeeExternalId);
+    if (!member) throw new Error('No se encontró ese colaborador en la lista actual.');
+    if (member.active === false) return;
+
+    if (isCloudTenantUuid(tenant.id)) {
+      await deactivateEmployee(employeeExternalId);
+    } else if (member.role === 'ADMIN') {
+      const otherActiveAdmins = staffList.filter(staff =>
+        staff.id !== employeeExternalId && staff.active !== false && staff.role === 'ADMIN'
+      );
+      if (otherActiveAdmins.length === 0) throw new Error('No se puede eliminar al último administrador activo.');
+    }
+
+    const updated = staffList.map(staff => staff.id === employeeExternalId
+      ? { ...staff, active: false, pin: undefined }
+      : staff);
+    handleUpdateStaff(redactEmployeePins(updated));
+  };
+
   const activateStaffSession = async (staff: UserProfile, pin?: string): Promise<UserProfile> => {
+    if (staff.active === false) throw new Error('El acceso de este colaborador está desactivado.');
     let user = staff;
     if (isCloudTenantUuid(tenant.id)) {
       const session = await createEmployeeSession(tenant.id, staff.id, pin);
@@ -2633,9 +2658,11 @@ export function App() {
         isOpen={isStaffModalOpen && currentUser?.role === 'ADMIN'}
         onClose={() => setIsStaffModalOpen(false)}
         currentUser={currentUser}
+        ownerUserId={getAccountUserId(currentUser?.id)}
         currentTenant={tenant}
         staffList={staffList}
         onAddStaffMember={handleAddStaffMember}
+        onRemoveStaffMember={handleRemoveStaffMember}
         onResetStaffPin={handleResetStaffPin}
         onSelectUser={handleSelectUser}
         onOpenQuickSwitch={() => setIsQuickSwitchOpen(true)}

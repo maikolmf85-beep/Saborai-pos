@@ -7,6 +7,7 @@ import { supabaseAdmin as supabase, supabaseAuth } from './_utils/supabase.js';
 import { allowedOriginForRedirect, authenticateRequest, checkRateLimit, getJwtSecret, handleOptions, requireAuth, requireRole, setCorsHeaders } from './_utils/security.js';
 import { buildEmployeeTokenClaims, isEmployeeRole, normalizeEmployeeRoster } from './_utils/employeeSession.js';
 import { authorizeEmployeeRosterRead, buildEmployeeRosterPayload } from './_utils/employeeRoster.js';
+import { buildEmployeeDeactivationRpcArgs, isSuccessfulEmployeeDeactivation, mapEmployeeDeactivationError } from './_utils/employeeLifecycle.js';
 import { processTilopaySubscription } from './_utils/tilopayClient.js';
 import { consumeTilopaySignupHandoff, getTilopaySignupHandoff } from './_utils/tilopaySignupHandoff.js';
 import { consumePasswordResetToken, createPasswordResetToken } from './_utils/passwordReset.js';
@@ -130,6 +131,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (rawAction === 'employee-deactivate') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (!auth.tenantId) return res.status(403).json({ error: 'La sesión no tiene un restaurante asociado.' });
+      if (!requireRole(auth, res, ['ADMIN'])) return;
+
+      const rateLimit = checkRateLimit(`employee-deactivate:${auth.userId}`, 10, 60000);
+      if (!rateLimit.allowed) return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta de nuevo en un minuto.' });
+
+      const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body as Record<string, unknown>
+        : {};
+      const employeeExternalId = typeof body.employeeExternalId === 'string'
+        ? body.employeeExternalId.trim()
+        : '';
+      if (!employeeExternalId || employeeExternalId.length > 120
+        || (body.reason !== undefined && typeof body.reason !== 'string')) {
+        return res.status(400).json({ error: 'Los datos para eliminar al colaborador no son válidos.' });
+      }
+      if (employeeExternalId === auth.userId) {
+        return res.status(403).json({
+          error: 'La cuenta propietaria del restaurante no se puede eliminar como colaborador.',
+          code: 'OWNER_EMPLOYEE_REMOVAL_NOT_ALLOWED'
+        });
+      }
+      if (auth.employeeExternalId && employeeExternalId === auth.employeeExternalId) {
+        return res.status(403).json({
+          error: 'No puedes eliminar el colaborador con el que tienes la sesión abierta.',
+          code: 'SELF_EMPLOYEE_REMOVAL_NOT_ALLOWED'
+        });
+      }
+
+      const reason = typeof body.reason === 'string' ? body.reason.trim() : 'EMPLOYEE_LEFT_RESTAURANT';
+      if (reason.length > 500) {
+        return res.status(400).json({ error: 'El motivo de eliminación no es válido.' });
+      }
+      const requestId = randomUUID();
+      const rpcArgs = buildEmployeeDeactivationRpcArgs(auth as typeof auth & { tenantId: string }, employeeExternalId, reason, requestId);
+      const { data, error } = await supabase.rpc('pos_deactivate_employee', rpcArgs);
+
+      if (error) {
+        const mapped = mapEmployeeDeactivationError(error);
+        if (mapped.status >= 500) {
+          console.error('[Auth] No se pudo eliminar al colaborador.', { code: error.code || 'UNKNOWN' });
+        }
+        return res.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+      }
+      if (!isSuccessfulEmployeeDeactivation(data, employeeExternalId)) {
+        console.error('[Auth] La RPC no confirmó la baja del colaborador.');
+        return res.status(503).json({
+          error: 'No se pudo confirmar la eliminación del colaborador.',
+          code: 'EMPLOYEE_DEACTIVATION_FAILED'
+        });
+      }
+      return res.status(200).json(data);
+    }
+
     if (rawAction === 'employee-roster' || rawAction === 'employee-roster-admin') {
       const includeContacts = rawAction === 'employee-roster-admin';
       if (includeContacts && req.method !== 'GET') return res.status(405).json({ error: 'Method Not Allowed' });
@@ -220,7 +279,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             email: employee.email,
             phone: employee.phone,
             role: employee.role,
-            is_active: employee.active,
             pin_hash: pinHash,
             updated_at: new Date().toISOString()
           };

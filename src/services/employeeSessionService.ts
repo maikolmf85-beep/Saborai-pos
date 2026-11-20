@@ -8,6 +8,13 @@ export interface EmployeeSessionResult {
   employeeId: string;
 }
 
+export interface EmployeeDeactivationResult {
+  success: true;
+  deactivated: boolean;
+  alreadyDeactivated: boolean;
+  employeeId: string;
+}
+
 function currentToken(): string | null {
   return typeof localStorage !== 'undefined' ? localStorage.getItem('saborai_token') : null;
 }
@@ -45,12 +52,36 @@ export async function syncEmployeeRoster(tenantId: string, employees: UserProfil
         email: member.email,
         phone: member.phone,
         role: member.role,
-        active: member.active !== false,
         ...(typeof member.pin === 'string' && member.pin.trim() ? { pin: member.pin.trim() } : {})
       }))
     })
   });
   await readResponse(response);
+}
+
+export async function deactivateEmployee(
+  employeeExternalId: string,
+  reason = 'EMPLOYEE_LEFT_RESTAURANT'
+): Promise<EmployeeDeactivationResult> {
+  const targetId = typeof employeeExternalId === 'string' ? employeeExternalId.trim() : '';
+  if (!targetId || targetId.length > 120) throw new Error('El identificador del colaborador no es válido.');
+  const token = currentToken();
+  if (!token) throw new Error('No hay una sesión autenticada para eliminar al colaborador.');
+
+  const response = await fetch('/api/auth/employee-deactivate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({ employeeExternalId: targetId, reason })
+  });
+  const data = await readResponse(response);
+  if (data.success !== true || typeof data.deactivated !== 'boolean'
+    || typeof data.alreadyDeactivated !== 'boolean' || data.employeeId !== targetId) {
+    throw new Error('El servidor no confirmó la eliminación del colaborador.');
+  }
+  return data as EmployeeDeactivationResult;
 }
 
 async function fetchEmployeeRosterFrom(tenantId: string, path: string, includeContacts: boolean): Promise<UserProfile[]> {
