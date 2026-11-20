@@ -12,6 +12,8 @@ import { validateHaciendaXmlDocumentAgainstBranchProfile } from './_utils/hacien
 import { classifyHaciendaStatusQuery, isConfirmedHaciendaRejection } from './_utils/haciendaStatus.js';
 import { canReserveHaciendaSubmission, claimHaciendaOperationLock, finishHaciendaOperationLock, updateHaciendaInvoiceIfSnapshot, type HaciendaInvoiceSnapshot } from './_utils/haciendaInvoiceConcurrency.js';
 import { createHaciendaOperationLockToken, isHaciendaOperationLock, isHaciendaOperationLockStale } from './_utils/haciendaOperationLock.js';
+import { CASH_SHIFT_V2_ENABLED } from '../src/services/cashShiftV2Contract.ts';
+import { CashShiftV2ServiceError, dispatchCashShiftV2AwareWrite, isCashShiftV2RoutingEnabled, type CashShiftV2WriteMode } from './_utils/cashShiftV2Service.js';
 import {
   decryptHaciendaConfig,
   encryptHaciendaConfig,
@@ -376,10 +378,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         clearAtvCredentials: req.body?.clearAtvCredentials === true
       });
     } else {
-      if (!branchConfig.config) return res.status(409).json({ error: 'Esta sucursal no tiene una configuración segura de Hacienda disponible.' });
+    if (!branchConfig.config) return res.status(409).json({ error: 'Esta sucursal no tiene una configuración segura de Hacienda disponible.' });
       haciendaConfig = branchConfig.config;
     }
     if (!haciendaConfig) return res.status(409).json({ error: 'No se pudo cargar el perfil de Hacienda de esta sucursal.' });
+    if ((action === 'emit' || action === 'resend')
+      && isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED)) {
+      const { data: modeRow, error: modeError } = await supabaseAdmin.from('pos_cash_v2_branch_controls')
+        .select('state').eq('tenant_id', tenantId).eq('branch_id', branchId).maybeSingle();
+      if (modeError) return res.status(503).json({ code: 'CASH_SHIFT_V2_MODE_UNAVAILABLE', error: 'No se pudo comprobar el modo de la sucursal; no se envió el comprobante.' });
+      const mode = modeRow ? modeRow.state as CashShiftV2WriteMode : null;
+      if (mode !== null && !['OFF', 'PREPARED', 'ACTIVE', 'QUIESCING', 'FROZEN'].includes(mode)) {
+        return res.status(503).json({ code: 'CASH_SHIFT_V2_MODE_UNKNOWN', error: 'El modo de la sucursal no es válido; no se envió el comprobante.' });
+      }
+      try {
+        await dispatchCashShiftV2AwareWrite({
+          action: 'HACIENDA_EMIT', mode,
+          v2Enabled: isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED),
+          legacy: async () => undefined,
+          v2: async () => {
+            throw new CashShiftV2ServiceError(503, 'V2_HACIENDA_NOT_READY', 'La emisión V2 no está conectada al total fiscal autoritativo; no se usó Hacienda legacy.');
+          }
+        });
+      } catch (error: any) {
+        const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : 503;
+        return res.status(status).json({
+          code: typeof error?.code === 'string' ? error.code : 'V2_HACIENDA_NOT_READY',
+          error: error?.message || 'La emisión fue bloqueada; no se envió el comprobante.'
+        });
+      }
+    }
     const atvUsername = haciendaConfig.atvUsername || '';
     const atvPassword = haciendaConfig.atvPassword || '';
     const rawP12 = haciendaConfig.p12Base64 || '';

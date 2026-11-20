@@ -1,4 +1,5 @@
 import type { AuthContext } from './security.js';
+import bcrypt from 'bcryptjs';
 
 export const EMPLOYEE_ROLES = ['ADMIN', 'SALONERO', 'CAJERO', 'SALONERO_CAJA', 'WAITER'] as const;
 export type EmployeeRole = typeof EMPLOYEE_ROLES[number];
@@ -136,4 +137,10 @@ export function employeeSessionActorMatches(
   if (actorUserId !== auth.userId) return false;
   if (actorEmployeeId === null) return !auth.employeeId;
   return typeof actorEmployeeId === 'string' && actorEmployeeId === auth.employeeId;
+}
+
+/** Verifica el PIN contra el hash persistido; nunca compara ni devuelve el PIN raw. */
+export async function verifyEmployeePin(pin: unknown, pinHash: unknown): Promise<boolean> {
+  if (typeof pin !== 'string' || !/^\d{4}$/.test(pin) || typeof pinHash !== 'string' || !pinHash) return false;
+  return bcrypt.compare(pin, pinHash);
 }

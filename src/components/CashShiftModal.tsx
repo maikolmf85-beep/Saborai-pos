@@ -383,7 +383,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
         throw new Error('Primero abre la sesión diaria de caja. La apertura de turno es un paso separado.');
       }
       const validOpeningZones = getInitialShiftZones(tenant.zones, openingZones);
-      const newShift = cashShiftService.openShift(
+      const newShift = await cashShiftService.openShift(
         tenant,
         cashierToUse,
         initialFloatInput,

@@ -1,3 +1,7 @@
+import { dispatchCashShiftV2AwareDailyClose } from './cashShiftV2DailyClose.js';
+import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.ts';
+import { isCashShiftV2RoutingEnabled } from './cashShiftV2Service.js';
+
 type CashControlAdminClient = {
   from(table: string): any;
   rpc(functionName: string, args: RecordValue): any;
@@ -316,6 +320,75 @@ export async function closeDailyCash(
     throw new Error(result.error?.message || 'No se confirmó el cierre diario de caja.');
   }
   return result.data as RecordValue;
+}
+
+export async function closeDailyCashV2Aware(
+  admin: CashControlAdminClient,
+  tenantId: string,
+  actorUserId: string,
+  actorEmployeeId: string | undefined,
+  actorRole: string,
+  value: unknown,
+  enabled = false
+): Promise<{ result: RecordValue; auditHandledAtomically: boolean }> {
+  const actorIdentityId = actorEmployeeId || actorUserId;
+  const v2Enabled = enabled && isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED);
+  if (!v2Enabled) {
+    return {
+      result: await closeDailyCash(admin, tenantId, actorIdentityId, value),
+      auditHandledAtomically: false
+    };
+  }
+
+  const input = asRecord(value, 'El cierre diario');
+  const actorId = requiredUuid(actorIdentityId, 'La identidad autenticada');
+  const registerId = requiredText(input.registerId, 'La caja', 120);
+  if (!UUID_RE.test(registerId) && !/^[A-Za-z0-9_-]+$/.test(registerId)) throw new Error('El identificador de la caja tiene un formato inválido.');
+  const businessDate = requiredText(input.businessDate, 'La fecha del cierre', 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)
+    || new Date(`${businessDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== businessDate) {
+    throw new Error('La fecha del cierre debe tener formato YYYY-MM-DD.');
+  }
+
+  let lookup = admin.from('pos_cash_registers').select('id,branch_id').eq('tenant_id', tenantId).eq('is_active', true);
+  lookup = UUID_RE.test(registerId) ? lookup.eq('id', registerId) : lookup.eq('legacy_id', registerId);
+  const register = await lookup.limit(1).maybeSingle();
+  if (register.error || !register.data) throw new Error('No se encontró una caja activa de este restaurante.');
+
+  const args = {
+    tenantId, branchId: register.data.branch_id, cashRegisterId: register.data.id,
+    businessDate, closedByIdentityId: actorId, actorUserId,
+    actorEmployeeId: actorEmployeeId || null, actorRole: actorEmployeeId ? actorRole : 'OWNER'
+  };
+  const dispatched = await dispatchCashShiftV2AwareDailyClose({
+    enabled: v2Enabled,
+    args,
+    dependencies: {
+      async readMode(readTenantId, branchId) {
+        const { data, error } = await admin.from('pos_cash_v2_branch_controls')
+          .select('state').eq('tenant_id', readTenantId).eq('branch_id', branchId).maybeSingle();
+        if (error) throw error;
+        if (!data) return null;
+        if (!['OFF', 'PREPARED', 'ACTIVE', 'QUIESCING', 'FROZEN'].includes(data.state)) throw new Error('Unknown V2 branch state');
+        return data.state;
+      },
+      closeLegacy: async () => closeDailyCash(admin, tenantId, actorIdentityId, value),
+      async closeV2Aware(rpcArgs) {
+        const { data, error } = await admin.rpc('pos_close_daily_cash_v2_aware', {
+          p_tenant_id: rpcArgs.tenantId,
+          p_cash_register_id: rpcArgs.cashRegisterId,
+          p_business_date: rpcArgs.businessDate,
+          p_closed_by: rpcArgs.closedByIdentityId,
+          p_actor_user_id: rpcArgs.actorUserId,
+          p_actor_employee_id: rpcArgs.actorEmployeeId,
+          p_actor_role: rpcArgs.actorRole
+        });
+        if (error || !data) throw error || new Error('V2 daily close returned no result');
+        return data as RecordValue;
+      }
+    }
+  });
+  return { result: dispatched.result, auditHandledAtomically: dispatched.auditHandledAtomically };
 }
 
 export async function getDailyCashStatus(

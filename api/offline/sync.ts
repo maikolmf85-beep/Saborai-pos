@@ -9,8 +9,12 @@ import { parseFiscalInvoiceIssuedAt } from '../_utils/fiscalInvoiceIssuedAt.js';
 import { sanitizeFiscalInvoiceData } from '../../src/utils/fiscalInvoiceItems.js';
 import { cloudMenuItemId } from '../_utils/inventoryIds.js';
 import { adjustInventoryStock, loadInventoryConfig, saveInventoryConfig } from '../_utils/inventorySync.js';
-import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
-const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ACCOUNT', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
+import { assertCashRegisterOpenForPayment, assignCashTerminal, closeCashShift, closeDailyCash, closeDailyCashV2Aware, DailyCashClosedError, DailyCashNotOpenError, getDailyCashStatus, importCashShift, openDailyCash, reassignCashTerminal } from '../_utils/cashControlSync.js';
+import { CASH_SHIFT_V2_ENABLED } from '../../src/services/cashShiftV2Contract.ts';
+import { CashShiftV2ServiceError, dispatchCashShiftV2AwareWrite, executeCashShiftV2Operation, isCashShiftV2RoutingEnabled, type CashShiftV2WriteMode } from '../_utils/cashShiftV2Service.js';
+import { isCashShiftV2DailyCloseEnabled } from '../_utils/cashShiftV2DailyClose.js';
+import { createCashShiftV2Repository } from '../_utils/cashShiftV2Repository.js';
+const SUPPORTED_ACTIONS = new Set(['UPDATE_TABLE', 'TRANSFER_TABLE_ACCOUNT', 'PAYMENT', 'DEDUCT_INVENTORY', 'DISPATCH_INVENTORY', 'SAVE_INVENTORY_CONFIG', 'LOAD_INVENTORY_CONFIG', 'ADJUST_INVENTORY', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'GET_CASH_SHIFT_V2_MODE', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']);
 
 function isUuid(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -56,6 +60,151 @@ async function findBranch(tenantId: string, branchId?: string | null) {
   const { data, error } = await query.order('created_at', { ascending: true }).limit(1).maybeSingle();
   if (error) throw new Error('No se pudo localizar una sucursal operativa.');
   return data;
+}
+
+const BRANCH_ROUTED_WRITES = new Set([
+  'UPDATE_TABLE', 'TRANSFER_TABLE_ACCOUNT', 'PAYMENT', 'EMIT_INVOICE', 'CLOSE_CASH_SHIFT', 'IMPORT_CASH_SHIFT'
+]);
+const BRANCH_MODES = new Set(['OFF', 'PREPARED', 'ACTIVE', 'QUIESCING', 'FROZEN']);
+
+async function verifiedBranchId(tenantId: string, branchId: unknown): Promise<string> {
+  if (!isUuid(branchId)) throw new CashShiftV2ServiceError(409, 'BRANCH_SCOPE_REQUIRED', 'No se pudo derivar una sucursal válida para la operación.');
+  const { data, error } = await supabaseAdmin.from('pos_branches')
+    .select('id').eq('tenant_id', tenantId).eq('id', branchId).eq('is_active', true).maybeSingle();
+  if (error) throw new CashShiftV2ServiceError(503, 'BRANCH_SCOPE_UNAVAILABLE', 'No se pudo verificar la sucursal; la operación fue bloqueada.');
+  if (!data) throw new CashShiftV2ServiceError(404, 'BRANCH_NOT_AVAILABLE', 'La sucursal de la operación no está disponible.');
+  return data.id;
+}
+
+async function resolveBranchForRoutedWrite(tenantId: string, action: string, payload: any): Promise<string> {
+  if (action === 'UPDATE_TABLE') {
+    const scope = readOperationalScope(payload);
+    const table = payload && typeof payload === 'object' ? payload : {};
+    let storedBranchId: string | null = null;
+    if (isUuid(table.id)) {
+      const lookup = await supabaseAdmin.from('pos_tables').select('branch_id')
+        .eq('tenant_id', tenantId).eq('id', table.id).maybeSingle();
+      if (lookup.error) throw new CashShiftV2ServiceError(503, 'TABLE_SCOPE_UNAVAILABLE', 'No se pudo derivar la sucursal de la mesa; la operación fue bloqueada.');
+      storedBranchId = lookup.data?.branch_id || null;
+    }
+    if (!storedBranchId && Number.isInteger(table.number)) {
+      const lookup = await supabaseAdmin.from('pos_tables').select('branch_id')
+        .eq('tenant_id', tenantId).eq('table_number', table.number).limit(2);
+      if (lookup.error) throw new CashShiftV2ServiceError(503, 'TABLE_SCOPE_UNAVAILABLE', 'No se pudo derivar la sucursal de la mesa; la operación fue bloqueada.');
+      const branches = [...new Set((lookup.data || []).map((row: any) => row.branch_id).filter(isUuid))];
+      if (branches.length > 1) throw new CashShiftV2ServiceError(409, 'BRANCH_SCOPE_AMBIGUOUS', 'El número de mesa existe en varias sucursales; la operación fue bloqueada.');
+      storedBranchId = branches[0] || null;
+    }
+    if (scope.branchId && storedBranchId && scope.branchId !== storedBranchId) {
+      throw new CashShiftV2ServiceError(409, 'TABLE_BRANCH_MISMATCH', 'La mesa no pertenece a la sucursal indicada.');
+    }
+    const resolved = storedBranchId || scope.branchId;
+    if (resolved) return verifiedBranchId(tenantId, resolved);
+    const candidates = await supabaseAdmin.from('pos_branches').select('id')
+      .eq('tenant_id', tenantId).eq('is_active', true).limit(2);
+    if (candidates.error) throw new CashShiftV2ServiceError(503, 'BRANCH_SCOPE_UNAVAILABLE', 'No se pudo derivar la sucursal; la operación fue bloqueada.');
+    if (candidates.data?.length === 1) return candidates.data[0].id;
+    throw new CashShiftV2ServiceError(409, 'BRANCH_SCOPE_REQUIRED', 'La operación no identifica una sucursal única; no se permite continuar ni usar fallback legacy.');
+  }
+
+  if (action === 'PAYMENT' || action === 'TRANSFER_TABLE_ACCOUNT' || action === 'EMIT_INVOICE') {
+    const order = await findOrder(tenantId, payload?.orderNumber);
+    return verifiedBranchId(tenantId, order.branchId);
+  }
+
+  if (action === 'CLOSE_CASH_SHIFT') {
+    if (!isUuid(payload?.shiftId)) throw new CashShiftV2ServiceError(400, 'SHIFT_SCOPE_REQUIRED', 'El cierre requiere un turno remoto verificable.');
+    const lookup = await supabaseAdmin.from('pos_cash_shifts').select('branch_id')
+      .eq('tenant_id', tenantId).eq('id', payload.shiftId).maybeSingle();
+    if (lookup.error) throw new CashShiftV2ServiceError(503, 'SHIFT_SCOPE_UNAVAILABLE', 'No se pudo verificar la sucursal del turno; el cierre fue bloqueado.');
+    if (!lookup.data?.branch_id) throw new CashShiftV2ServiceError(404, 'SHIFT_NOT_FOUND', 'No se encontró el turno remoto para cerrar.');
+    return verifiedBranchId(tenantId, lookup.data.branch_id);
+  }
+
+  if (action === 'IMPORT_CASH_SHIFT') {
+    if (!isUuid(payload?.cashRegisterId)) throw new CashShiftV2ServiceError(400, 'REGISTER_SCOPE_REQUIRED', 'La importación requiere una caja remota verificable.');
+    const lookup = await supabaseAdmin.from('pos_cash_registers').select('branch_id')
+      .eq('tenant_id', tenantId).eq('id', payload.cashRegisterId).maybeSingle();
+    if (lookup.error) throw new CashShiftV2ServiceError(503, 'REGISTER_SCOPE_UNAVAILABLE', 'No se pudo verificar la sucursal de la caja; la importación fue bloqueada.');
+    if (!lookup.data?.branch_id) throw new CashShiftV2ServiceError(404, 'REGISTER_NOT_FOUND', 'No se encontró la caja de la importación.');
+    return verifiedBranchId(tenantId, lookup.data.branch_id);
+  }
+
+  throw new CashShiftV2ServiceError(400, 'UNSUPPORTED_OPERATION', 'La operación no usa un escritor V2 por sucursal.');
+}
+
+async function readCashShiftV2Mode(tenantId: string, branchId: string): Promise<CashShiftV2WriteMode> {
+  if (!isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED)) {
+    throw new CashShiftV2ServiceError(503, 'CASH_SHIFT_V2_DISABLED', 'La lectura del modo V2 está deshabilitada.');
+  }
+  const { data, error } = await supabaseAdmin.from('pos_cash_v2_branch_controls')
+    .select('state').eq('tenant_id', tenantId).eq('branch_id', branchId).maybeSingle();
+  if (error) throw new CashShiftV2ServiceError(503, 'CASH_SHIFT_V2_MODE_UNAVAILABLE', 'No se pudo comprobar el modo de la sucursal; la operación fue bloqueada.');
+  if (!data) return null;
+  if (!BRANCH_MODES.has(data.state)) throw new CashShiftV2ServiceError(503, 'CASH_SHIFT_V2_MODE_UNKNOWN', 'El modo V2 de la sucursal no es válido; la operación fue bloqueada.');
+  return data.state as CashShiftV2WriteMode;
+}
+
+async function readCashShiftV2ModeForRegister(tenantId: string, payload: any) {
+  if (!isUuid(payload?.branchId) || !isUuid(payload?.cashRegisterId)) {
+    throw new CashShiftV2ServiceError(400, 'BRANCH_REGISTER_SCOPE_REQUIRED', 'La consulta de modo requiere UUID de sucursal y caja remota.');
+  }
+  const branchId = await verifiedBranchId(tenantId, payload.branchId);
+  const { data, error } = await supabaseAdmin.from('pos_cash_registers').select('id')
+    .eq('tenant_id', tenantId).eq('branch_id', branchId).eq('id', payload.cashRegisterId).eq('is_active', true).maybeSingle();
+  if (error) throw new CashShiftV2ServiceError(503, 'REGISTER_SCOPE_UNAVAILABLE', 'No se pudo verificar la caja de la sucursal; la apertura fue bloqueada.');
+  if (!data) throw new CashShiftV2ServiceError(404, 'REGISTER_NOT_AVAILABLE', 'La caja remota no pertenece a la sucursal activa indicada.');
+  const state = isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED)
+    ? await readCashShiftV2Mode(tenantId, branchId)
+    : 'OFF';
+  if (!state) throw new CashShiftV2ServiceError(503, 'CASH_SHIFT_V2_MODE_UNAVAILABLE', 'La sucursal no tiene un modo V2 verificable; la apertura fue bloqueada.');
+  return { tenantId, branchId, cashRegisterId: data.id, state };
+}
+
+async function executeOfflineV2Write(
+  action: string,
+  tenantId: string,
+  branchId: string,
+  userId: string,
+  employeeId: string | undefined,
+  role: string | undefined,
+  operationId: string,
+  payload: any
+): Promise<unknown> {
+  if (action === 'TRANSFER_TABLE_ACCOUNT') {
+    throw new CashShiftV2ServiceError(503, 'V2_TRANSFER_NOT_READY', 'El traslado no tiene una RPC V2 atómica; no se aplicó la ruta legacy.');
+  }
+  if (action === 'PAYMENT') {
+    throw new CashShiftV2ServiceError(503, 'V2_PAYMENT_MIRROR_NOT_READY', 'El RPC de pago no sincroniza de forma atómica el estado legacy de orden/mesa; el cobro V2 permanece desconectado.');
+  }
+  if (action === 'EMIT_INVOICE') {
+    throw new CashShiftV2ServiceError(503, 'V2_HACIENDA_NOT_READY', 'La emisión Hacienda no reutiliza aún los totales V2 exactos; no se recalculó ni se usó el writer legacy.');
+  }
+  if (action === 'IMPORT_CASH_SHIFT') {
+    throw new CashShiftV2ServiceError(503, 'V2_OFFLINE_SHIFT_IMPORT_NOT_READY', 'Un turno abierto offline no puede convertirse sin pérdida de fecha, atribución e idempotencia a una sesión V2.');
+  }
+  if (action === 'UPDATE_TABLE' && !payload?.activeOrder) {
+    throw new CashShiftV2ServiceError(503, 'V2_TABLE_WRITE_NOT_READY', 'El cambio de diseño/estado de mesa sin orden requiere un contrato V2 propio.');
+  }
+
+  const operation = action === 'UPDATE_TABLE' ? 'SYNC_ORDER' : action === 'CLOSE_CASH_SHIFT' ? 'CLOSE_SHIFT' : null;
+  const contract = payload?.cashShiftV2;
+  if (!operation || !contract || typeof contract !== 'object' || Array.isArray(contract)
+    || Object.keys(contract).some(key => key !== 'cashRegisterId' && key !== 'payload')
+    || !isUuid(contract.cashRegisterId) || !contract.payload || typeof contract.payload !== 'object' || Array.isArray(contract.payload)) {
+    throw new CashShiftV2ServiceError(503, 'V2_COMMAND_REQUIRED', 'La operación no contiene el comando canónico V2; no se aplicó fallback legacy.');
+  }
+
+  try {
+    return await executeCashShiftV2Operation(
+      { userId, tenantId, ...(employeeId ? { employeeId } : {}), ...(employeeId && role ? { role } : {}) },
+      { action: operation, branchId, cashRegisterId: contract.cashRegisterId, idempotencyKey: operationId, payload: contract.payload },
+      createCashShiftV2Repository(supabaseAdmin)
+    );
+  } catch (error) {
+    if (error instanceof CashShiftV2ServiceError) throw error;
+    throw new CashShiftV2ServiceError(503, 'CASH_SHIFT_V2_UNAVAILABLE', 'La operación V2 no está disponible; no se aplicó fallback legacy.');
+  }
 }
 
 async function syncTable(tenantId: string, userId: string, employeeId: string | undefined, operationId: string, payload: any) {
@@ -807,23 +956,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     let result: unknown;
-    if (action === 'TRANSFER_TABLE_ACCOUNT') result = await syncTableAccountTransfer(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'PAYMENT') result = await syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY') result = await syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'SAVE_INVENTORY_CONFIG') result = await syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'LOAD_INVENTORY_CONFIG') result = await getInventoryConfig(tenantId, body.payload);
-    else if (action === 'ADJUST_INVENTORY') result = await syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'EMIT_INVOICE') result = await syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
-    else if (action === 'CLOSE_CASH_SHIFT') result = await closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
-    else if (action === 'CLOSE_DAILY_CASH') result = await closeDailyCash(supabaseAdmin, tenantId, auth.employeeId || auth.userId, body.payload);
-    else if (action === 'GET_DAILY_CASH_STATUS') result = await getDailyCashStatus(supabaseAdmin, tenantId, body.payload);
-    else if (action === 'OPEN_DAILY_CASH') result = await openDailyCash(supabaseAdmin, tenantId, auth.employeeId || auth.userId, body.payload);
-    else if (action === 'IMPORT_CASH_SHIFT') result = await importCashShift(supabaseAdmin, tenantId, body.payload);
-    else if (action === 'ASSIGN_CASH_TERMINAL') result = await assignCashTerminal(supabaseAdmin, tenantId, body.payload);
-    else if (action === 'REASSIGN_CASH_TERMINAL') result = await reassignCashTerminal(supabaseAdmin, tenantId, body.payload);
-    else result = await syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    let dailyCashAuditHandledAtomically = false;
+    const runLegacyWriter = async (): Promise<unknown> => {
+      if (action === 'TRANSFER_TABLE_ACCOUNT') return syncTableAccountTransfer(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'PAYMENT') return syncPayment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'DEDUCT_INVENTORY' || action === 'DISPATCH_INVENTORY') return syncInventory(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'SAVE_INVENTORY_CONFIG') return syncInventoryConfig(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'LOAD_INVENTORY_CONFIG') return getInventoryConfig(tenantId, body.payload);
+      if (action === 'ADJUST_INVENTORY') return syncInventoryAdjustment(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'EMIT_INVOICE') return syncInvoice(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+      if (action === 'CLOSE_CASH_SHIFT') return closeCashShift(supabaseAdmin, tenantId, auth.userId, body.payload);
+      if (action === 'CLOSE_DAILY_CASH') {
+        const dispatched = await closeDailyCashV2Aware(
+          supabaseAdmin, tenantId, auth.userId, auth.employeeId, auth.role || '', body.payload,
+          isCashShiftV2DailyCloseEnabled({
+            globalEnabled: CASH_SHIFT_V2_ENABLED,
+            routeEnabled: process.env.POS_CASH_SHIFT_V2_ENABLED,
+            dailyAwareEnabled: process.env.POS_CASH_SHIFT_V2_DAILY_AWARE_ENABLED
+          })
+        );
+        dailyCashAuditHandledAtomically = dispatched.auditHandledAtomically;
+        return dispatched.result;
+      }
+      if (action === 'GET_DAILY_CASH_STATUS') return getDailyCashStatus(supabaseAdmin, tenantId, body.payload);
+      if (action === 'GET_CASH_SHIFT_V2_MODE') return readCashShiftV2ModeForRegister(tenantId, body.payload);
+      // The existing daily-opening RPC remains the approved, unchanged opening path.
+      if (action === 'OPEN_DAILY_CASH') return openDailyCash(supabaseAdmin, tenantId, auth.employeeId || auth.userId, body.payload);
+      if (action === 'IMPORT_CASH_SHIFT') return importCashShift(supabaseAdmin, tenantId, body.payload);
+      if (action === 'ASSIGN_CASH_TERMINAL') return assignCashTerminal(supabaseAdmin, tenantId, body.payload);
+      if (action === 'REASSIGN_CASH_TERMINAL') return reassignCashTerminal(supabaseAdmin, tenantId, body.payload);
+      return syncTable(tenantId, auth.userId, auth.employeeId, operationId, body.payload);
+    };
 
-    if (action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'OPEN_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL' || action === 'REASSIGN_CASH_TERMINAL') {
+    if (BRANCH_ROUTED_WRITES.has(action)
+      && isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED)) {
+      const branchId = await resolveBranchForRoutedWrite(tenantId, action, body.payload);
+      const mode = await readCashShiftV2Mode(tenantId, branchId);
+      const dispatched = await dispatchCashShiftV2AwareWrite({
+        action,
+        mode,
+        v2Enabled: isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED),
+        legacy: runLegacyWriter,
+        v2: () => executeOfflineV2Write(action, tenantId, branchId, auth.userId, auth.employeeId, auth.role, operationId, body.payload)
+      });
+      result = dispatched.result;
+    } else {
+      result = await runLegacyWriter();
+    }
+
+    if ((action === 'CLOSE_CASH_SHIFT' || action === 'CLOSE_DAILY_CASH' || action === 'OPEN_DAILY_CASH' || action === 'IMPORT_CASH_SHIFT' || action === 'ASSIGN_CASH_TERMINAL' || action === 'REASSIGN_CASH_TERMINAL')
+      && !(action === 'CLOSE_DAILY_CASH' && dailyCashAuditHandledAtomically)) {
       const details = result as Record<string, unknown>;
       const entityId = typeof details.terminalId === 'string'
         ? details.terminalId
@@ -847,7 +1029,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, alreadyApplied: false, result });
   } catch (error: any) {
     console.error('[Offline Sync] Error:', error);
-    return res.status(409).json({
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : 409;
+    return res.status(status).json({
       error: error?.message || 'No se pudo aplicar la operación offline.',
       ...(typeof error?.code === 'string' ? { code: error.code } : {})
     });

@@ -56,6 +56,10 @@ export interface ShiftSystemSummary {
 
 export interface CashRegister {
   id: string; // ej. 'caja-01', 'caja-02'
+  /** ID remoto real; id puede ser legacy_id para compatibilidad local. */
+  cloudId?: string;
+  /** UUID de sucursal remoto; branchCode es solo presentación/DGT. */
+  branchId?: string;
   name: string; // ej. 'Caja 1 - Barra Principal'
   terminalCode: string; // '00001' (5 dígitos oficial DGT Hacienda)
   branchCode: string; // '001' (3 dígitos sucursal)
@@ -68,6 +72,8 @@ export interface CashRegister {
   linkedZone?: string; // Compatibilidad previa (1 salón)
   linkedZones?: string[]; // Múltiples salones asociados (ej: ['Salón Principal', 'Patio'])
 }
+
+export type CashShiftV2BranchMode = 'OFF' | 'PREPARED' | 'ACTIVE' | 'QUIESCING' | 'FROZEN';
 
 export interface DailyCashStatus {
   registerId: string;
@@ -102,6 +108,7 @@ export interface CashShift {
   id: string;
   shiftNumber: number;
   tenantId: string;
+  branchId?: string;
   terminalId: string;
   cashRegisterId?: string;
   cashRegisterName?: string;

@@ -1,4 +1,4 @@
-import type { CashRegister, CashShift, DailyCashOpeningResult, DailyCashStatus } from '../types/cashShift';
+import type { CashRegister, CashShift, CashShiftV2BranchMode, DailyCashOpeningResult, DailyCashStatus } from '../types/cashShift';
 import { getTenantItem, isCloudTenantId } from './tenantStorage.ts';
 import { isSupabaseConfigured, supabaseClient } from '../lib/supabaseClient.ts';
 import { archiveCashRegisterInCloud, getVisibleCashRegisters } from './cashRegisterDeletion.ts';
@@ -60,6 +60,8 @@ type CloudShift = {
   difference_reason?: string | null;
   z_report_generated?: boolean | null;
 };
+
+const CASH_SHIFT_V2_BRANCH_MODES = new Set<CashShiftV2BranchMode>(['OFF', 'PREPARED', 'ACTIVE', 'QUIESCING', 'FROZEN']);
 
 export interface CashControlCloudSnapshot {
   branches: CloudBranch[];
@@ -207,6 +209,22 @@ class CashControlCloudService {
     return status;
   }
 
+  async getCashShiftV2BranchMode(tenantId: string, branchId: string, cloudRegisterId: string): Promise<CashShiftV2BranchMode> {
+    this.assertCloudTenant(tenantId);
+    if (!branchId || !cloudRegisterId) throw new Error('La sucursal y la caja remota son requeridas para verificar V2.');
+    const result = await posCloudService.syncOperation<{
+      tenantId: string;
+      branchId: string;
+      cashRegisterId: string;
+      state: unknown;
+    }>('GET_CASH_SHIFT_V2_MODE', { branchId, cashRegisterId: cloudRegisterId }, tenantId);
+    if (result.tenantId !== tenantId || result.branchId !== branchId || result.cashRegisterId !== cloudRegisterId
+      || typeof result.state !== 'string' || !CASH_SHIFT_V2_BRANCH_MODES.has(result.state as CashShiftV2BranchMode)) {
+      throw new Error('El servidor devolvió un modo V2 inválido o fuera de la sucursal/caja seleccionada.');
+    }
+    return result.state as CashShiftV2BranchMode;
+  }
+
   cacheDailyCashStatus(tenantId: string, registerId: string, status: DailyCashStatus): void {
     if (typeof window === 'undefined' || !tenantId || !registerId) return;
     try {
@@ -350,6 +368,8 @@ class CashControlCloudService {
     const branchCodes = new Map(snapshot.branches.map(branch => [branch.id, branch.code]));
     const registers = getVisibleCashRegisters(snapshot.registers).map(register => ({
       id: register.legacy_id || register.id,
+      cloudId: register.id,
+      branchId: register.branch_id,
       name: register.name,
       terminalCode: register.terminal_code,
       branchCode: branchCodes.get(register.branch_id) || '001',
@@ -377,6 +397,7 @@ class CashControlCloudService {
         id: remote.legacy_id || remote.id,
         shiftNumber: remote.shift_number || 0,
         tenantId: remote.tenant_id,
+        branchId: remote.branch_id,
         terminalId: remoteRegister?.terminal_code || '00001',
         cashRegisterId: localRegisterId,
         cashRegisterName: remoteRegister?.name || 'Caja',

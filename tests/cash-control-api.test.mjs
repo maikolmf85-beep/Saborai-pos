@@ -7,6 +7,7 @@ import {
   buildCashShiftClosePayload,
   closeCashShift,
   closeDailyCash,
+  closeDailyCashV2Aware,
   DailyCashClosedError,
   DailyCashNotOpenError,
   getBusinessDateForInstant,
@@ -167,6 +168,23 @@ test('cierra una vez por caja y fecha local, con validación del servidor', asyn
   const invalid = mockAdmin([]);
   await assert.rejects(closeDailyCash(invalid.admin, tenantId, actorId, { registerId, businessDate: '2026-02-30' }), /YYYY-MM-DD/i);
   assert.equal(invalid.calls.length, 0);
+});
+
+test('cierre diario con V2 global OFF invoca la función legacy original sin lookup V2', async () => {
+  const closure = { closureId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', alreadyClosed: false };
+  const { admin, calls } = mockAdmin(
+    [{ data: { id: registerId }, error: null }],
+    [{ data: closure, error: null }]
+  );
+  const result = await closeDailyCashV2Aware(
+    admin, tenantId, actorId, undefined, 'ADMIN', { registerId, businessDate: '2026-11-05' }, true
+  );
+  assert.deepEqual(result, { result: closure, auditHandledAtomically: false });
+  assert.deepEqual(calls.map(call => call.rpc || call.table), ['pos_cash_registers', 'pos_close_daily_cash']);
+  assert.equal(calls.some(call => call.table === 'pos_cash_v2_branch_controls'), false);
+  assert.equal(calls[1].values.p_tenant_id, tenantId);
+  assert.equal(calls[1].values.p_cash_register_id, registerId);
+  assert.equal(calls[1].values.p_closed_by, actorId);
 });
 
 test('abre la caja una vez por RPC con caja, tenant y responsable autenticado', async () => {
@@ -586,7 +604,7 @@ test('la propuesta SQL usa la última apertura, valida al abridor y resume solo 
 });
 
 test('el permiso de caja no se concede a roles sin caja y el handler enruta acciones autenticadas', async () => {
-  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']) {
+  for (const action of ['CLOSE_CASH_SHIFT', 'CLOSE_DAILY_CASH', 'GET_DAILY_CASH_STATUS', 'GET_CASH_SHIFT_V2_MODE', 'OPEN_DAILY_CASH', 'IMPORT_CASH_SHIFT', 'ASSIGN_CASH_TERMINAL', 'REASSIGN_CASH_TERMINAL']) {
     assert.equal(hasRolePermission('ADMIN', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('CAJERO', ROLE_PERMISSIONS.offlineSync[action]), true);
     assert.equal(hasRolePermission('SALONERO_CAJA', ROLE_PERMISSIONS.offlineSync[action]), true);
@@ -596,7 +614,20 @@ test('el permiso de caja no se concede a roles sin caja y el handler enruta acci
   assert.match(handler, /requireAuth\(req, res\)/);
   assert.match(handler, /tenantId !== auth\.tenantId/);
   assert.match(handler, /employeeSessionActorMatches\(/);
-  assert.match(handler, /closeDailyCash\(supabaseAdmin, tenantId, auth\.employeeId \|\| auth\.userId, body\.payload\)/);
+  assert.match(handler, /closeDailyCashV2Aware\([\s\S]*?supabaseAdmin, tenantId, auth\.userId, auth\.employeeId, auth\.role \|\| ''[\s\S]*?body\.payload[\s\S]*?isCashShiftV2DailyCloseEnabled\(\{[\s\S]*?globalEnabled: CASH_SHIFT_V2_ENABLED,[\s\S]*?routeEnabled: process\.env\.POS_CASH_SHIFT_V2_ENABLED,[\s\S]*?dailyAwareEnabled: process\.env\.POS_CASH_SHIFT_V2_DAILY_AWARE_ENABLED/);
+  assert.match(handler, /GET_CASH_SHIFT_V2_MODE[\s\S]*?readCashShiftV2ModeForRegister\(tenantId, body\.payload\)/);
+  assert.match(handler, /async function readCashShiftV2ModeForRegister[\s\S]*?verifiedBranchId\(tenantId, payload\.branchId\)[\s\S]*?readCashShiftV2Mode\(tenantId, branchId\)/);
+  assert.match(handler, /BRANCH_ROUTED_WRITES[\s\S]*?UPDATE_TABLE[\s\S]*?TRANSFER_TABLE_ACCOUNT[\s\S]*?PAYMENT[\s\S]*?EMIT_INVOICE[\s\S]*?CLOSE_CASH_SHIFT[\s\S]*?IMPORT_CASH_SHIFT/);
+  assert.match(handler, /resolveBranchForRoutedWrite\(tenantId, action, body\.payload\)/);
+  assert.match(handler, /readCashShiftV2Mode\(tenantId, branchId\)/);
+  assert.match(handler, /dispatchCashShiftV2AwareWrite\([\s\S]*?v2Enabled: isCashShiftV2RoutingEnabled\(CASH_SHIFT_V2_ENABLED, process\.env\.POS_CASH_SHIFT_V2_ENABLED\)/);
+  assert.match(handler, /V2_TRANSFER_NOT_READY/);
+  assert.match(handler, /V2_PAYMENT_MIRROR_NOT_READY/);
+  assert.match(handler, /V2_HACIENDA_NOT_READY/);
+  assert.match(handler, /V2_OFFLINE_SHIFT_IMPORT_NOT_READY/);
+  assert.match(handler, /V2_TABLE_WRITE_NOT_READY/);
+  const haciendaApi = await readFile(new URL('../api/hacienda.ts', import.meta.url), 'utf8');
+  assert.match(haciendaApi, /\(action === 'emit' \|\| action === 'resend'\)[\s\S]*?&& isCashShiftV2RoutingEnabled\(CASH_SHIFT_V2_ENABLED, process\.env\.POS_CASH_SHIFT_V2_ENABLED\)[\s\S]*?pos_cash_v2_branch_controls[\s\S]*?dispatchCashShiftV2AwareWrite[\s\S]*?V2_HACIENDA_NOT_READY/);
   assert.match(handler, /openDailyCash\(supabaseAdmin, tenantId, auth\.employeeId \|\| auth\.userId, body\.payload\)/);
   assert.match(handler, /CLOSE_CASH_SHIFT/);
   assert.match(handler, /CLOSE_DAILY_CASH/);
@@ -606,6 +637,35 @@ test('el permiso de caja no se concede a roles sin caja y el handler enruta acci
   assert.match(handler, /ASSIGN_CASH_TERMINAL/);
   assert.match(handler, /REASSIGN_CASH_TERMINAL/);
   assert.match(handler, /reassignCashTerminal\(supabaseAdmin, tenantId, body\.payload\)/);
+});
+
+test('con flags global/ruta OFF no hay path ejecutable que lea pos_cash_v2_branch_controls', async () => {
+  const handler = await readFile(new URL('../api/offline/sync.ts', import.meta.url), 'utf8');
+  const modeStart = handler.indexOf('async function readCashShiftV2Mode(');
+  const modeEnd = handler.indexOf('\nasync function readCashShiftV2ModeForRegister(', modeStart);
+  const modeReader = handler.slice(modeStart, modeEnd);
+  assert.ok(modeStart >= 0 && modeEnd > modeStart);
+  const modeDisabledGate = modeReader.indexOf('if (!isCashShiftV2RoutingEnabled(CASH_SHIFT_V2_ENABLED, process.env.POS_CASH_SHIFT_V2_ENABLED))');
+  const modeTableRead = modeReader.indexOf("from('pos_cash_v2_branch_controls')");
+  assert.ok(modeDisabledGate >= 0 && modeTableRead > modeDisabledGate);
+  assert.match(modeReader.slice(modeDisabledGate, modeTableRead), /throw new CashShiftV2ServiceError/);
+
+  const registerReaderStart = handler.indexOf('async function readCashShiftV2ModeForRegister(');
+  const registerReaderEnd = handler.indexOf('\nasync function executeOfflineV2Write(', registerReaderStart);
+  const registerReader = handler.slice(registerReaderStart, registerReaderEnd);
+  assert.match(registerReader, /isCashShiftV2RoutingEnabled\(CASH_SHIFT_V2_ENABLED, process\.env\.POS_CASH_SHIFT_V2_ENABLED\)[\s\S]*?\? await readCashShiftV2Mode\(tenantId, branchId\)[\s\S]*?: 'OFF'/);
+
+  const routedStart = handler.indexOf('if (BRANCH_ROUTED_WRITES.has(action)');
+  const routedEnd = handler.indexOf('\n    } else {\n      result = await runLegacyWriter();', routedStart);
+  const routed = handler.slice(routedStart, routedEnd);
+  assert.ok(routedStart >= 0 && routedEnd > routedStart);
+  assert.match(routed, /&& isCashShiftV2RoutingEnabled\(CASH_SHIFT_V2_ENABLED, process\.env\.POS_CASH_SHIFT_V2_ENABLED\)/);
+
+  const haciendaApi = await readFile(new URL('../api/hacienda.ts', import.meta.url), 'utf8');
+  const haciendaGate = haciendaApi.indexOf("if ((action === 'emit' || action === 'resend')");
+  const haciendaTableRead = haciendaApi.indexOf("from('pos_cash_v2_branch_controls')", haciendaGate);
+  assert.ok(haciendaGate >= 0 && haciendaTableRead > haciendaGate);
+  assert.match(haciendaApi.slice(haciendaGate, haciendaTableRead), /isCashShiftV2RoutingEnabled\(CASH_SHIFT_V2_ENABLED, process\.env\.POS_CASH_SHIFT_V2_ENABLED\)/);
 });
 
 test('el cliente envía las escrituras por el endpoint seguro y no escribe directamente en las tablas protegidas', async () => {

@@ -12,9 +12,11 @@ import {
   CashShiftParticipant
 } from '../types/cashShift';
 import { UserProfile, TenantInfo } from '../types';
-import { clearLegacyCashControlData, getTenantItem, isLocalDemoTenantId, removeTenantItem, setTenantItem } from './tenantStorage';
+import { clearLegacyCashControlData, getTenantItem, isCloudTenantId, isLocalDemoTenantId, removeTenantItem, setTenantItem } from './tenantStorage';
 import { auditService } from './auditService';
 import { cashControlCloudService } from './cashControlCloudService';
+import { assertLegacyShiftOpeningAllowed } from './cashShiftLocalOpenGuard';
+import { CASH_SHIFT_V2_ENABLED } from './cashShiftV2Contract';
 import type { CashControlMigrationResult } from './cashControlCloudService';
 import { deleteCashRegisterFromState } from './cashRegisterDeletion';
 import { commitAfterSuccessfulRemoteClose, isOnlyTerminalAssignmentConflictForDailyCash, isOnlyTerminalAssignmentConflictForRegister, shouldApplyCloudSnapshot } from './cashControlSync';
@@ -351,7 +353,7 @@ class CashShiftService {
     return this.shiftsHistory;
   }
 
-  openShift(
+  async openShift(
     tenant: TenantInfo,
     openedByUser: UserProfile,
     initialFloat: number,
@@ -359,7 +361,7 @@ class CashShiftService {
     registerId?: string,
     linkedZone?: string,
     linkedZones?: string[]
-  ): CashShift {
+  ): Promise<CashShift> {
     if (cashControlCloudService.isAvailableForTenant(this.tenantId) && this.registers.length === 0) {
       throw new Error('No hay cajas configuradas en la nube. Crea una caja antes de abrir un turno.');
     }
@@ -371,6 +373,15 @@ class CashShiftService {
     }
     if (!register.isActive) {
       throw new Error(`La caja "${register.name}" está inactiva y no puede abrir un turno.`);
+    }
+    if (CASH_SHIFT_V2_ENABLED && isCloudTenantId(tenant?.id)) {
+      if (!register.branchId || !register.cloudId) {
+        throw new Error('No se pudo verificar la sucursal y caja remotas; la apertura quedó bloqueada.');
+      }
+      const branchMode = await cashControlCloudService.getCashShiftV2BranchMode(
+        tenant.id, register.branchId, register.cloudId
+      );
+      assertLegacyShiftOpeningAllowed(branchMode);
     }
     if (!openedByUser?.id || !openedByUser.name?.trim() || openedByUser.active === false) {
       throw new Error('Selecciona un colaborador activo para asignarlo como responsable del turno.');
@@ -429,6 +440,7 @@ class CashShiftService {
       id: `shift_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       shiftNumber: nextShiftNumber,
       tenantId: tenant?.id || 'tenant_default',
+      branchId: register.branchId,
       terminalId: register?.terminalCode || '00001',
       cashRegisterId: register?.id || 'caja-01',
       cashRegisterName: register?.name || 'Caja 01 - Principal',
