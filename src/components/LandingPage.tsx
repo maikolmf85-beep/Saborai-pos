@@ -33,6 +33,16 @@ interface LandingPageProps {
   onEnterPOS: (isDemo?: boolean) => void;
 }
 
+const WHATSAPP_NUMBER = '15557961750';
+const WHATSAPP_DISPLAY_NUMBER = '+1 555 796 1750';
+const WHATSAPP_HREF = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent('Hola, Saborai. Me gustaría obtener más información sobre Saborai POS.')}`;
+
+const WhatsAppMark: React.FC<{ className?: string }> = ({ className = 'h-5 w-5' }) => (
+  <svg className={className} viewBox="0 0 32 32" fill="currentColor" aria-hidden="true" focusable="false">
+    <path fillRule="evenodd" d="M16.004 2.667c-7.364 0-13.333 5.969-13.333 13.333 0 2.355.612 4.567 1.687 6.49L2.667 29.333l7.045-1.849A13.268 13.268 0 0 0 16.004 29.333c7.364 0 13.333-5.969 13.333-13.333S23.368 2.667 16.004 2.667m0 24.222c-2.006 0-3.96-.543-5.65-1.57l-.405-.24-4.187 1.1 1.117-4.08-.264-.42a10.824 10.824 0 0 1-1.665-5.679c0-5.987 4.874-10.861 10.861-10.861 5.987 0 10.861 4.874 10.861 10.861 0 5.987-4.874 10.861-10.861 10.861m5.26-7.17c-.29-.145-1.718-.848-1.984-.945-.265-.097-.459-.145-.653.145-.194.29-.75.944-.92 1.137-.17.194-.34.218-.629.073-.29-.145-1.223-.45-2.33-1.436-.861-.767-1.442-1.714-1.612-2.003-.169-.29-.018-.446.127-.59.13-.13.29-.339.435-.508.145-.17.193-.29.29-.484.096-.193.048-.362-.025-.507-.072-.145-.653-1.569-.895-2.148-.236-.564-.474-.488-.653-.497-.169-.008-.362-.01-.556-.01-.193 0-.507.073-.774.363-.266.29-1.016.992-1.016 2.414 0 1.424 1.04 2.8 1.185 2.994.145.193 2.027 3.09 4.902 4.33.685.296 1.221.474 1.64.608.689.219 1.315.188 1.81.114.552-.082 1.718-.701 1.96-1.378.242-.677.242-1.257.17-1.378-.073-.121-.267-.194-.557-.339Z" />
+  </svg>
+);
+
 function useCountUp(target: number, duration = 1800, start = false) {
   const [count, setCount] = useState(0);
   useEffect(() => {
@@ -413,27 +423,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   return (
     <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
       <style>{`
-        @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
-        @keyframes glowPulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
         @keyframes slideUp { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
         @keyframes fadeIn { from{opacity:0} to{opacity:1} }
-        @keyframes beamSweep {
-          0%{transform:translateX(-100%) skewX(-20deg)}
-          100%{transform:translateX(500%) skewX(-20deg)}
-        }
-        .lp-float { animation: floatY 5s ease-in-out infinite; }
-        .lp-glow { animation: glowPulse 4s ease-in-out infinite; }
-        .lp-slide-up { animation: slideUp .7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        .lp-slide-up { animation: slideUp .55s cubic-bezier(0.16, 1, 0.3, 1) both; }
         .lp-fade-in { animation: fadeIn .5s ease both; }
-        .lp-cursor { display:inline-block; animation: glowPulse .8s infinite; }
-        
-        .lp-glass {
-          background: rgba(255, 255, 255, 0.7);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
-          border: 1px solid rgba(169, 185, 148, 0.3);
-        }
-        
         .lp-grad-text {
           background: linear-gradient(135deg, #588157 0%, #a9b994 100%);
           -webkit-background-clip: text;
@@ -442,38 +435,39 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         }
 
         .lp-card {
-          transition: transform .3s cubic-bezier(.4,0,.2,1), box-shadow .3s cubic-bezier(.4,0,.2,1);
+          transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
         }
         .lp-card:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 20px 40px rgba(88, 129, 87, 0.1);
+          transform: translateY(-3px);
+          box-shadow: 0 16px 32px rgba(59, 55, 51, 0.08);
+          border-color: rgba(88, 129, 87, 0.42);
         }
-
-        .lp-beam { position: relative; overflow: hidden; }
-        .lp-beam::after {
-          content:'';
-          position:absolute; top:0; left:0; right:0; bottom:0;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,.3), transparent);
-          animation: beamSweep 3s ease-in-out infinite;
-          pointer-events: none;
-        }
-
+        .lp-button { transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease; }
+        .lp-button:hover { transform: translateY(-2px); }
+        .lp-whatsapp-icon { transition: transform .2s ease; }
+        .lp-whatsapp:hover .lp-whatsapp-icon,
+        .lp-whatsapp:focus-visible .lp-whatsapp-icon { transform: scale(1.08); }
+        .lp-wa-tooltip { opacity: 0; transform: translateX(4px); transition: opacity .18s ease, transform .18s ease; }
+        .lp-wa-fab:hover .lp-wa-tooltip,
+        .lp-wa-fab:focus-visible .lp-wa-tooltip { opacity: 1; transform: translateX(0); }
+        .lp-faq summary::-webkit-details-marker { display: none; }
+        .lp-faq details[open] summary svg { transform: rotate(90deg); }
+        .lp-faq summary svg { transition: transform .18s ease; }
         .lp-hero-bg {
-          background: 
+          background:
             radial-gradient(circle at 15% 50%, rgba(169, 185, 148, 0.15) 0%, transparent 50%),
             radial-gradient(circle at 85% 30%, rgba(88, 129, 87, 0.1) 0%, transparent 50%),
             #fcfeff;
         }
+        @media (prefers-reduced-motion: reduce) {
+          .lp-slide-up, .lp-fade-in { animation: none !important; }
+          .lp-card, .lp-button, .lp-whatsapp-icon, .lp-wa-tooltip, .lp-faq summary svg { transition: none !important; }
+          .lp-card:hover, .lp-button:hover { transform: none; }
+        }
       `}</style>
 
-      {/* Background Orbs */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute top-[-10%] left-[10%] w-[600px] h-[600px] rounded-full lp-glow" style={{ background: 'rgba(169, 185, 148, 0.15)', filter: 'blur(100px)' }} />
-        <div className="absolute bottom-[5%] right-[0%] w-[500px] h-[500px] rounded-full lp-glow" style={{ background: 'rgba(88, 129, 87, 0.1)', filter: 'blur(90px)', animationDelay: '2s' }} />
-      </div>
-
       {/* Top Banner */}
-      <div className="relative z-20 text-white py-2.5 px-4 text-center text-xs font-semibold flex items-center justify-center gap-2.5" style={{ background: 'linear-gradient(90deg, #3b3733, #588157, #3b3733)', backgroundSize: '200% auto', animation: 'glowPulse 5s infinite' }}>
+      <div className="relative z-20 flex items-center justify-center gap-2.5 bg-[#3b3733] px-4 py-2.5 text-center text-xs font-semibold text-white">
         <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
         <span>
           <strong>Saborai POS</strong> — El primer POS en Costa Rica con IA nativa.{' '}
@@ -486,16 +480,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       {/* Navbar */}
       <header
         role="banner"
-        className="sticky top-0 z-50 transition-all duration-300"
-        style={scrolled ? { background: 'rgba(252, 254, 255, 0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(169, 185, 148, 0.2)' } : {}}
+        className="sticky top-0 z-50 border-b border-[#a9b994]/20 bg-[#fcfeff]/95 shadow-sm backdrop-blur-xl transition-all duration-300"
+        style={scrolled ? { background: 'rgba(252, 254, 255, 0.98)', boxShadow: '0 8px 24px rgba(59, 55, 51, 0.05)' } : {}}
       >
-        <nav aria-label="Navegación principal" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+        <nav aria-label="Navegación principal" className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <a href="#" aria-label="Saborai POS - Inicio">
             <BrandLogo variant="full" size="sm" tone="web" />
           </a>
-          <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-[#6b686d]">
-            {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','FAQ']].map(([href,label]) => (
-              <a key={href} href={href} className="hover:text-[#588157] transition-colors">{label}</a>
+          <div className="hidden items-center gap-7 text-sm font-semibold text-[#6b686d] md:flex">
+            {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','Preguntas']].map(([href,label]) => (
+              <a key={href} href={href} className="transition-colors hover:text-[#588157]">{label}</a>
             ))}
           </div>
           <div className="hidden md:flex items-center gap-3">
@@ -510,20 +504,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
             </button>
             <button
               onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }}
-              className="lp-beam px-6 py-2.5 rounded-full font-bold text-sm text-white hover:scale-105 active:scale-95 transition-all shadow-md"
+              className="lp-button px-6 py-2.5 rounded-full font-bold text-sm text-white shadow-sm hover:shadow-md"
               style={{ background: '#588157' }}
             >
               Adquirir POS
             </button>
           </div>
-          <button className="md:hidden p-2 text-[#3b3733]" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+          <button aria-label={mobileMenuOpen ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={mobileMenuOpen} className="rounded-xl p-2 text-[#3b3733] hover:bg-[#f4f7f0] md:hidden" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
             {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </nav>
         {mobileMenuOpen && (
-          <div className="md:hidden bg-white border-t border-[#a9b994]/20 px-6 py-5 space-y-4 shadow-xl absolute w-full lp-fade-in">
-            {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','FAQ']].map(([href,label]) => (
-              <a key={href} href={href} className="block py-2 font-bold text-[#3b3733]" onClick={() => setMobileMenuOpen(false)}>{label}</a>
+          <div className="absolute w-full space-y-3 border-t border-[#a9b994]/20 bg-white px-6 py-5 shadow-lg lp-fade-in md:hidden">
+            {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','Preguntas']].map(([href,label]) => (
+              <a key={href} href={href} className="block rounded-lg py-2 font-bold text-[#3b3733] hover:text-[#588157]" onClick={() => setMobileMenuOpen(false)}>{label}</a>
             ))}
             <div className="pt-4 flex flex-col gap-3">
               <button onClick={() => onEnterPOS(false)} className="w-full py-3 rounded-xl font-bold border border-[#a9b994] text-[#3b3733]">Iniciar Sesión</button>
@@ -536,40 +530,46 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
       <main>
         {/* HERO */}
-        <section className="lp-hero-bg relative pt-16 pb-24 lg:pt-24 lg:pb-32 text-center px-4 sm:px-6 lg:px-8">
-          <div className="max-w-5xl mx-auto relative z-10">
-            <div className="lp-slide-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full mb-6 bg-white border border-[#a9b994]/50 text-[#588157] shadow-sm">
+        <section className="lp-hero-bg relative px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
+          <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-center gap-x-12 gap-y-12 lg:grid-cols-12">
+            <div className="text-center lg:col-span-5 lg:text-left">
+            <div className="lp-slide-up mb-6 inline-flex items-center justify-center gap-2 rounded-full border border-[#a9b994]/50 bg-white px-4 py-1.5 text-[#588157] shadow-sm lg:justify-start">
               <Sparkles className="w-3.5 h-3.5 text-[#588157] animate-pulse" />
               <span className="text-xs font-black uppercase tracking-widest">SaborAI POS • Inteligencia Artificial Gastronómica</span>
             </div>
 
-            <h1 className="lp-slide-up text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1] mb-6 text-[#3b3733]" style={{ animationDelay: '.1s' }}>
+            <h1 className="lp-slide-up mb-6 text-4xl font-black leading-[1.08] tracking-tight text-[#3b3733] sm:text-5xl lg:text-[3.55rem] xl:text-6xl" style={{ animationDelay: '.1s' }}>
               El primer POS gastronómico <br className="hidden sm:block" />
               impulsado por <span className="lp-grad-text">Inteligencia Artificial</span>
             </h1>
 
-            <p className="lp-slide-up text-lg sm:text-xl text-[#6b686d] mb-8 max-w-3xl mx-auto leading-relaxed" style={{ animationDelay: '.2s' }}>
+            <p className="lp-slide-up mx-auto mb-8 max-w-2xl text-lg leading-relaxed text-[#6b686d] sm:text-xl lg:mx-0" style={{ animationDelay: '.2s' }}>
               Conoce a <strong>Nyza Copilot</strong>: comanda por voz, previene quiebres de inventario, audita Hacienda DGT v4.4 en tiempo real y repara fallos técnicos sin necesidad de soporte humano.
             </p>
 
-            <div className="lp-slide-up flex flex-col sm:flex-row items-center justify-center gap-4 mb-14" style={{ animationDelay: '.3s' }}>
+            <div className="lp-slide-up mb-0 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:justify-start" style={{ animationDelay: '.3s' }}>
               <button
                 onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }}
-                className="lp-beam w-full sm:w-auto px-8 py-4 rounded-full font-black text-white hover:scale-105 active:scale-95 transition-all shadow-xl shadow-[#588157]/20 flex items-center justify-center gap-2 cursor-pointer"
+                className="lp-button flex w-full cursor-pointer items-center justify-center gap-2 rounded-full px-7 py-4 font-black text-white shadow-lg shadow-[#588157]/20 sm:w-auto"
                 style={{ background: '#588157' }}
               >
                 Comenzar Prueba Gratis (14 Días) <ArrowRight className="w-4 h-4" />
               </button>
               <button
                 onClick={() => setDemoEmailModal(true)}
-                className="w-full sm:w-auto px-8 py-4 rounded-full font-bold text-[#3b3733] bg-white border border-[#a9b994]/60 hover:bg-[#f4f7f0] transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                className="lp-button flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-[#a9b994]/60 bg-white px-7 py-4 font-bold text-[#3b3733] shadow-sm hover:bg-[#f4f7f0] sm:w-auto"
               >
                 <Play className="w-4 h-4 text-[#588157]" /> Ver Demo Interactivo
               </button>
+              <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#588157]/25 bg-[#f4f7f0] px-6 py-4 font-bold text-[#3b3733] hover:bg-[#e8ece1] sm:w-auto">
+                <WhatsAppMark className="lp-whatsapp-icon h-5 w-5 text-[#588157]" /> Escríbenos por WhatsApp
+              </a>
             </div>
 
+            </div>
+            <div className="lp-slide-up lg:col-span-7" style={{ animationDelay: '.25s' }}>
             {/* Interactive Live POS + Nyza AI Mockup Component */}
-            <div className="lp-slide-up max-w-4xl mx-auto text-left rounded-3xl bg-stone-900 border border-stone-800 shadow-2xl overflow-hidden ring-1 ring-white/10" style={{ animationDelay: '.4s' }}>
+            <div className="mx-auto max-w-none overflow-hidden rounded-3xl border border-stone-800 bg-stone-900 text-left shadow-2xl ring-1 ring-white/10">
               {/* Window Header */}
               <div className="px-5 py-3.5 bg-stone-950 border-b border-stone-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -681,7 +681,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               </div>
             </div>
 
-            <div className="lp-slide-up mt-10 flex flex-wrap items-center justify-center gap-6 text-xs font-bold text-[#588157] uppercase tracking-wider" style={{ animationDelay: '.5s' }}>
+            </div>
+            <div className="lp-slide-up lg:col-span-12 mt-0 flex flex-wrap items-center justify-center gap-3 text-xs font-bold uppercase tracking-wider text-[#588157] sm:gap-4" style={{ animationDelay: '.4s' }}>
               {['Comanda por Voz con Nyza', 'Predicción de Mermas', 'Hacienda v4.4 en 1 Clic', 'Red Mesh Local Offline', 'Pagos Tilopay & WhatsApp'].map((t) => (
                 <span key={t} className="flex items-center gap-1.5 bg-white/80 px-3.5 py-1.5 rounded-full border border-[#a9b994]/30 shadow-xs">
                   <CheckCircle2 className="w-3.5 h-3.5 text-[#588157]" /> {t}
@@ -802,30 +803,95 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           </div>
         </section>
 
+        {/* FAQ */}
+        <section id="faq" className="lp-faq border-y border-[#a9b994]/20 bg-[#f4f7f0] px-4 py-20 sm:px-6 lg:py-24">
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-10 text-center">
+              <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-[#588157]">Resolvemos tus dudas</p>
+              <h2 className="text-3xl font-black text-[#3b3733] sm:text-4xl">Preguntas <span className="text-[#588157]">frecuentes</span></h2>
+            </div>
+            <div className="space-y-3">
+              {[
+                { q: '¿Para qué tipo de negocio está diseñado Saborai POS?', a: 'Saborai POS está diseñado para restaurantes y negocios gastronómicos que quieren simplificar su operación, caja, comandas y gestión.' },
+                { q: '¿Qué hace Nyza Copilot?', a: 'Nyza Copilot incorpora asistencia con IA en tareas como la comanda por voz, alertas de inventario y apoyo para detectar incidencias operativas.' },
+                { q: '¿Saborai POS trabaja con facturación electrónica de Hacienda?', a: 'La plataforma incluye herramientas de facturación e integración vinculadas a Hacienda Costa Rica. Escríbenos para revisar los detalles que aplican a tu negocio.' },
+                { q: '¿Puedo conocer los planes y probar el sistema?', a: 'La página muestra los planes Express, Pro y Multi-Sucursal, además de una prueba de 14 días. En la sección de precios puedes revisar las opciones o consultarnos directamente.' },
+                { q: '¿Cómo funciona la red local cuando hay problemas de conexión?', a: 'Saborai POS cuenta con un modo Red Mesh Local Offline. La configuración depende de los dispositivos y de la operación del local; podemos orientarte por WhatsApp.' },
+              ].map(({ q, a }) => (
+                <details key={q} className="group rounded-2xl border border-[#a9b994]/30 bg-white px-5 py-4 shadow-sm sm:px-6">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-left font-bold text-[#3b3733] outline-none focus-visible:ring-2 focus-visible:ring-[#588157] focus-visible:ring-offset-2">
+                    <span>{q}</span>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-[#588157] transition-transform group-open:rotate-90" />
+                  </summary>
+                  <p className="pt-3 pr-7 text-sm leading-relaxed text-[#6b686d]">{a}</p>
+                </details>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* CTA */}
-        <section className="py-24 bg-[#3b3733] text-white text-center px-4 relative overflow-hidden">
+        <section id="contact" className="relative overflow-hidden bg-[#3b3733] px-4 py-20 text-center text-white sm:py-24">
           <div className="absolute inset-0 bg-[#588157]/10" />
           <div className="relative z-10 max-w-3xl mx-auto">
-            <h2 className="text-4xl font-black mb-6">Simplifica la gestión hoy mismo.</h2>
-            <p className="text-lg text-white/70 mb-10">Únete a la evolución del software gastronómico en Costa Rica. Sin permanencia.</p>
-            <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }} className="px-10 py-5 rounded-full font-black text-[#3b3733] bg-white hover:scale-105 transition-transform shadow-xl flex items-center justify-center gap-2 mx-auto">
-              Probar 14 Días Gratis <ArrowRight className="w-5 h-5 text-[#588157]" />
-            </button>
+            <h2 className="mb-5 text-3xl font-black sm:text-4xl">Simplifica la gestión hoy mismo.</h2>
+            <p className="mx-auto mb-8 max-w-2xl text-base leading-relaxed text-white/75 sm:text-lg">Únete a la evolución del software gastronómico en Costa Rica. Sin permanencia.</p>
+            <div className="flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+              <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }} className="lp-button inline-flex items-center justify-center gap-2 rounded-full bg-white px-8 py-4 font-black text-[#3b3733] shadow-xl hover:shadow-2xl">
+                Probar 14 Días Gratis <ArrowRight className="h-5 w-5 text-[#588157]" />
+              </button>
+              <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-white/10 px-8 py-4 font-bold text-white hover:bg-white/15">
+                <WhatsAppMark className="lp-whatsapp-icon h-5 w-5" /> Hablemos por WhatsApp
+              </a>
+            </div>
           </div>
         </section>
       </main>
 
       {/* FOOTER */}
-      <footer className="py-12 bg-[#fcfeff] border-t border-[#a9b994]/20 text-center text-sm text-[#6b686d]">
-        <BrandLogo variant="full" size="sm" tone="web" />
-        <p className="mt-4 max-w-md mx-auto">Software de Punto de Venta con IA para Restaurantes en Costa Rica. Facturación Hacienda y Tilopay Integrado.</p>
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-bold text-[#588157]">
-          <a href="/privacy-policy" className="hover:underline">Política de Privacidad</a>
-          <a href="/terms-of-service" className="hover:underline">Condiciones de Servicio</a>
+      <footer className="border-t border-[#a9b994]/25 bg-[#fcfeff] px-4 py-12 text-sm text-[#6b686d] sm:px-6 lg:py-14">
+        <div className="mx-auto grid max-w-7xl gap-10 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="sm:col-span-2 lg:col-span-2">
+            <BrandLogo variant="full" size="sm" tone="web" />
+            <p className="mt-4 max-w-md leading-relaxed">Software de Punto de Venta con IA para Restaurantes en Costa Rica. Facturación Hacienda y Tilopay Integrado.</p>
+          </div>
+          <div>
+            <h2 className="mb-4 text-xs font-black uppercase tracking-widest text-[#3b3733]">Explora</h2>
+            <nav aria-label="Enlaces del pie de página" className="flex flex-col items-start gap-3 text-sm">
+              <a href="#features" className="transition-colors hover:text-[#588157]">Funciones</a>
+              <a href="#pricing" className="transition-colors hover:text-[#588157]">Planes y precios</a>
+              <a href="#faq" className="transition-colors hover:text-[#588157]">Preguntas frecuentes</a>
+              <a href="/privacy-policy" className="transition-colors hover:text-[#588157]">Política de Privacidad</a>
+              <a href="/terms-of-service" className="transition-colors hover:text-[#588157]">Condiciones de Servicio</a>
+            </nav>
+          </div>
+          <div>
+            <h2 className="mb-4 text-xs font-black uppercase tracking-widest text-[#3b3733]">Contacto</h2>
+            <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp inline-flex items-center gap-2 font-semibold text-[#588157] transition-colors hover:text-[#3b3733]">
+              <WhatsAppMark className="lp-whatsapp-icon h-5 w-5" /> WhatsApp {WHATSAPP_DISPLAY_NUMBER}
+            </a>
+            <a href="#contact" className="mt-3 block text-sm transition-colors hover:text-[#588157]">Conoce Saborai POS</a>
+          </div>
         </div>
-        <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
-        <p className="mt-2 text-xs text-[#a9b994]">Propiedad de Maikol Rafael Matamoros Fernández</p>
+        <div className="mx-auto mt-10 flex max-w-7xl flex-col gap-2 border-t border-[#a9b994]/20 pt-6 text-xs text-[#8e9d7c] sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
+          <p>Propiedad de Maikol Rafael Matamoros Fernández · Programa diseñado por Maikol Matamoros</p>
+        </div>
       </footer>
+
+      <a
+        href={WHATSAPP_HREF}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Contactar a Saborai por WhatsApp"
+        title="Contactar a Saborai por WhatsApp"
+        className="lp-wa-fab group fixed bottom-5 right-5 z-[55] flex h-14 w-14 items-center justify-center rounded-full bg-[#588157] text-white shadow-xl shadow-[#3b3733]/20 outline-none transition-all hover:-translate-y-1 hover:bg-[#496f48] hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-[#a9b994] focus-visible:ring-offset-2 sm:bottom-7 sm:right-7"
+      >
+        <WhatsAppMark className="h-7 w-7" />
+        <span aria-hidden="true" className="lp-wa-tooltip pointer-events-none absolute right-full top-1/2 mr-3 -translate-y-1/2 whitespace-nowrap rounded-xl border border-[#a9b994]/30 bg-white px-3.5 py-2 text-sm font-bold text-[#3b3733] shadow-lg">
+          ¿Hablamos?
+        </span>
+      </a>
       
       {/* MODAL TILOPAY DIRECTO */}
       {selectedPlanModal && (
