@@ -114,6 +114,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   const [activeFeature, setActiveFeature] = useState(0);
   const [activeUsage, setActiveUsage] = useState(0);
   const [scrolled, setScrolled] = useState(false);
+  const [hideWhatsAppFab, setHideWhatsAppFab] = useState(false);
   
   const [demoEmailModal, setDemoEmailModal] = useState(false);
   const [demoEmail, setDemoEmail] = useState('');
@@ -135,6 +136,29 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     const onScroll = () => setScrolled(window.scrollY > 30);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    const inlineCtas = Array.from(document.querySelectorAll<HTMLElement>('[data-whatsapp-cta]'));
+    if (inlineCtas.length === 0) return;
+
+    const mobileQuery = window.matchMedia('(max-width: 639px)');
+    const visibleCtas = new Set<Element>();
+    const updateFabVisibility = () => setHideWhatsAppFab(mobileQuery.matches && visibleCtas.size > 0);
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) visibleCtas.add(entry.target);
+        else visibleCtas.delete(entry.target);
+      });
+      updateFabVisibility();
+    }, { threshold: 0.15 });
+
+    inlineCtas.forEach((cta) => observer.observe(cta));
+    mobileQuery.addEventListener('change', updateFabVisibility);
+    return () => {
+      observer.disconnect();
+      mobileQuery.removeEventListener('change', updateFabVisibility);
+    };
   }, []);
 
   useEffect(() => {
@@ -561,7 +585,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               >
                 <Play className="w-4 h-4 text-[#588157]" /> Ver Demo Interactivo
               </button>
-              <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#588157]/25 bg-[#f4f7f0] px-6 py-4 font-bold text-[#3b3733] hover:bg-[#e8ece1] sm:w-auto">
+              <a data-whatsapp-cta href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex w-full items-center justify-center gap-2 rounded-full border border-[#588157]/25 bg-[#f4f7f0] px-6 py-4 font-bold text-[#3b3733] hover:bg-[#e8ece1] sm:w-auto">
                 <WhatsAppMark className="lp-whatsapp-icon h-5 w-5 text-[#588157]" /> Escríbenos por WhatsApp
               </a>
             </div>
@@ -840,7 +864,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
               <button onClick={() => { const el = document.getElementById('pricing'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }} className="lp-button inline-flex items-center justify-center gap-2 rounded-full bg-white px-8 py-4 font-black text-[#3b3733] shadow-xl hover:shadow-2xl">
                 Probar 14 Días Gratis <ArrowRight className="h-5 w-5 text-[#588157]" />
               </button>
-              <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-white/10 px-8 py-4 font-bold text-white hover:bg-white/15">
+              <a data-whatsapp-cta href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp lp-button inline-flex items-center justify-center gap-2 rounded-full border border-white/25 bg-white/10 px-8 py-4 font-bold text-white hover:bg-white/15">
                 <WhatsAppMark className="lp-whatsapp-icon h-5 w-5" /> Hablemos por WhatsApp
               </a>
             </div>
@@ -867,7 +891,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
           </div>
           <div>
             <h2 className="mb-4 text-xs font-black uppercase tracking-widest text-[#3b3733]">Contacto</h2>
-            <a href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp inline-flex items-center gap-2 font-semibold text-[#588157] transition-colors hover:text-[#3b3733]">
+            <a data-whatsapp-cta href={WHATSAPP_HREF} target="_blank" rel="noopener noreferrer" className="lp-whatsapp inline-flex items-center gap-2 font-semibold text-[#588157] transition-colors hover:text-[#3b3733]">
               <WhatsAppMark className="lp-whatsapp-icon h-5 w-5" /> WhatsApp {WHATSAPP_DISPLAY_NUMBER}
             </a>
             <a href="#contact" className="mt-3 block text-sm transition-colors hover:text-[#588157]">Conoce Saborai POS</a>
@@ -879,19 +903,21 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
         </div>
       </footer>
 
-      <a
-        href={WHATSAPP_HREF}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Contactar a Saborai por WhatsApp"
-        title="Contactar a Saborai por WhatsApp"
-        className="lp-wa-fab group fixed bottom-5 right-5 z-[55] flex h-14 w-14 items-center justify-center rounded-full bg-[#588157] text-white shadow-xl shadow-[#3b3733]/20 outline-none transition-all hover:-translate-y-1 hover:bg-[#496f48] hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-[#a9b994] focus-visible:ring-offset-2 sm:bottom-7 sm:right-7"
-      >
-        <WhatsAppMark className="h-7 w-7" />
-        <span aria-hidden="true" className="lp-wa-tooltip pointer-events-none absolute right-full top-1/2 mr-3 -translate-y-1/2 whitespace-nowrap rounded-xl border border-[#a9b994]/30 bg-white px-3.5 py-2 text-sm font-bold text-[#3b3733] shadow-lg">
-          ¿Hablamos?
-        </span>
-      </a>
+      {!hideWhatsAppFab && (
+        <a
+          href={WHATSAPP_HREF}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Contactar a Saborai por WhatsApp"
+          title="Contactar a Saborai por WhatsApp"
+          className="lp-wa-fab group fixed bottom-5 right-5 z-[55] flex h-14 w-14 items-center justify-center rounded-full bg-[#588157] text-white shadow-xl shadow-[#3b3733]/20 outline-none transition-all hover:-translate-y-1 hover:bg-[#496f48] hover:shadow-2xl focus-visible:ring-4 focus-visible:ring-[#a9b994] focus-visible:ring-offset-2 sm:bottom-7 sm:right-7"
+        >
+          <WhatsAppMark className="h-7 w-7" />
+          <span aria-hidden="true" className="lp-wa-tooltip pointer-events-none absolute right-full top-1/2 mr-3 -translate-y-1/2 whitespace-nowrap rounded-xl border border-[#a9b994]/30 bg-white px-3.5 py-2 text-sm font-bold text-[#3b3733] shadow-lg">
+            ¿Hablamos?
+          </span>
+        </a>
+      )}
       
       {/* MODAL TILOPAY DIRECTO */}
       {selectedPlanModal && (
