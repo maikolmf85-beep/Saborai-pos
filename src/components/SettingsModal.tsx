@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { PrinterSettings } from './PrinterSettings';
 import { InventoryRecipes } from './InventoryRecipes';
-import { SuperAdminBackoffice } from './SuperAdminBackoffice';
 import { HaciendaSettings } from './HaciendaSettings';
 import { TenantInfo, SubscriptionStatus, TaxRegime } from '../types';
 import { cashShiftService } from '../services/cashShiftService';
@@ -39,7 +38,6 @@ interface SettingsModalProps {
   onThemeChange: (theme: 'light' | 'dark') => void;
   onUpdateTenant?: (updated: TenantInfo) => void;
   onUpdateTenantStatus: (status: SubscriptionStatus, graceEnds?: string) => void;
-  onSelectTenant: (tenant: TenantInfo) => void;
   onNavigateToLanding: () => void;
   onOpenNotion?: () => void;
   onOpenStaffModal?: () => void;
@@ -47,7 +45,7 @@ interface SettingsModalProps {
   currentUser?: any;
 }
 
-type SettingsSection = 'appearance' | 'regime' | 'hacienda' | 'registers' | 'printers' | 'inventory' | 'admin' | 'landing';
+type SettingsSection = 'appearance' | 'regime' | 'hacienda' | 'registers' | 'printers' | 'inventory' | 'landing';
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
@@ -57,7 +55,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onThemeChange,
   onUpdateTenant,
   onUpdateTenantStatus,
-  onSelectTenant,
   onNavigateToLanding,
   onOpenNotion,
   onOpenStaffModal,
@@ -389,17 +386,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {currentUser?.email === 'maikolmf85@gmail.com' && (
             <>
-              <button
-                onClick={() => setActiveSection('admin')}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 transition-all shrink-0 ${
-                  activeSection === 'admin'
-                    ? 'border-stone-900 text-stone-900'
-                    : 'border-transparent text-stone-500 hover:text-stone-800'
-                }`}
+              <a
+                href="https://admin.saborai.site"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-3 text-xs font-semibold border-b-2 border-transparent text-stone-500 hover:text-stone-800 transition-all shrink-0"
               >
                 <Building2 className="w-4 h-4 text-[#588157]" />
                 <span>SaaS Backoffice</span>
-              </button>
+              </a>
 
               <button
                 onClick={() => setActiveSection('landing')}
@@ -1283,16 +1278,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeSection === 'inventory' && (
             <div className="bg-white rounded-2xl border border-stone-200 p-2 sm:p-4 shadow-sm">
               <InventoryRecipes key={tenant.id} tenantId={tenant.id} />
-            </div>
-          )}
-
-          {activeSection === 'admin' && (
-            <div className="bg-white rounded-2xl border border-stone-200 p-2 sm:p-4 shadow-sm">
-              <SuperAdminBackoffice 
-                currentTenant={tenant}
-                onSelectTenant={onSelectTenant}
-                onOpenNotion={onOpenNotion}
-              />
             </div>
           )}
 

@@ -1,99 +1,222 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  ShieldAlert, 
-  TrendingUp, 
-  Users, 
-  CreditCard, 
-  Building2, 
-  CheckCircle2, 
-  PauseCircle, 
-  Ban, 
-  ArrowUpRight,
-  Sparkles,
-  MapPin,
-  Search,
-  Filter,
-  Calendar,
-  ExternalLink,
-  Edit3,
+import React, { useState } from 'react';
+import {
+  Building2,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
   RefreshCw,
-  Clock,
-  Send,
-  Zap,
-  Check,
-  X,
-  Smartphone,
-  Plus,
-  Trash2
+  Search,
+  ShieldAlert,
+  Users
 } from 'lucide-react';
-import { TenantInfo, SubscriptionPlan, SubscriptionStatus } from '../types';
-import { notionService } from '../services/notionService';
-import { ConfirmDialog } from './ConfirmDialog';
 
-interface SuperAdminBackofficeProps {
-  currentTenant: TenantInfo;
-  onSelectTenant: (tenant: TenantInfo) => void;
-  onOpenNotion?: () => void;
+type AdminRestaurantPlan = 'express' | 'pro' | 'multibranch' | null;
+type AdminSubscriptionMode = 'DEMO' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'CANCELLED' | null;
+
+interface AdminRestaurantSubscription {
+  mode: AdminSubscriptionMode;
+  plan: AdminRestaurantPlan;
+  trialEndsAt: string | null;
+  activatedAt: string | null;
 }
 
-export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
-  currentTenant,
-  onSelectTenant,
-  onOpenNotion
-}) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterPlan, setFilterPlan] = useState<string>('ALL');
-  const [filterStatus, setFilterStatus] = useState<string>('ALL');
-  const [selectedTenantForEdit, setSelectedTenantForEdit] = useState<TenantInfo | null>(null);
-  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+interface AdminRestaurantBranch {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean | null;
+}
 
-  const [confirmConfig, setConfirmConfig] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    confirmLabel?: string;
-    cancelLabel?: string;
-    type?: 'danger' | 'warning' | 'info';
-    onConfirm: () => void;
-  }>({
-    isOpen: false,
-    title: '',
-    message: '',
-    onConfirm: () => {}
+interface AdminRestaurant {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  plan: AdminRestaurantPlan;
+  onboardingCompleted: boolean | null;
+  subscription: AdminRestaurantSubscription | null;
+  branches: AdminRestaurantBranch[];
+}
+
+interface AdminRestaurantPage {
+  restaurants: AdminRestaurant[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+const PAGE_SIZE = 50;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isAdminSubscriptionMode(value: unknown): value is AdminSubscriptionMode {
+  return value === null || value === 'DEMO' || value === 'TRIAL' || value === 'ACTIVE'
+    || value === 'PAST_DUE' || value === 'CANCELLED';
+}
+
+function isAdminRestaurantSubscription(value: unknown): value is AdminRestaurantSubscription {
+  if (!isRecord(value)) return false;
+  return isAdminSubscriptionMode(value.mode)
+    && (value.plan === null || value.plan === 'express' || value.plan === 'pro' || value.plan === 'multibranch')
+    && (value.trialEndsAt === null || typeof value.trialEndsAt === 'string')
+    && (value.activatedAt === null || typeof value.activatedAt === 'string');
+}
+
+function isAdminRestaurantBranch(value: unknown): value is AdminRestaurantBranch {
+  if (!isRecord(value)) return false;
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.code === 'string'
+    && (value.isActive === null || typeof value.isActive === 'boolean');
+}
+
+function isAdminRestaurant(value: unknown): value is AdminRestaurant {
+  if (!isRecord(value)) return false;
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.email === 'string'
+    && typeof value.phone === 'string'
+    && (value.plan === null || value.plan === 'express' || value.plan === 'pro' || value.plan === 'multibranch')
+    && (value.onboardingCompleted === null || typeof value.onboardingCompleted === 'boolean')
+    && (value.subscription === null || isAdminRestaurantSubscription(value.subscription))
+    && Array.isArray(value.branches)
+    && value.branches.every(isAdminRestaurantBranch);
+}
+
+async function readJson(response: Response): Promise<Record<string, unknown>> {
+  const value: unknown = await response.json().catch(() => null);
+  return isRecord(value) ? value : {};
+}
+
+async function fetchRestaurantPage(token: string, offset: number): Promise<AdminRestaurantPage> {
+  const query = new URLSearchParams({
+    action: 'restaurants',
+    limit: String(PAGE_SIZE),
+    offset: String(offset)
   });
+  const response = await fetch(`/api/admin/metrics?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  const payload = await readJson(response);
 
-  // Authentication State
+  if (!response.ok) {
+    throw new Error(typeof payload.error === 'string'
+      ? payload.error
+      : 'No se pudo cargar el directorio de restaurantes.');
+  }
+  if (!Array.isArray(payload.restaurants)) {
+    throw new Error('La respuesta del directorio no tiene el formato esperado.');
+  }
+
+  const restaurants = payload.restaurants.filter(isAdminRestaurant);
+  const totalCount = typeof payload.totalCount === 'number' && Number.isSafeInteger(payload.totalCount)
+    ? payload.totalCount
+    : restaurants.length;
+  const pageOffset = typeof payload.offset === 'number' && Number.isSafeInteger(payload.offset)
+    ? payload.offset
+    : offset;
+  const pageLimit = typeof payload.limit === 'number' && Number.isSafeInteger(payload.limit)
+    ? payload.limit
+    : PAGE_SIZE;
+
+  return {
+    restaurants,
+    totalCount,
+    offset: pageOffset,
+    limit: pageLimit,
+    hasMore: payload.hasMore === true
+  };
+}
+
+function planLabel(plan: AdminRestaurantPlan): string {
+  if (plan === 'express') return 'Express';
+  if (plan === 'pro') return 'Pro';
+  if (plan === 'multibranch') return 'Multisucursal';
+  return 'No indicado';
+}
+
+function subscriptionModeLabel(mode: AdminSubscriptionMode): string {
+  if (mode === 'DEMO') return 'Demostración';
+  if (mode === 'TRIAL') return 'Prueba';
+  if (mode === 'ACTIVE') return 'Activa';
+  if (mode === 'PAST_DUE') return 'Pago pendiente';
+  if (mode === 'CANCELLED') return 'Cancelada';
+  return 'Sin dato';
+}
+
+function subscriptionModeClass(mode: AdminSubscriptionMode): string {
+  if (mode === 'ACTIVE') return 'border-emerald-700/60 bg-emerald-500/10 text-emerald-300';
+  if (mode === 'TRIAL') return 'border-sky-700/60 bg-sky-500/10 text-sky-300';
+  if (mode === 'PAST_DUE') return 'border-amber-700/60 bg-amber-500/10 text-amber-300';
+  if (mode === 'CANCELLED') return 'border-rose-700/60 bg-rose-500/10 text-rose-300';
+  return 'border-stone-700 bg-stone-800 text-stone-300';
+}
+
+function adminDateLabel(value: string | null): string {
+  if (!value || !Number.isFinite(Date.parse(value))) return 'Sin dato';
+  return new Intl.DateTimeFormat('es-CR', {
+    dateStyle: 'medium',
+    timeZone: 'America/Costa_Rica'
+  }).format(new Date(value));
+}
+
+export const SuperAdminBackoffice: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [accessToken, setAccessToken] = useState('');
+  const [restaurants, setRestaurants] = useState<AdminRestaurant[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [expandedRestaurantId, setExpandedRestaurantId] = useState<string | null>(null);
+  const [leadsCount, setLeadsCount] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoadingPage, setIsLoadingPage] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
     setLoginError(null);
     setIsLoggingIn(true);
+
     try {
       const loginResponse = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword })
       });
-      const loginData = await loginResponse.json();
+      const loginData = await readJson(loginResponse);
       if (!loginResponse.ok || typeof loginData.token !== 'string') {
         throw new Error('Correo o contraseña incorrectos.');
       }
 
-      const metricsResponse = await fetch('/api/admin/metrics', {
-        headers: { Authorization: `Bearer ${loginData.token}` }
-      });
-      const metricsData = await metricsResponse.json();
+      const token = loginData.token;
+      const [metricsResponse, firstPage] = await Promise.all([
+        fetch('/api/admin/metrics', {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetchRestaurantPage(token, 0)
+      ]);
+      const metricsData = await readJson(metricsResponse);
       if (!metricsResponse.ok) {
-        throw new Error(metricsData.error || 'La cuenta no tiene autorización global.');
+        throw new Error(typeof metricsData.error === 'string'
+          ? metricsData.error
+          : 'La cuenta no tiene autorización global.');
       }
 
-      setRealLeadsCount(Number(metricsData.leadsCount) || 0);
-      setRealVisitsCount(Math.floor((Number(metricsData.leadsCount) || 0) * 18.3 + 342));
+      setAccessToken(token);
+      setLeadsCount(typeof metricsData.leadsCount === 'number' ? metricsData.leadsCount : 0);
+      setRestaurants(firstPage.restaurants);
+      setTotalCount(firstPage.totalCount);
+      setOffset(firstPage.offset);
+      setHasMore(firstPage.hasMore);
       setIsAuthenticated(true);
       setLoginPassword('');
     } catch (error) {
@@ -103,162 +226,107 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
     }
   };
 
-
-  const [tenantsList, setTenantsList] = useState<TenantInfo[]>(() => {
+  const loadPage = async (nextOffset: number) => {
+    if (!accessToken || nextOffset < 0) return;
+    setPageError(null);
+    setIsLoadingPage(true);
     try {
-      const saved = localStorage.getItem('saborai_superadmin_tenants');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [currentTenant];
-  });
-
-  // Guardar en localStorage cada vez que la lista cambia
-  useEffect(() => {
-    try {
-      localStorage.setItem('saborai_superadmin_tenants', JSON.stringify(tenantsList));
-    } catch {}
-  }, [tenantsList]);
-
-  // Modal para registrar un nuevo restaurante / suscriptor
-  const [isNewTenantModalOpen, setIsNewTenantModalOpen] = useState(false);
-  const [newTenantData, setNewTenantData] = useState<Partial<TenantInfo>>({
-    name: '',
-    cedulaJuridica: '',
-    email: '',
-    phone: '',
-    location: '',
-    plan: 'pro',
-    status: 'ACTIVE',
-    currency: 'CRC',
-    monthlyFee: 45000,
-    taxRegime: 'TRADITIONAL'
-  });
-
-  const [realLeadsCount, setRealLeadsCount] = useState<number>(0);
-  const [realVisitsCount, setRealVisitsCount] = useState<number>(0);
-
-  // Derived metrics
-  const totalMRR = tenantsList.reduce((sum, t) => sum + (t.status === 'ACTIVE' ? t.monthlyFee : 0), 0);
-  const activeTenantsCount = tenantsList.filter(t => t.status === 'ACTIVE').length;
-  const gracePeriodCount = tenantsList.filter(t => t.status === 'PAST_DUE').length;
-  const suspendedCount = tenantsList.filter(t => t.status === 'CANCELLED').length;
-
-  const handleUpdateTenantStatus = (tenantId: string, newStatus: SubscriptionStatus, graceDate?: string) => {
-    const updated = tenantsList.map(t => {
-      if (t.id === tenantId) {
-        return { 
-          ...t, 
-          status: newStatus,
-          gracePeriodEndsAt: graceDate || t.gracePeriodEndsAt
-        };
-      }
-      return t;
-    });
-    setTenantsList(updated);
-
-    if (currentTenant.id === tenantId) {
-      onSelectTenant({ 
-        ...currentTenant, 
-        status: newStatus,
-        gracePeriodEndsAt: graceDate || currentTenant.gracePeriodEndsAt 
-      });
-    }
-
-    if (selectedTenantForEdit && selectedTenantForEdit.id === tenantId) {
-      setSelectedTenantForEdit(prev => prev ? { ...prev, status: newStatus } : null);
+      const page = await fetchRestaurantPage(accessToken, nextOffset);
+      setRestaurants(page.restaurants);
+      setTotalCount(page.totalCount);
+      setOffset(page.offset);
+      setHasMore(page.hasMore);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'No se pudo actualizar el directorio.');
+    } finally {
+      setIsLoadingPage(false);
     }
   };
 
-  const handleChangePlan = (tenantId: string, newPlan: SubscriptionPlan) => {
-    const fee = newPlan === 'express' ? 22000 : newPlan === 'pro' ? 45000 : 85000;
-    const updated = tenantsList.map(t => {
-      if (t.id === tenantId) {
-        return { ...t, plan: newPlan, monthlyFee: fee };
-      }
-      return t;
-    });
-    setTenantsList(updated);
-
-    if (currentTenant.id === tenantId) {
-      onSelectTenant({ ...currentTenant, plan: newPlan, monthlyFee: fee });
-    }
-
-    if (selectedTenantForEdit && selectedTenantForEdit.id === tenantId) {
-      setSelectedTenantForEdit(prev => prev ? { ...prev, plan: newPlan, monthlyFee: fee } : null);
-    }
+  const handleLogout = () => {
+    setAccessToken('');
+    setRestaurants([]);
+    setTotalCount(0);
+    setOffset(0);
+    setHasMore(false);
+    setExpandedRestaurantId(null);
+    setLeadsCount(0);
+    setIsAuthenticated(false);
+    setLoginEmail('');
+    setLoginPassword('');
+    setLoginError(null);
+    setPageError(null);
   };
 
-  const handleSyncNotion = async () => {
-    setSyncFeedback('Sincronizando suscriptores con Notion...');
-    try {
-      // Record all tenants into notion service
-      for (const t of tenantsList) {
-        await notionService.recordUserRegistration(
-          {
-            id: `usr_owner_${t.id}`,
-            name: `Admin ${t.name}`,
-            email: t.email,
-            phone: t.phone,
-            restaurantName: t.name,
-            role: 'ADMIN'
-          },
-          t
-        );
-      }
-      setSyncFeedback('¡Sincronización con Notion exitosa!');
-      setTimeout(() => setSyncFeedback(null), 3500);
-    } catch {
-      setSyncFeedback('Se actualizó la cola local de Notion.');
-      setTimeout(() => setSyncFeedback(null), 3500);
-    }
-  };
-
-  // Filtered tenants
-  const filteredTenants = tenantsList.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          t.cedulaJuridica.includes(searchTerm) ||
-                          t.location.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesPlan = filterPlan === 'ALL' || t.plan === filterPlan;
-    const matchesStatus = filterStatus === 'ALL' || t.status === filterStatus;
-    return matchesSearch && matchesPlan && matchesStatus;
+  const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
+  const filteredRestaurants = restaurants.filter((restaurant) => {
+    if (!normalizedSearch) return true;
+    const searchableValues = [
+      restaurant.name,
+      restaurant.email,
+      restaurant.phone,
+      planLabel(restaurant.plan),
+      subscriptionModeLabel(restaurant.subscription?.mode ?? null),
+      ...restaurant.branches.flatMap((branch) => [branch.name, branch.code])
+    ];
+    return searchableValues
+      .some((value) => value.toLocaleLowerCase().includes(normalizedSearch));
   });
+  const firstRecord = totalCount === 0 ? 0 : offset + 1;
+  const lastRecord = offset + restaurants.length;
+  const pageNumber = totalCount === 0 ? 0 : Math.floor(offset / PAGE_SIZE) + 1;
+  const pageCount = Math.ceil(totalCount / PAGE_SIZE);
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-stone-950 flex flex-col items-center justify-center p-4 font-sans selection:bg-[#a9b994]/30">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-stone-950 to-stone-950 pointer-events-none"></div>
-        <form onSubmit={handleLogin} className="w-full max-w-sm bg-stone-900/50 backdrop-blur-xl border border-stone-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center relative z-10">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-stone-950 to-stone-950 pointer-events-none" />
+        <form
+          onSubmit={handleLogin}
+          className="w-full max-w-sm bg-stone-900/70 backdrop-blur-xl border border-stone-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center relative z-10"
+        >
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.3)]">
             <ShieldAlert className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-2xl font-black text-white mb-2">Acceso Restringido</h2>
-          <p className="text-stone-400 text-sm text-center mb-8">El acceso global requiere una cuenta autorizada por la configuración del servidor.</p>
-          
+          <h1 className="text-2xl font-black text-white mb-2">Acceso restringido</h1>
+          <p className="text-stone-400 text-sm text-center mb-8">
+            El panel global está disponible únicamente para cuentas autorizadas por el servidor.
+          </p>
+
+          <label className="sr-only" htmlFor="global-admin-email">Correo de la cuenta</label>
           <input
+            id="global-admin-email"
             type="email"
             value={loginEmail}
-            onChange={(e) => setLoginEmail(e.target.value)}
+            onChange={(event) => setLoginEmail(event.target.value)}
             placeholder="Correo de la cuenta"
             autoComplete="username"
             required
-            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-3"
-            autoFocus
+            className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 mb-3"
           />
+          <label className="sr-only" htmlFor="global-admin-password">Contraseña</label>
           <input
+            id="global-admin-password"
             type="password"
             value={loginPassword}
-            onChange={(e) => setLoginPassword(e.target.value)}
+            onChange={(event) => setLoginPassword(event.target.value)}
             placeholder="Contraseña"
             autoComplete="current-password"
             required
-            className="w-full bg-stone-950/80 border border-stone-800 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:border-emerald-500 transition-colors mb-4"
+            className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
           />
-          {loginError && <p role="alert" className="text-red-400 text-xs font-bold mb-4 animate-in fade-in slide-in-from-top-1">{loginError}</p>}
-          <button type="submit" disabled={isLoggingIn} className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-emerald-900/50 hover:shadow-emerald-900/80 hover:-translate-y-0.5">
-            {isLoggingIn ? 'Verificando acceso…' : 'Ingresar al Panel'}
+
+          {loginError && (
+            <div role="alert" className="w-full mt-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-semibold">
+              {loginError}
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full mt-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-wait text-white rounded-xl text-sm font-black transition-colors"
+          >
+            {isLoggingIn ? 'Verificando acceso…' : 'Ingresar al panel'}
           </button>
         </form>
       </div>
@@ -266,690 +334,223 @@ export const SuperAdminBackoffice: React.FC<SuperAdminBackofficeProps> = ({
   }
 
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100 font-sans selection:bg-[#a9b994]/30 overflow-y-auto">
-      
-      {/* Premium Dark Header with Gradient Background */}
-      <div className="bg-gradient-to-br from-stone-900 to-stone-950 border-b border-stone-800/60 sticky top-0 z-10 backdrop-blur-md">
-        <div className="max-w-[1700px] mx-auto p-4 sm:p-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="min-h-screen bg-stone-950 text-stone-100 font-sans">
+      <header className="border-b border-stone-800 bg-stone-950/95">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-900/40">
-                <ShieldAlert className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">SaborAI SuperAdmin</h2>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <p className="text-[11px] font-medium text-stone-400 uppercase tracking-widest">
-                    Centro de Control Global
-                  </p>
-                </div>
-              </div>
-            </div>
+            <p className="text-emerald-400 text-xs font-black uppercase tracking-[0.18em]">Saborai · Administración global</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-white mt-1">Restaurantes registrados</h1>
+            <p className="text-sm text-stone-400 mt-2">Vista de solo lectura cargada del servidor. No se editan datos desde este panel.</p>
           </div>
-
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setNewTenantData({
-                  name: '',
-                  cedulaJuridica: '',
-                  email: '',
-                  phone: '',
-                  location: 'San José, Costa Rica',
-                  plan: 'pro',
-                  status: 'ACTIVE',
-                  currency: 'CRC',
-                  monthlyFee: 45000,
-                  taxRegime: 'TRADITIONAL'
-                });
-                setIsNewTenantModalOpen(true);
-              }}
-              className="px-5 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(20,184,166,0.3)] hover:shadow-[0_0_25px_rgba(20,184,166,0.5)] hover:-translate-y-0.5 cursor-pointer"
+              type="button"
+              onClick={() => void loadPage(offset)}
+              disabled={isLoadingPage}
+              className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 disabled:opacity-50 border border-stone-700 text-stone-200 rounded-xl text-sm font-bold transition-colors inline-flex items-center gap-2"
             >
-              <Plus className="w-4 h-4" />
-              <span>+ Nuevo Restaurante</span>
+              <RefreshCw className={`w-4 h-4 ${isLoadingPage ? 'animate-spin' : ''}`} />
+              Actualizar
             </button>
-
-            {onOpenNotion && (
-              <button
-                onClick={onOpenNotion}
-                className="px-4 py-2 bg-stone-800/50 hover:bg-stone-800 border border-stone-700/50 text-stone-300 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 backdrop-blur-sm cursor-pointer"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Base Notion</span>
-              </button>
-            )}
-
             <button
-              onClick={handleSyncNotion}
-              className="px-5 py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-200 hover:text-white border border-stone-700 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-xs cursor-pointer"
+              type="button"
+              onClick={handleLogout}
+              className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-200 rounded-xl text-sm font-bold transition-colors inline-flex items-center gap-2"
             >
-              <RefreshCw className="w-4 h-4" />
-              <span>Sincronizar Cloud</span>
+              <LogOut className="w-4 h-4" />
+              Salir
             </button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-[1700px] mx-auto p-4 sm:p-6 lg:px-8 space-y-8 mt-2">
-        
-        {syncFeedback && (
-          <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
-            <Check className="w-4 h-4" />
-            <span>{syncFeedback}</span>
+      <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+        {pageError && (
+          <div role="alert" className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm">
+            {pageError}
           </div>
         )}
 
-        {/* KPI Cards Grid - Premium Glassmorphism */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          
-          {/* MRR Card */}
-          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-emerald-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-emerald-900/20 flex flex-col justify-between">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-emerald-500/10 rounded-full blur-2xl group-hover:bg-emerald-500/20 transition-all duration-500"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold uppercase tracking-wider mb-3">
-                <span>Ingresos Recurrentes (MRR)</span>
-                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-emerald-500/10 transition-colors">
-                  <CreditCard className="w-4 h-4 text-emerald-400" />
-                </div>
-              </div>
-              <div className="text-4xl font-black text-white tracking-tight">
-                ₡{totalMRR.toLocaleString()}
-              </div>
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-label="Resumen global">
+          <div className="p-6 rounded-3xl bg-stone-900 border border-stone-800">
+            <div className="flex items-center justify-between text-stone-400 text-xs font-bold uppercase tracking-wider">
+              <span>Restaurantes en el directorio</span>
+              <Building2 className="w-5 h-5 text-emerald-400" />
             </div>
-            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 flex items-center justify-between text-xs">
-              <span className="text-emerald-400 font-bold flex items-center gap-1 bg-emerald-400/10 px-2 py-1 rounded-lg">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>+₡{(totalMRR * 0.15).toFixed(0)}</span>
-              </span>
-              <span className="text-stone-500 font-medium">Crecimiento Mensual</span>
+            <p className="mt-3 text-4xl font-black text-white">{totalCount.toLocaleString('es-CR')}</p>
+            <p className="mt-2 text-xs text-stone-500">Conteo total informado por el servidor</p>
+          </div>
+          <div className="p-6 rounded-3xl bg-stone-900 border border-stone-800">
+            <div className="flex items-center justify-between text-stone-400 text-xs font-bold uppercase tracking-wider">
+              <span>Leads de demostración</span>
+              <Users className="w-5 h-5 text-teal-400" />
+            </div>
+            <p className="mt-3 text-4xl font-black text-white">{leadsCount.toLocaleString('es-CR')}</p>
+            <p className="mt-2 text-xs text-stone-500">Conteo actual de la tabla de leads</p>
+          </div>
+        </section>
+
+        <section className="rounded-3xl bg-stone-900 border border-stone-800 overflow-hidden">
+          <div className="p-5 sm:p-6 border-b border-stone-800 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-black text-white">Directorio de restaurantes</h2>
+              <p className="text-xs text-stone-500 mt-1">Mostrando {firstRecord.toLocaleString('es-CR')}–{lastRecord.toLocaleString('es-CR')} de {totalCount.toLocaleString('es-CR')} registros.</p>
+            </div>
+            <div className="relative w-full lg:max-w-sm">
+              <Search className="w-4 h-4 text-stone-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Filtrar esta página por nombre o contacto"
+                aria-label="Filtrar los restaurantes de esta página"
+                className="w-full pl-10 pr-3 py-2.5 bg-stone-950 border border-stone-800 rounded-xl text-sm text-stone-100 focus:outline-none focus:border-emerald-500/60 placeholder:text-stone-600"
+              />
             </div>
           </div>
 
-          {/* Active Restaurants */}
-          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-blue-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-900/20 flex flex-col justify-between">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold uppercase tracking-wider mb-3">
-                <span>Clientes Activos</span>
-                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-blue-500/10 transition-colors">
-                  <Building2 className="w-4 h-4 text-blue-400" />
-                </div>
-              </div>
-              <div className="text-4xl font-black text-white tracking-tight">
-                {activeTenantsCount} <span className="text-xl text-stone-600">/ {tenantsList.length}</span>
-              </div>
-            </div>
-            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 flex items-center gap-2 text-xs text-stone-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)] animate-pulse" />
-              <span>Plataformas Operando</span>
-            </div>
-          </div>
-
-          {/* Grace Period Warning */}
-          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-amber-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-amber-900/20 flex flex-col justify-between">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-amber-500/10 rounded-full blur-2xl group-hover:bg-amber-500/20 transition-all duration-500"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold uppercase tracking-wider mb-3">
-                <span>En Período de Gracia</span>
-                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-amber-500/10 transition-colors">
-                  <Clock className="w-4 h-4 text-amber-400" />
-                </div>
-              </div>
-              <div className="text-4xl font-black text-amber-400 tracking-tight">
-                {gracePeriodCount}
-              </div>
-            </div>
-            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 text-xs text-amber-500/80 font-medium">
-              <span>Riesgo de Suspensión (5 días)</span>
-            </div>
-          </div>
-
-          {/* Traffic / Demos */}
-          <div className="group relative overflow-hidden p-6 rounded-3xl bg-stone-900 border border-stone-800 hover:border-purple-500/30 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-purple-900/20 flex flex-col justify-between">
-            <div className="absolute -right-6 -top-6 w-24 h-24 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all duration-500"></div>
-            <div className="relative z-10">
-              <div className="flex items-center justify-between text-[11px] text-stone-400 font-bold uppercase tracking-wider mb-3">
-                <span>Visitas Landing (7D)</span>
-                <div className="p-2 bg-stone-800 rounded-xl group-hover:bg-purple-500/10 transition-colors">
-                  <Zap className="w-4 h-4 text-purple-400" />
-                </div>
-              </div>
-              <div className="text-4xl font-black text-white tracking-tight flex items-baseline gap-2">
-                {realVisitsCount.toLocaleString()} <span className="text-lg text-stone-500 font-medium tracking-normal">Visitas</span>
-              </div>
-            </div>
-            <div className="relative z-10 mt-6 pt-4 border-t border-stone-800 flex items-center justify-between text-xs">
-              <span className="text-purple-400 font-bold flex items-center gap-1 bg-purple-400/10 px-2 py-1 rounded-lg">
-                <Users className="w-3.5 h-3.5" />
-                <span>{realLeadsCount} Leads</span>
-              </span>
-              <span className="text-stone-500 font-medium">
-                {realVisitsCount > 0 ? ((realLeadsCount / realVisitsCount) * 100).toFixed(1) : '0'}% Conversión
-              </span>
-            </div>
-          </div>
-
-        </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-stone-900 border border-stone-800 rounded-2xl p-4 shadow-xl shadow-stone-950/50 flex flex-col md:flex-row items-center gap-4 relative z-0">
-        <div className="relative flex-1 w-full">
-          <Search className="w-5 h-5 text-stone-500 absolute left-4 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Buscar por restaurante, cédula jurídica o ubicación..."
-            className="w-full pl-12 pr-4 py-3 bg-stone-950 border border-stone-800 rounded-xl text-sm text-stone-100 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all placeholder:text-stone-600 shadow-inner"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <select
-            value={filterPlan}
-            onChange={(e) => setFilterPlan(e.target.value)}
-            className="px-4 py-3 bg-stone-950 border border-stone-800 rounded-xl text-sm font-bold text-stone-300 focus:outline-none focus:border-emerald-500/50 transition-all appearance-none pr-8 cursor-pointer shadow-inner"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2378716c'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1em' }}
-          >
-            <option value="ALL">Todos los Planes</option>
-            <option value="express">Plan Express (₡22k)</option>
-            <option value="pro">Plan Pro (₡45k)</option>
-            <option value="multibranch">Multisucursal (₡85k+)</option>
-          </select>
-
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-4 py-3 bg-stone-950 border border-stone-800 rounded-xl text-sm font-bold text-stone-300 focus:outline-none focus:border-emerald-500/50 transition-all appearance-none pr-8 cursor-pointer shadow-inner"
-            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2378716c'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1em' }}
-          >
-            <option value="ALL">Todos los Estados</option>
-            <option value="ACTIVE">Activos</option>
-            <option value="PAST_DUE">En Gracia</option>
-            <option value="CANCELLED">Suspendidos</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Tenants Table Premium */}
-      <div className="bg-stone-900 border border-stone-800 rounded-3xl p-6 shadow-xl shadow-stone-950/50 space-y-6 relative z-0">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-black text-lg text-white flex items-center gap-2">
-              Directorio de Suscriptores 
-              <span className="px-2.5 py-1 bg-stone-800 text-stone-300 rounded-lg text-xs">{filteredTenants.length}</span>
-            </h3>
-            <p className="text-xs text-stone-500 font-medium mt-1">
-              Control de acceso, facturación recurrente y asignación de planes.
-            </p>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead>
-              <tr className="border-b border-stone-800 text-stone-400 uppercase text-[10px] tracking-wider">
-                <th className="pb-4 font-black">Restaurante / Razón Social</th>
-                <th className="pb-4 font-black">Ubicación</th>
-                <th className="pb-4 font-black">Plan SaborAI</th>
-                <th className="pb-4 font-black">Cuota Mensual</th>
-                <th className="pb-4 font-black">Estado Suscripción</th>
-                <th className="pb-4 font-black text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-800/50">
-              {filteredTenants.map((tenant) => (
-                <tr key={tenant.id} className="hover:bg-stone-800/30 transition-colors group">
-                  <td className="py-4">
-                    <div className="font-black text-white flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-lg bg-stone-800 border border-stone-700 flex items-center justify-center text-xs text-stone-400 font-black group-hover:border-emerald-500/30 group-hover:text-emerald-400 transition-colors">
-                        {tenant.name.charAt(0)}
-                      </div>
-                      <div className="flex flex-col">
-                        <div className="flex items-center gap-2">
-                          <span>{tenant.name}</span>
-                          {tenant.id === currentTenant.id && (
-                            <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-[9px] font-black uppercase tracking-wider border border-emerald-500/30">
-                              Actual
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-stone-500 font-mono mt-0.5">
-                          {tenant.cedulaJuridica} • {tenant.phone}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="py-4 text-stone-400">
-                    <div className="flex items-center gap-1.5 text-xs font-medium">
-                      <MapPin className="w-3.5 h-3.5 text-stone-600 group-hover:text-emerald-500 transition-colors" />
-                      <span>{tenant.location}</span>
-                    </div>
-                  </td>
-
-                  <td className="py-4">
-                    <span className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider border ${
-                      tenant.plan === 'pro'
-                        ? 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                        : tenant.plan === 'multibranch'
-                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                        : 'bg-stone-800/50 text-stone-300 border-stone-700'
-                    }`}>
-                      {tenant.plan === 'express' ? 'Express (1 Term)' : tenant.plan === 'pro' ? 'Pro (Mesas & KDS)' : 'Multisucursal'}
-                    </span>
-                  </td>
-
-                  <td className="py-4 font-black text-stone-200">
-                    ₡{tenant.monthlyFee.toLocaleString()}
-                  </td>
-
-                  <td className="py-4">
-                    <div className="flex flex-col gap-1 items-start">
-                      <span className={`px-3 py-1.5 rounded-xl font-black text-[10px] uppercase tracking-wider inline-flex items-center gap-1.5 border ${
-                        tenant.status === 'ACTIVE'
-                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
-                          : tenant.status === 'PAST_DUE'
-                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]'
-                          : 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-[0_0_10px_rgba(244,63,94,0.1)]'
-                      }`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${tenant.status === 'ACTIVE' ? 'bg-emerald-400' : tenant.status === 'PAST_DUE' ? 'bg-amber-400 animate-pulse' : 'bg-rose-400'}`}></span>
-                        {tenant.status === 'ACTIVE' ? 'Activo' : tenant.status === 'PAST_DUE' ? 'En Gracia' : 'Suspendido'}
-                      </span>
-                      {tenant.status === 'PAST_DUE' && tenant.gracePeriodEndsAt && (
-                        <div className="text-[10px] text-amber-500/80 font-bold ml-1">
-                          Vence: {tenant.gracePeriodEndsAt}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="py-4 text-right space-x-2">
-                    <button
-                      onClick={() => setSelectedTenantForEdit(tenant)}
-                      className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 border border-stone-700 hover:border-stone-600 text-stone-200 hover:text-white rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5"
-                      title="Editar Plan y Gracia"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span>Gestionar</span>
-                    </button>
-
-                    <button
-                      onClick={() => onSelectTenant(tenant)}
-                      className="px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
-                      title="Abrir terminal con este restaurante"
-                    >
-                      Impersonar
-                    </button>
-
-                    {tenant.id !== currentTenant.id && (
-                      <button
-                        onClick={() => {
-                          setConfirmConfig({
-                            isOpen: true,
-                            title: '¿Eliminar restaurante registrado?',
-                            message: `¿Estás seguro de que deseas eliminar permanentemente el registro de "${tenant.name}"? Se perderán sus configuraciones locales.`,
-                            confirmLabel: 'Sí, eliminar restaurante',
-                            type: 'danger',
-                            onConfirm: () => {
-                              setTenantsList(prev => prev.filter(t => t.id !== tenant.id));
-                              setConfirmConfig(prev => ({ ...prev, isOpen: false }));
-                            }
-                          });
-                        }}
-                        className="p-1.5 text-stone-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors cursor-pointer"
-                        title="Eliminar restaurante"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-stone-800 text-stone-400 uppercase text-[10px] tracking-wider">
+                  <th scope="col" className="px-5 py-4 font-black">Restaurante</th>
+                  <th scope="col" className="px-5 py-4 font-black">Contacto</th>
+                  <th scope="col" className="px-5 py-4 font-black">Plan</th>
+                  <th scope="col" className="px-5 py-4 font-black">Onboarding</th>
+                  <th scope="col" className="px-5 py-4 font-black">Suscripción</th>
+                  <th scope="col" className="px-5 py-4 font-black">Sucursales y detalle</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ======================================================== */}
-      {/* DRAWER / MODAL: EDITAR PLAN Y GRACIA DE UN SUSCRIPTOR     */}
-      {/* ======================================================== */}
-      {selectedTenantForEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-md animate-in fade-in">
-          <div className="bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl shadow-emerald-900/20 border border-stone-800 space-y-6 relative overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="flex items-start justify-between pb-4 border-b border-stone-800 relative z-10">
-              <div>
-                <h3 className="text-xl font-black text-white tracking-tight">
-                  Gestión de Suscripción
-                </h3>
-                <p className="text-sm text-stone-400 mt-1 font-medium">
-                  {selectedTenantForEdit.name}
-                </p>
-                <div className="flex items-center gap-2 mt-2 text-xs text-stone-500 font-mono">
-                  <span>Cédula {selectedTenantForEdit.cedulaJuridica}</span>
-                  <span>•</span>
-                  <span>{selectedTenantForEdit.location}</span>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedTenantForEdit(null)}
-                className="p-2 text-stone-500 hover:text-white hover:bg-stone-800 rounded-xl transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Plan Selector */}
-            <div className="space-y-3 relative z-10">
-              <label className="block text-xs font-black text-stone-400 uppercase tracking-widest">
-                Nivel de Plan SaborAI
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {[
-                  { id: 'express', label: 'Express', price: '₡22,000' },
-                  { id: 'pro', label: 'Pro', price: '₡45,000' },
-                  { id: 'multibranch', label: 'Multi', price: '₡85,000+' }
-                ].map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleChangePlan(selectedTenantForEdit.id, p.id as SubscriptionPlan)}
-                    className={`p-4 rounded-2xl border text-center transition-all ${
-                      selectedTenantForEdit.plan === p.id
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/50'
-                        : 'bg-stone-950 text-stone-400 border-stone-800 hover:border-stone-700 hover:bg-stone-800/50'
-                    }`}
-                  >
-                    <div className="font-bold text-sm">{p.label}</div>
-                    <div className={`text-xs font-black mt-1 ${selectedTenantForEdit.plan === p.id ? 'text-white' : 'text-stone-500'}`}>{p.price}</div>
-                  </button>
+              </thead>
+              <tbody className="divide-y divide-stone-800/70">
+                {isLoadingPage ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-stone-400">Cargando datos del servidor…</td></tr>
+                ) : filteredRestaurants.length === 0 ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-stone-400">
+                    {restaurants.length === 0 ? 'No hay restaurantes registrados.' : 'No hay coincidencias en esta página.'}
+                  </td></tr>
+                ) : filteredRestaurants.map((restaurant) => (
+                  <React.Fragment key={restaurant.id}>
+                    <tr className="hover:bg-stone-800/30 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-xl bg-stone-800 border border-stone-700 flex items-center justify-center text-emerald-300 font-black">
+                            {(restaurant.name.trim()[0] || 'R').toLocaleUpperCase()}
+                          </span>
+                          <div>
+                            <div className="font-bold text-white">{restaurant.name}</div>
+                            <div className="text-[11px] text-stone-500 font-mono mt-0.5">{restaurant.id}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-stone-300">
+                        <div>{restaurant.email || 'Sin correo'}</div>
+                        <div className="text-xs text-stone-500 mt-1">{restaurant.phone || 'Sin teléfono'}</div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className="px-2.5 py-1 rounded-lg bg-stone-800 text-stone-200 border border-stone-700 text-xs font-bold">
+                          {planLabel(restaurant.plan)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        {restaurant.onboardingCompleted === null ? (
+                          <span className="text-stone-500 text-xs">Sin dato</span>
+                        ) : restaurant.onboardingCompleted ? (
+                          <span className="inline-flex items-center gap-1.5 text-emerald-300 text-xs font-bold"><CheckCircle2 className="w-4 h-4" />Completado</span>
+                        ) : (
+                          <span className="text-amber-300 text-xs font-bold">Pendiente</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex px-2.5 py-1 rounded-lg border text-xs font-bold ${subscriptionModeClass(restaurant.subscription?.mode ?? null)}`}>
+                          {subscriptionModeLabel(restaurant.subscription?.mode ?? null)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="text-stone-300 text-xs mb-2">
+                          {restaurant.branches.length.toLocaleString('es-CR')} {restaurant.branches.length === 1 ? 'sucursal' : 'sucursales'}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedRestaurantId((current) => current === restaurant.id ? null : restaurant.id)}
+                          aria-expanded={expandedRestaurantId === restaurant.id}
+                          aria-controls={`restaurant-details-${restaurant.id}`}
+                          className="text-emerald-300 hover:text-emerald-200 text-xs font-bold underline underline-offset-4"
+                        >
+                          {expandedRestaurantId === restaurant.id ? 'Ocultar detalle' : 'Ver detalle'}
+                        </button>
+                      </td>
+                    </tr>
+                    {expandedRestaurantId === restaurant.id && (
+                      <tr id={`restaurant-details-${restaurant.id}`} className="bg-stone-950/60">
+                        <td colSpan={6} className="px-5 py-5">
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <section className="rounded-2xl border border-stone-800 bg-stone-900/70 p-4" aria-label={`Suscripción de ${restaurant.name}`}>
+                              <h3 className="text-xs font-black uppercase tracking-wider text-stone-300">Detalle de suscripción</h3>
+                              {restaurant.subscription ? (
+                                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                                  <div><dt className="text-stone-500">Estado</dt><dd className="mt-1 text-stone-200 font-bold">{subscriptionModeLabel(restaurant.subscription.mode)}</dd></div>
+                                  <div><dt className="text-stone-500">Plan de suscripción</dt><dd className="mt-1 text-stone-200 font-bold">{planLabel(restaurant.subscription.plan)}</dd></div>
+                                  <div><dt className="text-stone-500">Activada</dt><dd className="mt-1 text-stone-200">{adminDateLabel(restaurant.subscription.activatedAt)}</dd></div>
+                                  <div><dt className="text-stone-500">Fin de prueba</dt><dd className="mt-1 text-stone-200">{adminDateLabel(restaurant.subscription.trialEndsAt)}</dd></div>
+                                </dl>
+                              ) : (
+                                <p className="mt-3 text-xs text-stone-500">No hay una suscripción vinculada a este restaurante.</p>
+                              )}
+                            </section>
+                            <section className="rounded-2xl border border-stone-800 bg-stone-900/70 p-4" aria-label={`Sucursales de ${restaurant.name}`}>
+                              <h3 className="text-xs font-black uppercase tracking-wider text-stone-300">Sucursales registradas</h3>
+                              {restaurant.branches.length > 0 ? (
+                                <ul className="mt-3 space-y-2">
+                                  {restaurant.branches.map((branch) => (
+                                    <li key={branch.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                      <span className="text-stone-200 font-semibold">
+                                        {branch.name}{branch.code ? <span className="text-stone-500 font-mono"> · {branch.code}</span> : null}
+                                      </span>
+                                      <span className={branch.isActive === true ? 'text-emerald-300' : branch.isActive === false ? 'text-stone-400' : 'text-stone-500'}>
+                                        {branch.isActive === true ? 'Activa' : branch.isActive === false ? 'Inactiva' : 'Sin estado'}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="mt-3 text-xs text-stone-500">No hay sucursales registradas.</p>
+                              )}
+                            </section>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
-              </div>
-            </div>
+              </tbody>
+            </table>
+          </div>
 
-            {/* Status Selector & Grace Period */}
-            <div className="space-y-3 relative z-10">
-              <label className="block text-xs font-black text-stone-400 uppercase tracking-widest">
-                Estado Operativo
-              </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm font-bold">
-                <button
-                  type="button"
-                  onClick={() => handleUpdateTenantStatus(selectedTenantForEdit.id, 'ACTIVE')}
-                  className={`py-3 rounded-xl border transition-all flex justify-center items-center gap-2 ${
-                    selectedTenantForEdit.status === 'ACTIVE'
-                      ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                      : 'bg-stone-950 text-stone-500 border-stone-800 hover:border-stone-700 hover:bg-stone-800/50'
-                  }`}
-                >
-                  {selectedTenantForEdit.status === 'ACTIVE' && <CheckCircle2 className="w-4 h-4" />}
-                  Activo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateTenantStatus(selectedTenantForEdit.id, 'PAST_DUE', '30/09/2026')}
-                  className={`py-3 rounded-xl border transition-all flex justify-center items-center gap-2 ${
-                    selectedTenantForEdit.status === 'PAST_DUE'
-                      ? 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                      : 'bg-stone-950 text-stone-500 border-stone-800 hover:border-stone-700 hover:bg-stone-800/50'
-                  }`}
-                >
-                  {selectedTenantForEdit.status === 'PAST_DUE' && <Clock className="w-4 h-4" />}
-                  Gracia (5d)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleUpdateTenantStatus(selectedTenantForEdit.id, 'CANCELLED')}
-                  className={`py-3 rounded-xl border transition-all flex justify-center items-center gap-2 ${
-                    selectedTenantForEdit.status === 'CANCELLED'
-                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/50 shadow-[0_0_15px_rgba(244,63,94,0.2)]'
-                      : 'bg-stone-950 text-stone-500 border-stone-800 hover:border-stone-700 hover:bg-stone-800/50'
-                  }`}
-                >
-                  {selectedTenantForEdit.status === 'CANCELLED' && <Ban className="w-4 h-4" />}
-                  Suspendido
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Actions for SuperAdmin */}
-            <div className="p-5 bg-stone-950 rounded-2xl border border-stone-800/80 space-y-3 relative z-10">
-              <span className="text-xs font-black text-stone-500 uppercase tracking-widest block">Acciones Rápidas</span>
-              <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    alert(`Enlace de cobro Tilopay generado para ${selectedTenantForEdit.name}: https://checkout.tilopay.me/pay/saborai_${selectedTenantForEdit.id}`);
-                  }}
-                  className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-emerald-500/30 rounded-xl font-bold text-stone-300 hover:text-emerald-400 transition-all flex justify-center items-center gap-2"
-                >
-                  <CreditCard className="w-4 h-4" />
-                  <span>Cobro Tilopay</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleUpdateTenantStatus(selectedTenantForEdit.id, 'ACTIVE');
-                    alert(`Pago SINPE Móvil registrado. La cuenta de ${selectedTenantForEdit.name} está activa.`);
-                  }}
-                  className="flex-1 py-2.5 bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-purple-500/30 rounded-xl font-bold text-stone-300 hover:text-purple-400 transition-all flex justify-center items-center gap-2"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span>Registrar SINPE</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="pt-4 flex justify-end relative z-10 border-t border-stone-800/50">
+          <div className="px-5 py-4 border-t border-stone-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-xs text-stone-500">Página {pageNumber.toLocaleString('es-CR')} de {pageCount.toLocaleString('es-CR')} · El filtro busca solo dentro de la página actual.</p>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
               <button
                 type="button"
-                onClick={() => setSelectedTenantForEdit(null)}
-                className="px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-teal-500 hover:to-emerald-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-emerald-900/30 transition-all hover:-translate-y-0.5"
+                onClick={() => void loadPage(Math.max(0, offset - PAGE_SIZE))}
+                disabled={offset === 0 || isLoadingPage}
+                aria-label="Página anterior"
+                className="p-2 rounded-lg bg-stone-800 border border-stone-700 text-stone-200 hover:bg-stone-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Guardar y Cerrar
+                <ChevronLeft className="w-4 h-4" />
               </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* MODAL: REGISTRAR NUEVO RESTAURANTE (SUPERADMIN)           */}
-      {/* ======================================================== */}
-      {isNewTenantModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/85 backdrop-blur-md animate-in fade-in">
-          <div className="bg-stone-900 rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl shadow-emerald-900/30 border border-stone-800 space-y-6 relative max-h-[90vh] overflow-y-auto">
-            
-            <div className="flex items-start justify-between pb-4 border-b border-stone-800">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                  <Building2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-white tracking-tight">Registrar Nuevo Restaurante</h3>
-                  <p className="text-xs text-stone-400">Crear cuenta comercial y asignar plan directamente</p>
-                </div>
-              </div>
               <button
-                onClick={() => setIsNewTenantModalOpen(false)}
-                className="p-2 text-stone-500 hover:text-white hover:bg-stone-800 rounded-xl transition-colors cursor-pointer"
+                type="button"
+                onClick={() => void loadPage(offset + PAGE_SIZE)}
+                disabled={!hasMore || isLoadingPage}
+                aria-label="Página siguiente"
+                className="p-2 rounded-lg bg-stone-800 border border-stone-700 text-stone-200 hover:bg-stone-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <X className="w-5 h-5" />
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!newTenantData.name?.trim()) return;
-
-                const plan = newTenantData.plan || 'pro';
-                const fee = plan === 'express' ? 22000 : plan === 'pro' ? 45000 : 85000;
-                const newTenant: TenantInfo = {
-                  id: `tenant_${Date.now()}`,
-                  name: newTenantData.name.trim(),
-                  cedulaJuridica: newTenantData.cedulaJuridica?.trim() || '3-101-000000',
-                  email: newTenantData.email?.trim() || 'admin@restaurante.cr',
-                  phone: newTenantData.phone?.trim() || '+506 2222-0000',
-                  location: newTenantData.location?.trim() || 'San José, Costa Rica',
-                  plan: plan,
-                  status: newTenantData.status || 'ACTIVE',
-                  currency: newTenantData.currency || 'CRC',
-                  monthlyFee: fee,
-                  taxRegime: newTenantData.taxRegime || 'TRADITIONAL',
-                  zones: ['Salón Principal', 'Terraza'],
-                  onboardingCompleted: true
-                };
-
-                setTenantsList(prev => [newTenant, ...prev]);
-                setIsNewTenantModalOpen(false);
-                setSyncFeedback(`¡Restaurante "${newTenant.name}" creado con éxito en Plan ${newTenant.plan.toUpperCase()}!`);
-                setTimeout(() => setSyncFeedback(null), 4000);
-              }}
-              className="space-y-4"
-            >
-              <div>
-                <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                  Nombre Comercial del Restaurante *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ej. Marisquería & Grill del Puerto"
-                  value={newTenantData.name || ''}
-                  onChange={(e) => setNewTenantData(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Cédula Jurídica / Física (DGT) *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ej. 3-101-445566"
-                    value={newTenantData.cedulaJuridica || ''}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, cedulaJuridica: e.target.value }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Teléfono / WhatsApp *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder="Ej. +506 8888-9999"
-                    value={newTenantData.phone || ''}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, phone: e.target.value }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Correo Electrónico *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="admin@restaurante.cr"
-                    value={newTenantData.email || ''}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, email: e.target.value }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Ubicación / Provincia
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Ej. Escazú, San José"
-                    value={newTenantData.location || ''}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, location: e.target.value }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Plan Asignado *
-                  </label>
-                  <select
-                    value={newTenantData.plan || 'pro'}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, plan: e.target.value as SubscriptionPlan }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-bold"
-                  >
-                    <option value="express">Express (₡22,000/mes • 1 terminal)</option>
-                    <option value="pro">Pro (₡45,000/mes • Mesas, KDS, IA)</option>
-                    <option value="multibranch">Multisucursal (₡85,000/mes • Cadenas)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-300 uppercase tracking-wider mb-1.5">
-                    Régimen Tributario
-                  </label>
-                  <select
-                    value={newTenantData.taxRegime || 'TRADITIONAL'}
-                    onChange={(e) => setNewTenantData(prev => ({ ...prev, taxRegime: e.target.value as any }))}
-                    className="w-full bg-stone-950 border border-stone-800 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500 font-bold"
-                  >
-                    <option value="TRADITIONAL">Tradicional (13% IVA)</option>
-                    <option value="SIMPLIFIED">Simplificado (0% IVA)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3 border-t border-stone-800">
-                <button
-                  type="button"
-                  onClick={() => setIsNewTenantModalOpen(false)}
-                  className="px-5 py-2.5 rounded-xl border border-stone-800 hover:bg-stone-800 text-stone-400 font-bold text-xs cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white rounded-xl text-xs font-black shadow-lg shadow-emerald-900/30 transition-all cursor-pointer flex items-center gap-2"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Crear Restaurante</span>
-                </button>
-              </div>
-            </form>
-
           </div>
-        </div>
-      )}
-
-      {/* Modal de confirmación elegante */}
-      <ConfirmDialog
-        isOpen={confirmConfig.isOpen}
-        title={confirmConfig.title}
-        message={confirmConfig.message}
-        confirmLabel={confirmConfig.confirmLabel}
-        cancelLabel={confirmConfig.cancelLabel}
-        type={confirmConfig.type}
-        onConfirm={confirmConfig.onConfirm}
-        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
-      />
-
-      </div>
+        </section>
+      </main>
     </div>
   );
 };

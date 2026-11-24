@@ -4,16 +4,16 @@
 
   <!-- Página principal / Landing -->
   <url>
-    <loc>https://pos.saborai.site/</loc>
+    <loc>https://saborai.site/</loc>
     <lastmod>2026-09-21</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="es-CR" href="https://pos.saborai.site/" />
+    <xhtml:link rel="alternate" hreflang="es-CR" href="https://saborai.site/" />
   </url>
 
   <!-- Sección Precios (ancla) -->
   <url>
-    <loc>https://pos.saborai.site/#pricing</loc>
+    <loc>https://saborai.site/#pricing</loc>
     <lastmod>2026-09-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
@@ -21,7 +21,7 @@
 
   <!-- Sección Funciones (ancla) -->
   <url>
-    <loc>https://pos.saborai.site/#features</loc>
+    <loc>https://saborai.site/#features</loc>
     <lastmod>2026-09-21</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>

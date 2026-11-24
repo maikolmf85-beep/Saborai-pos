@@ -2332,11 +2332,7 @@ export function App() {
         </div>
       }>
         <div className="h-screen w-screen overflow-y-auto">
-          <SuperAdminBackoffice 
-            currentTenant={tenant}
-            onSelectTenant={(t) => handleUpdateTenant(t)}
-            onOpenNotion={() => setIsNotionModalOpen(true)}
-          />
+          <SuperAdminBackoffice />
         </div>
       </Suspense>
     );
@@ -2738,7 +2734,6 @@ export function App() {
         onThemeChange={handlePosThemeChange}
         onUpdateTenant={handleUpdateTenant}
         onUpdateTenantStatus={handleUpdateTenantStatus}
-        onSelectTenant={(t) => handleUpdateTenant(t)}
         onNavigateToLanding={() => setActiveTab('landing')}
         onOpenNotion={() => setIsNotionModalOpen(true)}
         onOpenStaffModal={() => setIsStaffModalOpen(true)}

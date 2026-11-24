@@ -10,7 +10,13 @@
     <meta name="keywords" content="POS Costa Rica, punto de venta restaurantes Costa Rica, software restaurante Costa Rica, facturación electrónica Hacienda v4.3, Tilopay pagos, KDS cocina, sistema de comandas, software gastronómico, Saborai POS, inventario restaurante, escandallos, comanda electrónica" />
     <meta name="author" content="Saborai POS Costa Rica" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
-    <link rel="canonical" href="https://pos.saborai.site/" />
+    <link rel="canonical" href="https://saborai.site/" />
+    <script>
+      if (window.location.hostname.toLowerCase() === 'admin.saborai.site') {
+        document.querySelector('meta[name="robots"]')?.setAttribute('content', 'noindex, nofollow');
+        document.querySelector('link[rel="canonical"]')?.remove();
+      }
+    </script>
 
     <!-- ═══ Geo & Language ════════════════════════════════════════════════ -->
     <meta name="geo.region" content="CR" />
@@ -20,14 +26,14 @@
 
     <!-- ═══ Open Graph / Facebook ════════════════════════════════════════ -->
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://pos.saborai.site/" />
+    <meta property="og:url" content="https://saborai.site/" />
     <meta property="og:site_name" content="Saborai POS" />
     <meta property="og:title" content="Saborai POS — Software Gastronómico Inteligente para Restaurantes en Costa Rica" />
     <meta property="og:description" content="Automatiza tu restaurante con IA, facturación Hacienda v4.3, KDS, control de recetas y pagos con Tilopay. Prueba gratis 14 días." />
-    <meta property="og:image" content="https://pos.saborai.site/og-image.png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Saborai POS — Software de punto de venta para restaurantes en Costa Rica" />
+    <meta property="og:image" content="https://saborai.site/assets/logos/brand-refresh/NewLogoPrincipal.png" />
+    <meta property="og:image:width" content="1060" />
+    <meta property="og:image:height" content="261" />
+    <meta property="og:image:alt" content="Logotipo de Saborai POS" />
     <meta property="og:locale" content="es_CR" />
 
     <!-- ═══ Twitter / X Cards ════════════════════════════════════════════ -->
@@ -36,8 +42,8 @@
     <meta name="twitter:creator" content="@SaboraiPOS" />
     <meta name="twitter:title" content="Saborai POS — Software Gastronómico con IA para Costa Rica" />
     <meta name="twitter:description" content="Facturación Hacienda v4.3, KDS, escandallos, comandas y pagos Tilopay. El POS más avanzado de Costa Rica." />
-    <meta name="twitter:image" content="https://pos.saborai.site/og-image.png" />
-    <meta name="twitter:image:alt" content="Saborai POS dashboard" />
+    <meta name="twitter:image" content="https://saborai.site/assets/logos/brand-refresh/NewLogoPrincipal.png" />
+    <meta name="twitter:image:alt" content="Logotipo de Saborai POS" />
 
     <!-- ═══ Structured Data — Organization ═══════════════════════════════ -->
     <script type="application/ld+json">
@@ -46,7 +52,7 @@
       "@type": "SoftwareApplication",
       "name": "Saborai POS",
       "description": "Software de punto de venta gastronómico con Inteligencia Artificial para restaurantes en Costa Rica. Incluye facturación electrónica Hacienda v4.3, KDS, control de recetas, inventario y pagos con Tilopay.",
-      "url": "https://pos.saborai.site",
+      "url": "https://saborai.site",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web, Android, iOS",
       "offers": [
@@ -87,8 +93,8 @@
       "publisher": {
         "@type": "Organization",
         "name": "Saborai POS",
-        "url": "https://pos.saborai.site",
-        "logo": "https://pos.saborai.site/assets/logos/brand-refresh/NewLogoPrincipal.png",
+        "url": "https://saborai.site",
+        "logo": "https://saborai.site/assets/logos/brand-refresh/NewLogoPrincipal.png",
         "contactPoint": {
           "@type": "ContactPoint",
           "contactType": "customer service",
