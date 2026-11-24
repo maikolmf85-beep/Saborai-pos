@@ -38,6 +38,10 @@
       "destination": "/api/tenant?action=profile"
     },
     {
+      "source": "/api/tenant/floorplan",
+      "destination": "/api/tenant?action=floorplan"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

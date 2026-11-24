@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, lazy, Suspense } from 'react';
 import { useSessionTenantState } from './hooks/useSessionTenantState';
 import { Navbar, ActiveTab } from './components/Navbar';
 import { NyzaSetupGuide } from './components/NyzaSetupGuide';
@@ -51,11 +51,13 @@ import { validateNyzaAction } from './services/nyzaActionValidation';
 import { runTenantBoundToolSequence } from './services/nyzaToolSequence';
 import { getTenantItem, hasTenantItem, isLocalDemoTenantId, migrateLegacyDataToTenant, setActiveTenantId, setTenantItem, startCleanDemoSession } from './services/tenantStorage';
 import { DEMO_TENANT_ID } from './services/demoSeed';
-import { isCloudTenantUuid, projectTableLayout, readTableLayout, seedTableLayoutIfMissing, subscribeToTableLayout, tableLayoutSignature, upsertTableLayout, validateTableLayout, TableLayoutItem } from './services/tableLayoutCloudService';
-import { mergeConcurrentTableLayouts } from './services/tableLayoutConcurrency';
+import { isCloudTenantUuid } from './services/tableLayoutCloudService';
+import { projectTableLayout, tableLayoutSignature, validateTableLayout, type TableLayoutItem } from './services/tableLayoutValidation';
+import { mergeConcurrentTableLayouts, mergeConcurrentTenantZones } from './services/tableLayoutConcurrency';
 import { resolveTableLayoutAfterCloudRead, restoreTablePositionsFromSnapshot, TABLE_LAYOUT_SYNC_WARNING_EVENT, TABLE_LAYOUT_SYNC_WARNING_KEY, TABLE_LAYOUT_SYNC_WARNING_MESSAGE } from './services/tableLayoutPersistence';
 import { isNewerTableLayoutTimestamp } from './services/tableLayoutFreshness';
-import { normalizeTenantZones, persistTenantZones, resolveTenantZones } from './services/tenantZones';
+import { readBranchFloorplan, persistBranchFloorplan, subscribeToBranchFloorplan, type BranchFloorplanRecord } from './services/branchFloorplanService';
+import { normalizeTenantZones, resolveTenantZones } from './services/tenantZones';
 import { readTableSnapshot } from './services/tableSync';
 import { getTransferableZonesForBranch, transferTableAccount } from './services/tableAccountTransfer';
 import { isReservationReminderDue } from './services/tableReservationLogic';
@@ -137,14 +139,19 @@ function getAccountUserId(fallback?: string | null): string | null {
   }
 }
 
-function syncTenantZonesWithServer(zones: string[]): Promise<string[]> {
+function getActiveFloorplanBranchId(): string {
   try {
-    const token = localStorage.getItem('saborai_token');
-    if (!token) return Promise.reject(new Error('No hay una sesión autenticada para guardar los salones.'));
-    return persistTenantZones(zones, token);
-  } catch (error) {
-    return Promise.reject(error);
+    const register = cashShiftService.getCurrentRegister();
+    if (typeof register.branchId === 'string' && register.branchId.trim()) return register.branchId.trim();
+    const shift = cashShiftService.getActiveShift();
+    return typeof shift?.branchId === 'string' ? shift.branchId.trim() : '';
+  } catch {
+    return '';
   }
+}
+
+function branchFloorplanKey(key: string, branchId: string): string {
+  return `${key}:${branchId}`;
 }
 
 export function App() {
@@ -403,7 +410,11 @@ export function App() {
   const broadcastMenuItemsRef = useRef<((items: MenuItem[]) => void) | null>(null);
 
   const handleUpdateTenant = (updated: TenantInfo, skipBroadcast = false) => {
-    const safeUpdated = withPublicHaciendaConfig(updated);
+    const branchId = getActiveFloorplanBranchId();
+    const branchScopedUpdate = skipBroadcast && isCloudTenantUuid(updated.id) && branchId
+      ? { ...updated, zones: getTenantItem<string[]>(branchFloorplanKey('zones', branchId), updated.id) ?? tenant.zones }
+      : updated;
+    const safeUpdated = withPublicHaciendaConfig(branchScopedUpdate);
     const shouldPersistZones = !skipBroadcast
       && JSON.stringify(normalizeTenantZones(updated.zones)) !== JSON.stringify(normalizeTenantZones(tenant.zones));
     activeTenantIdRef.current = safeUpdated.id;
@@ -413,26 +424,18 @@ export function App() {
       broadcastTenantRef.current(safeUpdated);
     }
     try {
-      localStorage.setItem('saborai_tenant', JSON.stringify(safeUpdated));
-      // Persistir también en el almacenamiento aislado por tenant. El perfil
-      // contiene los salones y categorías, que deben sobrevivir al logout y
-      // no depender únicamente del estado global de la sesión.
-      setTenantItem('tenant_profile', safeUpdated, safeUpdated.id);
-      setTenantItem('zones', safeUpdated.zones || [], safeUpdated.id);
-      // Solo una edición local de la lista envía un PATCH; una hidratación remota
-      // nunca reescribe una copia posiblemente obsoleta en el servidor.
-      if (shouldPersistZones && !isLocalDemoTenantId(safeUpdated.id)) {
-        void syncTenantZonesWithServer(safeUpdated.zones || []).catch(error => {
-          console.warn('[SaborAI] No se pudieron guardar los salones:', error);
-          addNotification({
-            id: `zones_sync_error_${Date.now()}`,
-            type: 'SYNC_ERROR',
-            title: 'No se confirmaron los salones',
-            message: 'El servidor no confirmó el cambio. Revisa tu conexión antes de volver a intentarlo.',
-            timestamp: new Date()
-          });
-        });
+      const cloudTenant = isCloudTenantUuid(safeUpdated.id);
+      const profileForStorage = cloudTenant ? { ...safeUpdated, zones: [] } : safeUpdated;
+      localStorage.setItem('saborai_tenant', JSON.stringify(profileForStorage));
+      setTenantItem('tenant_profile', profileForStorage, safeUpdated.id);
+      if (cloudTenant && branchId) {
+        setTenantItem(branchFloorplanKey('zones', branchId), safeUpdated.zones || [], safeUpdated.id);
+      } else if (!cloudTenant) {
+        setTenantItem('zones', safeUpdated.zones || [], safeUpdated.id);
       }
+      // Las ediciones cloud de salones se guardan junto al plano en el efecto
+      // de sincronización por sucursal; no se envían a tenants.zones.
+      if (shouldPersistZones && cloudTenant && !branchId) notifyLayoutSyncFailure();
     } catch {}
   };
 
@@ -600,6 +603,7 @@ export function App() {
   }, [tenant.id]);
 
   const [tables, setTables] = useState<Table[]>(() => {
+    if (isCloudTenantUuid(tenant.id)) return [];
     try {
       const scoped = getTenantItem<Table[]>('tables');
       if (Array.isArray(scoped)) return normalizeTablePositions(scoped);
@@ -610,17 +614,23 @@ export function App() {
   const [hydratedSnapshotTenantId, setHydratedSnapshotTenantId] = useState<string | null>(null);
   const tablesHydrated = !isLoadingAuth && localDbReady && hydratedSnapshotTenantId === tenant.id;
   const tablesRef = useRef<Table[]>(tables);
+  const tenantRef = useRef(tenant);
+  useEffect(() => {
+    tenantRef.current = tenant;
+  }, [tenant]);
   useEffect(() => {
     tablesRef.current = tables;
   }, [tables]);
   const tableLayoutSyncRef = useRef<{
     tenantId: string;
+    branchId: string;
     ready: boolean;
     signature: string;
     remoteUpdatedAt: string | null;
     remoteLayout: TableLayoutItem[] | null;
-  }>({ tenantId: '', ready: false, signature: '', remoteUpdatedAt: null, remoteLayout: null });
-  const offlineSnapshotBaseRef = useRef<{ tenantId: string; layout: TableLayoutItem[] } | null>(null);
+    remoteZones: string[] | null;
+  }>({ tenantId: '', branchId: '', ready: false, signature: '', remoteUpdatedAt: null, remoteLayout: null, remoteZones: null });
+  const offlineSnapshotBaseRef = useRef<{ tenantId: string; branchId: string; layout: TableLayoutItem[] } | null>(null);
   const layoutWriteTimerRef = useRef<number | null>(null);
   const layoutReadRetryTimerRef = useRef<number | null>(null);
   const pendingLayoutSignatureRef = useRef<string | null>(null);
@@ -630,11 +640,12 @@ export function App() {
 
   const handleUpdateTables = (updatedTables: Table[], skipBroadcast = false) => {
     let nextTables = updatedTables;
+    const branchId = getActiveFloorplanBranchId();
     if (skipBroadcast) {
       const currentById = new Map(tablesRef.current.map(table => [table.id, table]));
       const syncState = tableLayoutSyncRef.current;
-      if (syncState.tenantId === tenant.id && syncState.remoteLayout) {
-        // The incoming snapshot owns membership and operational fields; Supabase
+      if (syncState.tenantId === tenant.id && syncState.branchId === branchId && syncState.remoteLayout) {
+        // The incoming snapshot owns membership and operational fields; the branch API
         // contributes geometry only for IDs that still exist in that snapshot.
         const remoteById = new Map(syncState.remoteLayout.map(item => [item.id, item]));
         nextTables = updatedTables.map(incoming => {
@@ -652,7 +663,7 @@ export function App() {
             : incoming;
         });
       }
-      if (syncState.tenantId === tenant.id) {
+      if (syncState.tenantId === tenant.id && syncState.branchId === branchId) {
         // Broadcast/realtime hydration is not a local edit and must never echo to the DB.
         syncState.signature = tableLayoutSignature(projectTableLayout(nextTables));
       }
@@ -660,13 +671,31 @@ export function App() {
     tablesRef.current = nextTables;
     setTables(nextTables);
     if (!skipBroadcast) broadcastTables(nextTables);
+    if (!skipBroadcast && isCloudTenantUuid(tenant.id) && !branchId) notifyLayoutSyncFailure();
     try {
-      // Keep the newest geometry synchronously available for a reload while the cloud write debounces.
-      setTenantItem('tables', nextTables, tenant.id);
+      if (!isCloudTenantUuid(tenant.id)) setTenantItem('tables', nextTables, tenant.id);
+      else if (branchId) setTenantItem(branchFloorplanKey('tables', branchId), nextTables, tenant.id);
     } catch {}
   };
 
-  const [shiftsVersion, setShiftsVersion] = useState(0);
+  const [, setShiftsVersion] = useState(0);
+  const activeFloorplanBranchId = getActiveFloorplanBranchId();
+
+  useLayoutEffect(() => {
+    if (!isCloudTenantUuid(tenant.id)) return;
+    const branchTables = activeFloorplanBranchId
+      ? getTenantItem<Table[]>(branchFloorplanKey('tables', activeFloorplanBranchId), tenant.id)
+      : null;
+    const nextTables = normalizeTablePositions(Array.isArray(branchTables) ? branchTables : []);
+    tablesRef.current = nextTables;
+    setTables(nextTables);
+    const branchZones = activeFloorplanBranchId
+      ? getTenantItem<string[]>(branchFloorplanKey('zones', activeFloorplanBranchId), tenant.id)
+      : [];
+    setTenant(previous => previous.id === tenant.id
+      ? { ...previous, zones: normalizeTenantZones(branchZones) }
+      : previous);
+  }, [tenant.id, activeFloorplanBranchId]);
 
   // Cada sesión usa su propio espacio operativo. Al cambiar de tenant se
   // descarta el estado en memoria anterior y se carga únicamente el nuevo.
@@ -710,6 +739,7 @@ export function App() {
   // Realtime Sync Hook
   const { broadcastTables, broadcastKdsOrders, broadcastMenuItems, broadcastShifts, broadcastTenant, broadcastStaff } = useRealtimeSync(
     tenant.id,
+    activeFloorplanBranchId,
     tablesHydrated,
     handleUpdateTables,
     handleUpdateKdsOrdersRealtime,
@@ -720,12 +750,21 @@ export function App() {
     () => ({
       shiftsMap: cashShiftService.getAllActiveShiftsMap(),
       tables,
+      branchId: activeFloorplanBranchId,
+      floorplanReady: tableLayoutSyncRef.current.tenantId === tenant.id
+        && tableLayoutSyncRef.current.branchId === activeFloorplanBranchId
+        && tableLayoutSyncRef.current.ready,
       kdsOrders,
       menuItems,
       tenant,
       staff: staffList,
       tablesHydrated,
-      hasLocalData: hasTenantItem('menu', tenant.id) || hasTenantItem('tables', tenant.id) || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0 || hasTenantItem('tenant_profile', tenant.id)
+      hasLocalData: hasTenantItem('menu', tenant.id)
+        || (isCloudTenantUuid(tenant.id)
+          ? Boolean(activeFloorplanBranchId && hasTenantItem(branchFloorplanKey('tables', activeFloorplanBranchId), tenant.id))
+          : hasTenantItem('tables', tenant.id))
+        || Object.keys(cashShiftService.getAllActiveShiftsMap()).length > 0
+        || hasTenantItem('tenant_profile', tenant.id)
     })
   );
 
@@ -736,21 +775,47 @@ export function App() {
     broadcastMenuItemsRef.current = broadcastMenuItems;
   }, [broadcastTenant, broadcastStaff, broadcastKdsOrders, broadcastMenuItems]);
 
-  // The layout row is the cloud authority when present. Operational state
-  // (status/activeOrder) is always kept from the current device's tables.
+  // El plano y los salones se cargan y guardan juntos, con el alcance de la caja/sucursal activa.
   useEffect(() => {
     const tenantId = tenant.id;
+    const branchId = activeFloorplanBranchId;
+    const cloudTenant = isCloudTenantUuid(tenantId);
     let cancelled = false;
+    const scopedTables = cloudTenant && branchId
+      ? getTenantItem<Table[]>(branchFloorplanKey('tables', branchId), tenantId)
+      : null;
+    const scopedZones = cloudTenant && branchId
+      ? getTenantItem<string[]>(branchFloorplanKey('zones', branchId), tenantId)
+      : null;
+    const initialTables = cloudTenant
+      ? normalizeTablePositions(Array.isArray(scopedTables) ? scopedTables : [])
+      : tablesRef.current;
+    const initialBranchLayout = projectTableLayout(initialTables);
+    const initialBranchZones = normalizeTenantZones(scopedZones);
+
+    if (cloudTenant) {
+      tablesRef.current = initialTables;
+      setTables(initialTables);
+      setTenant(previous => previous.id === tenantId ? { ...previous, zones: initialBranchZones } : previous);
+    }
+
     const syncState = {
       tenantId,
+      branchId,
       ready: false,
       signature: tableLayoutSignature(projectTableLayout(tablesRef.current)),
       remoteUpdatedAt: null as string | null,
-      remoteLayout: null as TableLayoutItem[] | null
+      remoteLayout: null as TableLayoutItem[] | null,
+      remoteZones: null as string[] | null
     };
     tableLayoutSyncRef.current = syncState;
-    const cachedLayoutBase = validateTableLayout(getTenantItem<unknown>('table_layout_base', tenantId));
-    offlineSnapshotBaseRef.current = cachedLayoutBase ? { tenantId, layout: cachedLayoutBase } : null;
+    const cachedLayoutBase = validateTableLayout(getTenantItem<unknown>(
+      cloudTenant && branchId ? branchFloorplanKey('table_layout_base', branchId) : 'table_layout_base',
+      tenantId
+    ));
+    offlineSnapshotBaseRef.current = cachedLayoutBase
+      ? { tenantId, branchId, layout: cachedLayoutBase }
+      : null;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
     layoutWriteTimerRef.current = null;
     if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
@@ -759,76 +824,95 @@ export function App() {
     pendingLayoutSignatureRef.current = null;
     layoutRetryAttemptsRef.current = 0;
 
-    const legacyTables = migrateLegacyTablePositions(tablesRef.current, tenantId);
-    const legacySignature = tableLayoutSignature(projectTableLayout(legacyTables));
-    if (legacySignature !== syncState.signature) {
-      tablesRef.current = legacyTables;
-      syncState.signature = legacySignature;
-      setTables(legacyTables);
+    const localTables = cloudTenant ? initialTables : migrateLegacyTablePositions(tablesRef.current, tenantId);
+    if (tableLayoutSignature(projectTableLayout(localTables)) !== syncState.signature) {
+      tablesRef.current = localTables;
+      syncState.signature = tableLayoutSignature(projectTableLayout(localTables));
+      setTables(localTables);
     }
 
-    const applyRemoteLayout = (record: { layout: TableLayoutItem[]; updatedAt: string | null }) => {
-      if (cancelled || tableLayoutSyncRef.current !== syncState) return;
+    if (!cloudTenant) {
+      syncState.ready = true;
+      setTenantItem('tables', localTables, tenantId);
+      clearLegacyTablePositions(tenantId);
+      return () => { cancelled = true; };
+    }
+
+    if (!branchId) {
+      // No usar jamás el caché tenant-global cuando la terminal aún no tiene sucursal.
+      return () => { cancelled = true; };
+    }
+
+    const applyRemoteFloorplan = (record: BranchFloorplanRecord) => {
+      if (cancelled || tableLayoutSyncRef.current !== syncState || record.branchId !== branchId) return;
       if (syncState.remoteUpdatedAt
         && !isNewerTableLayoutTimestamp(record.updatedAt, syncState.remoteUpdatedAt)) return;
+
       const currentLayout = projectTableLayout(tablesRef.current);
-      const currentSignature = tableLayoutSignature(currentLayout);
+      const currentLayoutSignature = tableLayoutSignature(currentLayout);
       const offlineBase = offlineSnapshotBaseRef.current?.tenantId === tenantId
+        && offlineSnapshotBaseRef.current.branchId === branchId
         ? offlineSnapshotBaseRef.current.layout
         : null;
-      const knownBase = syncState.remoteLayout ?? offlineBase;
-      const hasLocalChanges = knownBase !== null
-        && currentSignature !== tableLayoutSignature(knownBase);
+      const knownBase = syncState.remoteLayout ?? offlineBase ?? initialBranchLayout;
+      const hasLocalLayoutChanges = knownBase !== null
+        && currentLayoutSignature !== tableLayoutSignature(knownBase);
       const resolvedLayout = resolveTableLayoutAfterCloudRead(knownBase, currentLayout, record.layout);
       if (offlineBase) offlineSnapshotBaseRef.current = null;
+
+      const knownBaseZones = syncState.remoteZones
+        ?? getTenantItem<string[]>(branchFloorplanKey('zones_base', branchId), tenantId)
+        ?? initialBranchZones;
+      const currentZones = normalizeTenantZones(tenantRef.current.id === tenantId ? tenantRef.current.zones : []);
+      const resolvedZones = knownBaseZones
+        ? mergeConcurrentTenantZones(knownBaseZones, currentZones, record.zones)
+        : record.zones;
+      const hasLocalZoneChanges = Boolean(knownBaseZones)
+        && JSON.stringify(currentZones) !== JSON.stringify(normalizeTenantZones(knownBaseZones));
+
       syncState.remoteUpdatedAt = record.updatedAt || syncState.remoteUpdatedAt;
       syncState.remoteLayout = record.layout;
-      setTenantItem('table_layout_base', record.layout, tenantId);
-      clearLegacyTablePositions(tenantId);
+      syncState.remoteZones = record.zones;
+      syncState.signature = tableLayoutSignature(record.layout);
+      syncState.ready = true;
+      try {
+        setTenantItem(branchFloorplanKey('table_layout_base', branchId), record.layout, tenantId);
+        setTenantItem(branchFloorplanKey('zones_base', branchId), record.zones, tenantId);
+      } catch {}
+
       if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
       layoutReadRetryTimerRef.current = null;
       layoutReadRetryAttemptsRef.current = 0;
-      const next = mergeCloudLayoutIntoTables(tablesRef.current, resolvedLayout);
-      const signature = tableLayoutSignature(projectTableLayout(next));
-      // La firma remota sirve como base para que el efecto de escritura vuelva
-      // a persistir únicamente las ediciones locales no conflictivas.
-      syncState.signature = tableLayoutSignature(record.layout);
-      syncState.ready = true;
-      if (signature === syncState.signature) clearTableLayoutSyncWarning();
       if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
       layoutWriteTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
       layoutRetryAttemptsRef.current = 0;
-      if (hasLocalChanges || signature !== currentSignature) {
-        tablesRef.current = next;
-        setTables(next);
+
+      const nextTables = mergeCloudLayoutIntoTables(tablesRef.current, resolvedLayout);
+      const nextLayoutSignature = tableLayoutSignature(projectTableLayout(nextTables));
+      if (hasLocalLayoutChanges || nextLayoutSignature !== currentLayoutSignature) {
+        tablesRef.current = nextTables;
+        setTables(nextTables);
       }
-      try { setTenantItem('tables', next, tenantId); } catch {}
+      setTenant(previous => previous.id === tenantId ? { ...previous, zones: resolvedZones } : previous);
+      try {
+        setTenantItem(branchFloorplanKey('tables', branchId), nextTables, tenantId);
+        setTenantItem(branchFloorplanKey('zones', branchId), resolvedZones, tenantId);
+      } catch {}
+      if (nextLayoutSignature === syncState.signature && !hasLocalZoneChanges) clearTableLayoutSyncWarning();
     };
 
-    if (!isCloudTenantUuid(tenantId)) {
-      // Demo/local tenants (including tenant_demo_*) remain entirely local.
-      syncState.ready = true;
-      setTenantItem('tables', legacyTables, tenantId);
-      clearLegacyTablePositions(tenantId);
-      return () => { cancelled = true; };
-    }
-
-    const cloudClient = supabaseClient;
-    if (!cloudClient) {
-      syncState.ready = true;
-      syncState.signature = tableLayoutSignature(projectTableLayout(tablesRef.current));
-      notifyLayoutSyncFailure();
-      return () => { cancelled = true; };
-    }
-
-    // Wait until both the app session and offline snapshot have hydrated. Otherwise
-    // a transient auth read can make the default grid look like a confirmed layout.
+    // Un tenant cloud sin sucursal no puede leer ni guardar el plano global/antiguo.
     if (isLoadingAuth || hydratedSnapshotTenantId !== tenantId) {
       return () => { cancelled = true; };
     }
 
-    const unsubscribe = subscribeToTableLayout(tenantId, applyRemoteLayout);
+    const unsubscribe = subscribeToBranchFloorplan(
+      tenantId,
+      branchId,
+      applyRemoteFloorplan,
+      () => { if (syncState.ready) notifyLayoutSyncFailure(); }
+    );
     let readInFlight = false;
     const scheduleInitialReadRetry = () => {
       if (cancelled || tableLayoutSyncRef.current !== syncState || syncState.ready) return;
@@ -837,43 +921,24 @@ export function App() {
       const retryDelay = Math.min(1_000 * 2 ** exponent, 60_000);
       layoutReadRetryTimerRef.current = window.setTimeout(() => {
         layoutReadRetryTimerRef.current = null;
-        void loadInitialLayout();
+        void loadInitialFloorplan();
       }, retryDelay);
     };
-    const loadInitialLayout = async () => {
+    const loadInitialFloorplan = async () => {
       if (cancelled || readInFlight || syncState.ready) return;
       readInFlight = true;
       try {
-        await cloudClient.auth.getSession();
-        const initial = await readTableLayout(tenantId);
+        const initial = await readBranchFloorplan(tenantId, branchId);
         if (cancelled || tableLayoutSyncRef.current !== syncState) return;
-        if (!initial.available) {
-          // A failed read is not evidence that the row is absent: keep local positions and retry.
-          notifyLayoutSyncFailure();
-          scheduleInitialReadRetry();
-          return;
-        }
-        if (initial.exists && initial.record) {
-          if (!syncState.remoteUpdatedAt
-            || isNewerTableLayoutTimestamp(initial.record.updatedAt, syncState.remoteUpdatedAt)) applyRemoteLayout(initial.record);
-          else syncState.ready = true;
-          return;
-        }
-
-        // Seed only after an available read confirms no row, and only after the
-        // synchronous cache and IndexedDB snapshot have had a chance to hydrate.
-        const seeded = await seedTableLayoutIfMissing(
-          tenantId,
-          projectTableLayout(tablesRef.current)
-        );
-        if (cancelled || tableLayoutSyncRef.current !== syncState) return;
-        if (seeded.available && seeded.exists && seeded.record) {
-          if (!syncState.remoteUpdatedAt
-            || isNewerTableLayoutTimestamp(seeded.record.updatedAt, syncState.remoteUpdatedAt)) applyRemoteLayout(seeded.record);
-          else syncState.ready = true;
+        if (initial.updatedAt === null && ((scopedTables?.length || 0) > 0 || (scopedZones?.length || 0) > 0)) {
+          const seeded = await persistBranchFloorplan(tenantId, branchId, initial, {
+            zones: normalizeTenantZones(scopedZones),
+            layout: projectTableLayout(tablesRef.current)
+          });
+          if (cancelled || tableLayoutSyncRef.current !== syncState) return;
+          applyRemoteFloorplan(seeded);
         } else {
-          notifyLayoutSyncFailure();
-          scheduleInitialReadRetry();
+          applyRemoteFloorplan(initial);
         }
       } catch {
         notifyLayoutSyncFailure();
@@ -886,10 +951,10 @@ export function App() {
       if (layoutReadRetryTimerRef.current !== null) window.clearTimeout(layoutReadRetryTimerRef.current);
       layoutReadRetryTimerRef.current = null;
       layoutReadRetryAttemptsRef.current = 0;
-      void loadInitialLayout();
+      void loadInitialFloorplan();
     };
     window.addEventListener('online', handleOnline);
-    void loadInitialLayout();
+    void loadInitialFloorplan();
     return () => {
       cancelled = true;
       unsubscribe?.();
@@ -900,78 +965,106 @@ export function App() {
       layoutReadRetryTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
     };
-  }, [tenant.id, isLoadingAuth, hydratedSnapshotTenantId, clearTableLayoutSyncWarning, notifyLayoutSyncFailure]);
+  }, [tenant.id, activeFloorplanBranchId, isLoadingAuth, hydratedSnapshotTenantId, clearTableLayoutSyncWarning, notifyLayoutSyncFailure]);
 
-  // Persist only geometry changes; frequent order/status updates project to the
-  // same signature and therefore do not generate cloud writes.
+  // Cambios de geometría o salones se guardan juntos con control optimista de concurrencia.
   useEffect(() => {
     const syncState = tableLayoutSyncRef.current;
-    if (syncState.tenantId !== tenant.id || !syncState.ready || !isCloudTenantUuid(tenant.id)) return;
+    if (syncState.tenantId !== tenant.id || syncState.branchId !== activeFloorplanBranchId
+      || !syncState.ready || !isCloudTenantUuid(tenant.id) || !activeFloorplanBranchId) return;
     const layout = projectTableLayout(tables);
-    const signature = tableLayoutSignature(layout);
-    if (signature === syncState.signature) {
+    const layoutSignature = tableLayoutSignature(layout);
+    const zones = normalizeTenantZones(tenant.zones);
+    if (layoutSignature === syncState.signature
+      && JSON.stringify(zones) === JSON.stringify(syncState.remoteZones || [])) {
       if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
       layoutWriteTimerRef.current = null;
       pendingLayoutSignatureRef.current = null;
       layoutRetryAttemptsRef.current = 0;
       return;
     }
-    // Don't restart a pending retry for operational updates that leave the
-    // projected layout unchanged.
-    if (pendingLayoutSignatureRef.current === signature) return;
+    const pendingSignature = JSON.stringify({ layout: layoutSignature, zones });
+    if (pendingLayoutSignatureRef.current === pendingSignature) return;
     if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
-    pendingLayoutSignatureRef.current = signature;
+    pendingLayoutSignatureRef.current = pendingSignature;
     layoutRetryAttemptsRef.current = 0;
     const persist = async () => {
-        const latestState = tableLayoutSyncRef.current;
-        const latestLayout = projectTableLayout(tablesRef.current);
-        if (latestState !== syncState || !latestState.ready || tableLayoutSignature(latestLayout) !== signature || pendingLayoutSignatureRef.current !== signature) return;
-        const saved = await upsertTableLayout(tenant.id, layout, latestState.remoteLayout || []);
+      const latestState = tableLayoutSyncRef.current;
+      const latestLayout = projectTableLayout(tablesRef.current);
+      const latestZones = normalizeTenantZones(tenantRef.current.id === tenant.id ? tenantRef.current.zones : []);
+      const latestSignature = JSON.stringify({ layout: tableLayoutSignature(latestLayout), zones: latestZones });
+      if (latestState !== syncState || !latestState.ready || latestSignature !== pendingSignature
+        || pendingLayoutSignatureRef.current !== pendingSignature) return;
+      try {
+        const base: BranchFloorplanRecord = {
+          branchId: activeFloorplanBranchId,
+          zones: syncState.remoteZones || [],
+          layout: syncState.remoteLayout || [],
+          updatedAt: syncState.remoteUpdatedAt
+        };
+        const saved = await persistBranchFloorplan(tenant.id, activeFloorplanBranchId, base, {
+          zones: latestZones,
+          layout: latestLayout
+        });
         if (latestState !== tableLayoutSyncRef.current) return;
-        if (saved) {
-          const savedSignature = tableLayoutSignature(saved.layout);
-          const pendingSignature = pendingLayoutSignatureRef.current;
-          if (tableLayoutSignature(projectTableLayout(tablesRef.current)) === savedSignature) {
-            clearTableLayoutSyncWarning();
+        const savedLayoutSignature = tableLayoutSignature(saved.layout);
+        const savedZonesSignature = JSON.stringify(saved.zones);
+        const stillSameDesired = JSON.stringify({ layout: tableLayoutSignature(projectTableLayout(tablesRef.current)), zones: normalizeTenantZones(tenantRef.current.zones) }) === pendingSignature;
+        latestState.signature = savedLayoutSignature;
+        latestState.remoteLayout = saved.layout;
+        latestState.remoteZones = saved.zones;
+        latestState.remoteUpdatedAt = saved.updatedAt || latestState.remoteUpdatedAt;
+        try {
+          setTenantItem(branchFloorplanKey('table_layout_base', activeFloorplanBranchId), saved.layout, tenant.id);
+          setTenantItem(branchFloorplanKey('zones_base', activeFloorplanBranchId), saved.zones, tenant.id);
+        } catch {}
+        layoutRetryAttemptsRef.current = 0;
+
+        if (stillSameDesired) {
+          const currentTables = tablesRef.current;
+          const reconciled = mergeCloudLayoutIntoTables(currentTables, saved.layout);
+          if (tableLayoutSignature(projectTableLayout(reconciled)) !== tableLayoutSignature(projectTableLayout(currentTables))) {
+            tablesRef.current = reconciled;
+            setTables(reconciled);
           }
-          latestState.signature = savedSignature;
-          latestState.remoteLayout = saved.layout;
-          latestState.remoteUpdatedAt = saved.updatedAt || latestState.remoteUpdatedAt;
-          setTenantItem('table_layout_base', saved.layout, tenant.id);
-          layoutRetryAttemptsRef.current = 0;
-          if (pendingSignature === signature) {
-            pendingLayoutSignatureRef.current = null;
-            const current = tablesRef.current;
-            const reconciled = mergeCloudLayoutIntoTables(current, saved.layout);
-            if (tableLayoutSignature(projectTableLayout(reconciled)) !== tableLayoutSignature(projectTableLayout(current))) {
-              tablesRef.current = reconciled;
-              setTables(reconciled);
-              try {
-                setTenantItem('tables', reconciled, tenant.id);
-              } catch {}
-            }
-          } else if (!pendingSignature && tableLayoutSignature(projectTableLayout(tablesRef.current)) !== savedSignature) {
-            // Un evento Realtime pudo haber cambiado la base mientras este
-            // request estaba en vuelo; vuelve a evaluar el estado actual.
-            tablesRef.current = [...tablesRef.current];
-            setTables(tablesRef.current);
-          }
-          return;
+          setTenant(previous => previous.id === tenant.id && JSON.stringify(normalizeTenantZones(previous.zones)) === JSON.stringify(latestZones)
+            ? { ...previous, zones: saved.zones }
+            : previous);
+          try {
+            setTenantItem(branchFloorplanKey('tables', activeFloorplanBranchId), reconciled, tenant.id);
+            setTenantItem(branchFloorplanKey('zones', activeFloorplanBranchId), saved.zones, tenant.id);
+          } catch {}
         }
-        if (pendingLayoutSignatureRef.current !== signature) return;
+
+        if (pendingLayoutSignatureRef.current === pendingSignature) pendingLayoutSignatureRef.current = null;
+        if (savedLayoutSignature === tableLayoutSignature(projectTableLayout(tablesRef.current))
+          && savedZonesSignature === JSON.stringify(normalizeTenantZones(tenantRef.current.zones))) clearTableLayoutSyncWarning();
+      } catch {
+        if (pendingLayoutSignatureRef.current !== pendingSignature) return;
         notifyLayoutSyncFailure();
-        // Retry with bounded backoff while this tenant remains open; IndexedDB
-        // also retains the latest offline snapshot for recovery after a reload.
         layoutRetryAttemptsRef.current += 1;
         const retryDelay = Math.min(5_000 * layoutRetryAttemptsRef.current, 60_000);
         layoutWriteTimerRef.current = window.setTimeout(() => {
           layoutWriteTimerRef.current = null;
           void persist();
         }, retryDelay);
+      }
     };
-    // No debounce: start the cloud write as soon as this layout edit commits.
     void persist();
-  }, [tables, tenant.id, notifyLayoutSyncFailure, clearTableLayoutSyncWarning]);
+  }, [tables, tenant, activeFloorplanBranchId, notifyLayoutSyncFailure, clearTableLayoutSyncWarning]);
+
+  // La hidratación inicial de terminales cloud puede terminar después del login.
+  // Releer el registro actual unos segundos, sin recurrir al caché tenant-global.
+  useEffect(() => {
+    if (!isCloudTenantUuid(tenant.id) || activeFloorplanBranchId) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      setShiftsVersion(version => version + 1);
+      if (attempts >= 30) window.clearInterval(timer);
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [tenant.id, activeFloorplanBranchId]);
 
   const [selectedTableForOrder, setSelectedTableForOrder] = useState<Table | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true);
@@ -1266,7 +1359,7 @@ export function App() {
         setMenuItems(snapshot.menuItems as MenuItem[]);
         setTenantItem('menu', snapshot.menuItems, tenant.id);
       }
-      const snapshotTableList = readTableSnapshot(snapshot.tables);
+      const snapshotTableList = isCloudTenantUuid(tenant.id) ? null : readTableSnapshot(snapshot.tables);
       if (snapshotTableList) {
         const snapshotTables = normalizeTablePositions(restoreTablePositionsFromSnapshot(
           normalizeTablePositions(snapshotTableList as Table[]),
@@ -1277,13 +1370,13 @@ export function App() {
         const cachedLayoutBase = validateTableLayout(getTenantItem<unknown>('table_layout_base', tenant.id));
         const confirmedBase = cachedLayoutBase || snapshotBase;
         let restoredTables = snapshotTables;
-        if (syncState.tenantId === tenant.id && syncState.remoteLayout !== null) {
+        if (syncState.tenantId === tenant.id && syncState.branchId === activeFloorplanBranchId && syncState.remoteLayout !== null) {
           const resolvedLayout = confirmedBase
             ? resolveTableLayoutAfterCloudRead(confirmedBase, projectTableLayout(snapshotTables), syncState.remoteLayout)
             : syncState.remoteLayout;
           restoredTables = mergeCloudLayoutIntoTables(snapshotTables, resolvedLayout);
         } else if (confirmedBase) {
-          offlineSnapshotBaseRef.current = { tenantId: tenant.id, layout: confirmedBase };
+          offlineSnapshotBaseRef.current = { tenantId: tenant.id, branchId: activeFloorplanBranchId, layout: confirmedBase };
         }
         tablesRef.current = restoredTables;
         setTables(restoredTables);
@@ -1297,7 +1390,8 @@ export function App() {
         setKdsOrders(current => current.length > 0 ? current : snapshot.kdsOrders as KDSOrder[]);
       }
       if (snapshot.tenant && !hasTenantItem('tenant_profile', tenant.id)) {
-        const snapshotTenant = snapshot.tenant as TenantInfo;
+          const rawSnapshotTenant = snapshot.tenant as TenantInfo;
+          const snapshotTenant = isCloudTenantUuid(tenant.id) ? { ...rawSnapshotTenant, zones: [] } : rawSnapshotTenant;
         if (String(snapshotTenant.id) === String(tenant.id)) {
           activeTenantIdRef.current = tenant.id;
           setTenant(snapshotTenant);
@@ -1321,18 +1415,14 @@ export function App() {
     const saveSnapshot = () => {
       if (cancelled) return;
       const syncState = tableLayoutSyncRef.current;
-      if (isCloudTenantUuid(tenant.id) && (syncState.tenantId !== tenant.id || !syncState.ready)) {
-        timer = window.setTimeout(saveSnapshot, 350);
-        return;
-      }
       void localDB.saveTenantSnapshot({
         tenantId: tenant.id,
         version: 1,
         updatedAt: new Date().toISOString(),
-        tenant,
+        tenant: isCloudTenantUuid(tenant.id) ? { ...tenant, zones: [] } : tenant,
         menuItems,
-        tables,
-        ...(syncState.tenantId === tenant.id && syncState.remoteLayout !== null
+        tables: isCloudTenantUuid(tenant.id) ? [] : tables,
+        ...(!isCloudTenantUuid(tenant.id) && syncState.tenantId === tenant.id && syncState.remoteLayout !== null
           ? { tableLayoutBase: syncState.remoteLayout }
           : {}),
         staff: isCloudTenantUuid(tenant.id) ? redactEmployeePins(staffList) : staffList,
@@ -1355,7 +1445,7 @@ export function App() {
     const savedTenant = getTenantProfileWithLegacyFallback(loggedTenant.id);
     const restoredTenant: TenantInfo = {
       ...loggedTenant,
-      zones: resolveTenantZones(loggedTenant.zones, savedTenant?.zones),
+      zones: isCloudTenantUuid(loggedTenant.id) ? [] : resolveTenantZones(loggedTenant.zones, savedTenant?.zones),
       menuCategories: savedTenant?.menuCategories ?? loggedTenant.menuCategories ?? [],
       taxRegime: savedTenant?.taxRegime ?? loggedTenant.taxRegime,
       includeService10ByDefault: savedTenant?.includeService10ByDefault ?? loggedTenant.includeService10ByDefault,
@@ -1371,15 +1461,23 @@ export function App() {
     setCurrentUser(user);
     setTenant(restoredTenant);
     setMenuItems(getTenantItem<MenuItem[]>('menu', restoredTenant.id) || []);
-    setTables(normalizeTablePositions(getTenantItem<Table[]>('tables', restoredTenant.id) || []));
+    setTables(isCloudTenantUuid(restoredTenant.id)
+      ? []
+      : normalizeTablePositions(getTenantItem<Table[]>('tables', restoredTenant.id) || []));
     setStaffList(getTenantItem<UserProfile[]>('staff', restoredTenant.id) || [user]);
     try {
       localStorage.setItem('saborai_user', JSON.stringify(user));
-      localStorage.setItem('saborai_tenant', JSON.stringify(restoredTenant));
+      const profileForStorage = isCloudTenantUuid(restoredTenant.id) ? { ...restoredTenant, zones: [] } : restoredTenant;
+      localStorage.setItem('saborai_tenant', JSON.stringify(profileForStorage));
       localStorage.setItem('saborai_account_user_id', user.id);
       localStorage.removeItem('saborai_employee_id');
-      setTenantItem('tenant_profile', restoredTenant, restoredTenant.id);
-      setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
+      setTenantItem('tenant_profile', profileForStorage, restoredTenant.id);
+      const branchId = getActiveFloorplanBranchId();
+      if (isCloudTenantUuid(restoredTenant.id) && branchId) {
+        setTenantItem(branchFloorplanKey('zones', branchId), restoredTenant.zones || [], restoredTenant.id);
+      } else if (!isCloudTenantUuid(restoredTenant.id)) {
+        setTenantItem('zones', restoredTenant.zones || [], restoredTenant.id);
+      }
     } catch {}
     void localDB.syncPendingAfterSessionRestore(restoredTenant.id).catch(error => {
       console.warn('Could not resume pending sync after login.', error);
@@ -1419,21 +1517,34 @@ export function App() {
     let remoteConfirmed = !isCloudTenantUuid(tenantId);
 
     try {
-      if (isCloudTenantUuid(tenantId) && syncState.tenantId === tenantId && syncState.ready) {
+      if (isCloudTenantUuid(tenantId) && syncState.tenantId === tenantId
+        && syncState.branchId && syncState.ready) {
         const submittedLayout = projectTableLayout(tablesRef.current);
+        const submittedZones = normalizeTenantZones(tenantRef.current.zones);
         try {
-          const saved = await upsertTableLayout(tenantId, submittedLayout, syncState.remoteLayout || []);
-          if (saved && tableLayoutSyncRef.current === syncState) {
+          const saved = await persistBranchFloorplan(tenantId, syncState.branchId, {
+            branchId: syncState.branchId,
+            zones: syncState.remoteZones || [],
+            layout: syncState.remoteLayout || [],
+            updatedAt: syncState.remoteUpdatedAt
+          }, { zones: submittedZones, layout: submittedLayout });
+          if (tableLayoutSyncRef.current === syncState) {
             const currentLayout = projectTableLayout(tablesRef.current);
             const reconciledLayout = mergeConcurrentTableLayouts(submittedLayout, currentLayout, saved.layout);
             const reconciledTables = mergeCloudLayoutIntoTables(tablesRef.current, reconciledLayout);
             tablesRef.current = reconciledTables;
             setTables(reconciledTables);
-            try { setTenantItem('tables', reconciledTables, tenantId); } catch {}
+            try { setTenantItem(branchFloorplanKey('tables', syncState.branchId), reconciledTables, tenantId); } catch {}
             syncState.signature = tableLayoutSignature(saved.layout);
             syncState.remoteLayout = saved.layout;
+            syncState.remoteZones = saved.zones;
             syncState.remoteUpdatedAt = saved.updatedAt || syncState.remoteUpdatedAt;
-            setTenantItem('table_layout_base', saved.layout, tenantId);
+            setTenant(previous => previous.id === tenantId ? { ...previous, zones: saved.zones } : previous);
+            try {
+              setTenantItem(branchFloorplanKey('zones', syncState.branchId), saved.zones, tenantId);
+              setTenantItem(branchFloorplanKey('zones_base', syncState.branchId), saved.zones, tenantId);
+              setTenantItem(branchFloorplanKey('table_layout_base', syncState.branchId), saved.layout, tenantId);
+            } catch {}
             remoteConfirmed = tableLayoutSignature(reconciledLayout) === tableLayoutSignature(saved.layout);
             if (remoteConfirmed) {
               if (layoutWriteTimerRef.current !== null) window.clearTimeout(layoutWriteTimerRef.current);
@@ -1451,10 +1562,10 @@ export function App() {
           tenantId,
           version: 1,
           updatedAt: new Date().toISOString(),
-          tenant,
+          tenant: isCloudTenantUuid(tenantId) ? { ...tenant, zones: [] } : tenant,
           menuItems,
-          tables: tablesRef.current,
-          ...(syncState.tenantId === tenantId && syncState.remoteLayout !== null
+          tables: isCloudTenantUuid(tenantId) ? [] : tablesRef.current,
+          ...(!isCloudTenantUuid(tenantId) && syncState.tenantId === tenantId && syncState.remoteLayout !== null
             ? { tableLayoutBase: syncState.remoteLayout }
             : {}),
           staff: isCloudTenantUuid(tenantId) ? redactEmployeePins(staffList) : staffList,

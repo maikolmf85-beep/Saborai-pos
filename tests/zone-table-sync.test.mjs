@@ -9,7 +9,7 @@ import {
 } from '../src/services/tenantZones.ts';
 import { canRespondToRealtimeSync, readTableSnapshot, resolveRealtimeTablePayload, resolveRealtimeTables } from '../src/services/tableSync.ts';
 import { validateTableLayout } from '../src/services/tableLayoutValidation.ts';
-import { mergeConcurrentTableLayouts, persistTableLayoutWithClient } from '../src/services/tableLayoutConcurrency.ts';
+import { mergeConcurrentTableLayouts, mergeConcurrentTenantZones, persistTableLayoutWithClient } from '../src/services/tableLayoutConcurrency.ts';
 import { resolveTableLayoutAfterCloudRead, restoreTablePositionsFromSnapshot } from '../src/services/tableLayoutPersistence.ts';
 import { cleanTenantZones, updateTenantZonesInSupabase } from '../api/_utils/tenantZones.ts';
 
@@ -218,6 +218,17 @@ test('merge concurrente conserva cambios independientes, adiciones y borrados, c
   assert.deepEqual(
     mergeConcurrentTableLayouts([layoutItem('A', 10)], [layoutItem('A', 30)], [layoutItem('A', 40)]),
     [layoutItem('A', 40)]
+  );
+});
+
+test('merge concurrente de salones conserva adiciones y borrados independientes entre dispositivos', () => {
+  assert.deepEqual(
+    mergeConcurrentTenantZones(
+      ['Sala', 'Terraza'],
+      ['Sala', 'Patio'],
+      ['Terraza', 'Jardín']
+    ),
+    ['Jardín', 'Patio']
   );
 });
 

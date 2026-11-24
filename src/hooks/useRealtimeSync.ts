@@ -5,12 +5,14 @@ import { canRespondToRealtimeSync, resolveRealtimeTablePayload } from '../servic
 import { resolveRealtimeTenantZones } from '../services/tenantZones';
 import { isLocalDemoTenantId } from '../services/tenantStorage';
 
-function sendSyncRequest(channel: any) {
-  void channel.send({ type: 'broadcast', event: 'request-sync', payload: {} });
+function sendSyncRequest(channel: any, branchId: string) {
+  if (!branchId) return;
+  void channel.send({ type: 'broadcast', event: 'request-sync', payload: { branchId } });
 }
 
 export function useRealtimeSync(
   tenantId: string | undefined,
+  floorplanBranchId: string,
   tablesHydrated: boolean,
   onUpdateTables: (tables: Table[], skipBroadcast: boolean) => void,
   onUpdateKdsOrders: (orders: KDSOrder[], skipBroadcast: boolean) => void,
@@ -45,6 +47,7 @@ export function useRealtimeSync(
       .on('broadcast', { event: 'sync-tables' }, ({ payload }) => {
         const currentState = callbacksRef.current.getCurrentState();
         if (String(currentState.tenant?.id) !== String(tenantId)) return;
+        if (!currentState.branchId || payload?.branchId !== currentState.branchId) return;
         const localTables = currentState.tables || [];
         const resolved = resolveRealtimeTablePayload(localTables, payload, currentState.tablesHydrated === true);
         if (resolved) callbacksRef.current.onUpdateTables(resolved as Table[], true);
@@ -126,8 +129,9 @@ export function useRealtimeSync(
           callbacksRef.current.onUpdateStaff(payload.staff, true);
         }
       })
-      .on('broadcast', { event: 'request-sync' }, () => {
+      .on('broadcast', { event: 'request-sync' }, ({ payload }) => {
         const state = callbacksRef.current.getCurrentState();
+        if (!state.branchId || payload?.branchId !== state.branchId || state.branchId !== floorplanBranchId) return;
         if (canRespondToRealtimeSync(state)) {
           // Prevent broadcasting if this is a fresh/demo instance with no real data
           const isFreshDemo = state.tenant?.id?.startsWith('tenant_demo_') && (!state.staff || state.staff.length === 0) && (!state.tables || state.tables.length === 0) && (!state.menuItems || state.menuItems.length === 0);
@@ -137,7 +141,7 @@ export function useRealtimeSync(
           }
 
           channel.send({ type: 'broadcast', event: 'sync-shifts', payload: { shiftsMap: state.shiftsMap } });
-          channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables, snapshot: true, tablesHydrated: true } });
+          if (state.floorplanReady) channel.send({ type: 'broadcast', event: 'sync-tables', payload: { tables: state.tables, snapshot: true, tablesHydrated: true, branchId: state.branchId } });
           channel.send({ type: 'broadcast', event: 'sync-kds', payload: { orders: state.kdsOrders } });
           channel.send({ type: 'broadcast', event: 'sync-menu', payload: { menuItems: state.menuItems } });
           channel.send({ type: 'broadcast', event: 'sync-tenant', payload: { tenant: state.tenant, snapshot: true } });
@@ -151,7 +155,7 @@ export function useRealtimeSync(
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           console.log(`Connected to realtime channel: ${channelName}`);
-          if (tablesHydratedRef.current) sendSyncRequest(channel);
+          if (tablesHydratedRef.current) sendSyncRequest(channel, floorplanBranchId);
         }
       });
 
@@ -160,23 +164,23 @@ export function useRealtimeSync(
     return () => {
       client.removeChannel(channel);
     };
-  }, [tenantId]); // Only re-subscribe if tenantId changes
+  }, [tenantId, floorplanBranchId]);
 
   // If the channel connected before IndexedDB/auth hydration finished, request
   // another exchange now that this client can safely apply table snapshots.
   useEffect(() => {
-    if (!tenantId || !tablesHydrated || isLocalDemoTenantId(tenantId)) return;
+    if (!tenantId || !tablesHydrated || !floorplanBranchId || isLocalDemoTenantId(tenantId)) return;
     const channel = channelRef.current;
-    if (channel) sendSyncRequest(channel);
-  }, [tenantId, tablesHydrated]);
+    if (channel) sendSyncRequest(channel, floorplanBranchId);
+  }, [tenantId, floorplanBranchId, tablesHydrated]);
 
   // Expose broadcast functions
   const broadcastTables = (newTables: Table[]) => {
-    if (channelRef.current && !isLocalDemoTenantId(tenantId)) {
+    if (channelRef.current && !isLocalDemoTenantId(tenantId) && floorplanBranchId) {
       channelRef.current.send({
         type: 'broadcast',
         event: 'sync-tables',
-        payload: { tables: newTables, snapshot: true, tablesHydrated },
+        payload: { tables: newTables, snapshot: true, tablesHydrated, branchId: floorplanBranchId },
       });
     }
   };

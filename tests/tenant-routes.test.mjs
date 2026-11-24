@@ -17,12 +17,14 @@ function countEntrypoints(directory) {
   return count;
 }
 
-test('preserva las dos rutas públicas tenant y queda bajo el límite Hobby de 12 funciones', () => {
+test('preserva las rutas públicas tenant y queda bajo el límite Hobby de 12 funciones', () => {
   const config = JSON.parse(readFileSync(pathFromRoot('vercel.json'), 'utf8'));
   const rewrites = new Map(config.rewrites.map((rewrite) => [rewrite.source, rewrite.destination]));
   assert.equal(rewrites.get('/api/tenant/onboarding'), '/api/tenant?action=onboarding');
   assert.equal(rewrites.get('/api/tenant/profile'), '/api/tenant?action=profile');
+  assert.equal(rewrites.get('/api/tenant/floorplan'), '/api/tenant?action=floorplan');
   assert.equal(existsSync(pathFromRoot('api/tenant.ts')), true);
+  assert.equal(existsSync(pathFromRoot('api/_utils/branchFloorplan.ts')), true);
   assert.equal(existsSync(pathFromRoot('api/tenant/onboarding.ts')), false);
   assert.equal(existsSync(pathFromRoot('api/tenant/profile.ts')), false);
   assert.equal(countEntrypoints(pathFromRoot('api')), 12);

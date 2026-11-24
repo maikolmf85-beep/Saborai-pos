@@ -5,6 +5,27 @@ function sameItem(left: TableLayoutItem | undefined, right: TableLayoutItem | un
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/** Combina altas y bajas de salones independientes; ante conflicto en el mismo nombre prevalece la nube. */
+export function mergeConcurrentTenantZones(
+  baseZones: readonly string[],
+  localZones: readonly string[],
+  remoteZones: readonly string[]
+): string[] {
+  const base = new Set(baseZones);
+  const local = new Set(localZones);
+  const remote = new Set(remoteZones);
+  const orderedZones = [...new Set([...remoteZones, ...localZones, ...baseZones])];
+  const result: string[] = [];
+
+  for (const zone of orderedZones) {
+    const localChanged = base.has(zone) !== local.has(zone);
+    const remoteChanged = base.has(zone) !== remote.has(zone);
+    const keep = localChanged && !remoteChanged ? local.has(zone) : remote.has(zone);
+    if (keep) result.push(zone);
+  }
+  return result;
+}
+
 /**
  * Three-way merge por ID: aplica cambios locales sobre la base conocida y
  * conserva cambios remotos independientes. Ante edición simultánea de la misma
