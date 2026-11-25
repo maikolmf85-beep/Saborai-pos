@@ -190,6 +190,8 @@ export interface ElectronicInvoiceCR {
   };
   fechaEmision: string;
   condicionVenta: '01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito';
+  /** Plazo en días exigido por Hacienda cuando condicionVenta es crédito. */
+  plazoCredito?: number;
   tipoDocumento?: 'FE' | 'TE' | 'NC' | 'ND'; // FE=01, ND=02, NC=03, TE=04
   referencia?: {
     clave: string;

@@ -109,6 +109,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerActivityCode, setCustomerActivityCode] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'01-Efectivo' | '02-Tarjeta' | '03-SINPE_Movil' | '04-Credito'>('02-Tarjeta');
+  const [plazoCredito, setPlazoCredito] = useState<string>('');
   const [cashReceived, setCashReceived] = useState<string>('');
   const [isSearchingHacienda, setIsSearchingHacienda] = useState(false);
   const [includeService10, setIncludeService10] = useState(tenant.includeService10ByDefault ?? true);
@@ -360,7 +361,9 @@ Medio de Pago: ${paymentMethod}
     tipoDocumento: activeDocType,
     codigoActividadReceptor: activeDocType === 'FE' ? customerActivityCode : undefined,
     fechaEmision: claveInfo.fecha.toISOString(),
-    condicionVenta: paymentMethod === '04-Credito' ? '04-Credito' : paymentMethod,
+    // Hacienda separa CondicionVenta (contado/crédito) de MedioPago (efectivo/tarjeta/SINPE).
+    condicionVenta: paymentMethod === '04-Credito' ? '04-Credito' : '01-Efectivo',
+    plazoCredito: paymentMethod === '04-Credito' && plazoCredito ? Number(plazoCredito) : undefined,
     medioPago: paymentMethod,
     pagos: paymentMethod === '04-Credito' ? [] : [{
       tipo: paymentMethod === '01-Efectivo' ? 'efectivo' : paymentMethod === '02-Tarjeta' ? 'tarjeta' : 'sinpe',
@@ -930,6 +933,22 @@ Medio de Pago: ${paymentMethod}
                   {isExecutiveOrder && <option value="04-Credito">04 - Crédito a trabajador</option>}
                 </select>
               </div>
+
+              {paymentMethod === '04-Credito' && (
+                <div>
+                  <label className="block text-[11px] font-bold text-stone-500 uppercase mb-1">Plazo de crédito (días)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={plazoCredito}
+                    onChange={(e) => setPlazoCredito(e.target.value)}
+                    placeholder="Ej. 30"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
+                    required
+                  />
+                </div>
+              )}
 
               <div className="flex items-end pb-1">
                 <label htmlFor="serv10" className="flex items-center gap-2.5 px-3.5 py-2.5 w-full rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100/70 cursor-pointer transition-colors">

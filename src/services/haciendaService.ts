@@ -195,6 +195,13 @@ class HaciendaService {
     this.invoices = [newInvoice, ...this.invoices.filter(i => i.clave50Digitos !== invoice.clave50Digitos)];
     this.persist();
 
+    if (!activeConfig?.codigoActividad || !/^\d{6}$/.test(activeConfig.codigoActividad.trim())) {
+      const message = 'Configure en Hacienda el código de actividad económica de seis dígitos antes de emitir.';
+      this.updateInvoiceStatus(invoice.clave50Digitos, 'RECHAZADO', undefined, message);
+      if (onStatusChange) onStatusChange('RECHAZADO', message);
+      return;
+    }
+
     // Validación previa: evita enviar comprobantes que Hacienda rechazará seguro
     const preflightError = validateInvoiceForHacienda(invoice);
     if (preflightError) {

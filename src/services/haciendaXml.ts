@@ -86,6 +86,11 @@ export function normalizeCedula(raw: string): string {
   return d.length === 10 && d.startsWith('0') ? d.slice(1) : d;
 }
 
+/** Normaliza una identificación de receptor sin destruir letras válidas (DIMEX/NITE). */
+export function normalizeReceptorIdentificacion(raw: string): string {
+  return String(raw || '').trim().replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+}
+
 /**
  * Convierte un código de actividad económica (CIIU v4) al formato de 6 dígitos del RUT.
  * El padrón de Hacienda los publica como "6201.0" → "620100"; "561001" se conserva.
@@ -150,7 +155,7 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
 
   // Validación de receptor si es Factura Electrónica (FE)
   if (invoice.tipoDocumento === 'FE') {
-    const recId = (invoice.receptor?.identificacion || '').replace(/\D/g, '');
+    const recId = normalizeReceptorIdentificacion(invoice.receptor?.identificacion || '');
     if (!recId) {
       return 'Para Factura Electrónica (FE) se requiere la cédula del cliente (física o jurídica). Si es consumidor final, emita un Tiquete Electrónico (TE).';
     }
@@ -163,6 +168,9 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
     return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
   if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
+  if (invoice.condicionVenta === '04-Credito' && (!Number.isFinite(invoice.plazoCredito) || (invoice.plazoCredito || 0) <= 0)) {
+    return 'Las ventas a crédito requieren un plazo de crédito mayor que cero días.';
+  }
   const act = tenant?.haciendaConfig?.codigoActividad;
   if (act && !/^\d{6}$/.test(act.trim())) {
     return 'El código de actividad económica del emisor debe tener exactamente 6 dígitos numéricos registrados en ATV.';
@@ -214,15 +222,8 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const fecha = invoice.fechaEmision ? new Date(invoice.fechaEmision as any) : new Date();
   const fechaEmision = formatHaciendaDate(isNaN(fecha.getTime()) ? new Date() : fecha);
 
-  const hasReceptorId = !!(invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
+  const hasReceptorId = !!normalizeReceptorIdentificacion(invoice.receptor?.identificacion || '');
   let tipoDoc: TipoDocumentoCR = invoice.tipoDocumento || (hasReceptorId ? 'FE' : 'TE');
-  
-  // Salvaguarda: Si solicitaron Factura (FE) pero no se suministró identificación de receptor,
-  // degradar de forma segura a Tiquete (TE) para evitar que Hacienda lo rechace por falta de Receptor
-  if (tipoDoc === 'FE' && !hasReceptorId) {
-    console.warn('[HACIENDA v4.4] FE solicitada sin cédula de receptor. Emitiendo automáticamente como Tiquete Electrónico (TE).');
-    tipoDoc = 'TE';
-  }
 
   let rootName = 'TiqueteElectronico';
   let ns = 'tiqueteElectronico';
@@ -298,7 +299,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const totGravado = r5(totServGrav + totMercGrav);
   const totExento = r5(totServExe + totMercExe);
   const totVenta = r5(totGravado + totExento);
-  const otrosCargos = invoice.servicio10 > 0 ? r5(totVenta * 0.10) : 0;
+  const otrosCargos = r5(Math.max(0, Number(invoice.servicio10) || 0));
   const totComprobante = r5(totVenta + totImp + otrosCargos);
 
   // Obtener la configuración más reciente (localStorage tiene prioridad sobre tenant desactualizado)
@@ -311,8 +312,9 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
 
   const emisorCedula = normalizeCedula(hc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica || '');
   const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
-  const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || '402220888' || emisorCedula).replace(/[^0-9]/g, '').slice(0, 20) || '402220888';
+  const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '');
+  const proveedor = String(hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || emisorCedula).trim().replace(/[^0-9A-Za-z]/g, '').toUpperCase().slice(0, 20);
+  if (!proveedor) throw new Error('Falta ProveedorSistemas: configure una identificación válida en Hacienda.');
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
   const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
@@ -359,7 +361,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   // Receptor según tipo de documento (Obligatorio en FE, opcional en TE)
   const receptorNombre = (invoice.receptor?.nombre || '').trim();
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
-  const receptorIdNum = (invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
+  const receptorIdNum = normalizeReceptorIdentificacion(invoice.receptor?.identificacion || '');
   const rawEmail = (invoice.receptor?.correo || '').trim();
   const validEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : '';
 
@@ -391,7 +393,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   <OtrosCargos>
     <TipoDocumentoOC>06</TipoDocumentoOC>
     <Detalle>Impuesto de servicio 10%</Detalle>
-    <PorcentajeOC>10.00000</PorcentajeOC>
+    <PorcentajeOC>${f5(totVenta > 0 ? (otrosCargos / totVenta) * 100 : 0)}</PorcentajeOC>
     <MontoCargo>${f5(otrosCargos)}</MontoCargo>
   </OtrosCargos>` : '';
 
@@ -442,7 +444,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
     <CorreoElectronico>${escapeXml(tenant.email)}</CorreoElectronico>
   </Emisor>${receptorXml}
   <CondicionVenta>${condicionVenta}</CondicionVenta>${esCredito ? `
-  <PlazoCredito>1</PlazoCredito>` : ''}
+  <PlazoCredito>${invoice.plazoCredito}</PlazoCredito>` : ''}
   <DetalleServicio>${linesXml}
   </DetalleServicio>${otrosCargosXml}
   <ResumenFactura>

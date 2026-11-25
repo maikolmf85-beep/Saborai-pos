@@ -742,17 +742,17 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 />
               </div>
               <div className="col-span-2">
-                <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (12 dígitos numéricos - v4.4)</label>
+                <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (identificación, máximo 20 caracteres - v4.4)</label>
                 <input
                   type="text"
-                  maxLength={12}
+                  maxLength={20}
                   value={proveedorSistemas}
-                  onChange={(e) => setProveedorSistemas(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setProveedorSistemas(e.target.value.replace(/[^0-9A-Za-z]/g, '').toUpperCase())}
                   onBlur={() => persistConfig()}
-                  placeholder={cedulaEmisor.replace(/\D/g, '').padStart(12, '0') || '310100000000'}
+                  placeholder="Identificación registrada del proveedor"
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
-                <span className="text-[11px] text-stone-400">En v4.4 es obligatorio informar el proveedor de software (12 dígitos con ceros). Si se deja vacío se usará la cédula del emisor.</span>
+                <span className="text-[11px] text-stone-400">Debe ser la identificación válida del proveedor registrada ante Hacienda. Si el emisor es su propio proveedor, puede usar la identificación del emisor.</span>
               </div>
             </div>
           </div>

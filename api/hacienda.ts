@@ -419,7 +419,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify(payload)
     });
 
-    if (recepcionRes.status === 202) {
+    // Hacienda documenta 201 (recepción creada) y 202 (recepción aceptada para proceso).
+    if (recepcionRes.status === 201 || recepcionRes.status === 202) {
+      const receptionLocation = recepcionRes.headers.get('location') || recepcionRes.headers.get('Location') || undefined;
+      const persistedInvoiceData = {
+        ...(invoiceData && typeof invoiceData === 'object' ? invoiceData : {}),
+        haciendaReception: { httpStatus: recepcionRes.status, location: receptionLocation || null, receivedAt: new Date().toISOString() }
+      };
       const branch = await supabaseAdmin
         .from('pos_branches')
         .select('id')
@@ -437,17 +443,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           document_type: String(documentType || 'TE').slice(0, 2),
           hacienda_status: 'PROCESSING',
           total: Number(total || 0),
-          invoice_data: invoiceData,
+          invoice_data: persistedInvoiceData,
           xml_content: rawXml || null,
           signed_xml_content: finalXmlBase64,
+          hacienda_reception_location: receptionLocation || null,
           submitted_at: new Date().toISOString()
         }, { onConflict: 'tenant_id,clave' });
         if (invoiceRecord.error) console.warn('[Hacienda] No se pudo persistir el comprobante:', invoiceRecord.error.message);
       }
       return res.status(200).json({ 
-        success: true, 
-        estado: 'PROCESANDO', 
+        success: true,
+        estado: 'PROCESANDO',
         clave: clave,
+        httpStatus: recepcionRes.status,
+        location: receptionLocation,
         mensaje: 'Factura firmada con XAdES-EPES y recibida por Hacienda CR. Pendiente de validación asíncrona.',
         signedXmlBase64: finalXmlBase64
       });
