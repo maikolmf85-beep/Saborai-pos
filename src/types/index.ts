@@ -193,11 +193,15 @@ export interface ElectronicInvoiceCR {
   /** Plazo en días exigido por Hacienda cuando condicionVenta es crédito. */
   plazoCredito?: number;
   tipoDocumento?: 'FE' | 'TE' | 'NC' | 'ND'; // FE=01, ND=02, NC=03, TE=04
+  /** Clave del comprobante rechazado que este documento sustituye. */
+  sustituyeClave?: string;
+  /** Clave del nuevo documento que sustituyó este comprobante rechazado. */
+  sustituidoPorClave?: string;
   referencia?: {
     clave: string;
     fechaEmision: string;
     tipoDoc: 'FE' | 'TE';
-    codigo: '01' | '02' | '03' | '04' | '05' | '99';
+    codigo: '01' | '02' | '03' | '04' | '05' | '06' | '07' | '08' | '09' | '10' | '11' | '12' | '99';
     razon: string;
   };
   codigoActividadReceptor?: string;

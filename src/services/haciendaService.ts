@@ -112,6 +112,10 @@ class HaciendaService {
           fechaEmision: source.fechaEmision || row.createdAt,
           moneda: source.moneda || 'CRC',
           tipoCambio: Number(source.tipoCambio || 1),
+          plazoCredito: source.plazoCredito ? Number(source.plazoCredito) : undefined,
+          referencia: source.referencia,
+          sustituyeClave: row.sustituyeClave || source.sustituyeClave,
+          sustituidoPorClave: row.sustituidoPorClave || source.sustituidoPorClave,
           items: Array.isArray(source.items) ? source.items : [],
           subtotal: Number(source.subtotal || row.total || 0),
           iva13: Number(source.iva13 || 0),
@@ -238,7 +242,9 @@ class HaciendaService {
         receptor: invoice.tipoDocumento === 'TE' ? undefined : invoice.receptor,
         codigoActividadReceptor: invoice.codigoActividadReceptor,
         condicionVenta: invoice.condicionVenta,
+        plazoCredito: invoice.plazoCredito,
         medioPago: invoice.medioPago,
+        referencia: invoice.referencia,
         moneda: invoice.moneda,
         tipoCambio: invoice.tipoCambio,
         pagos: invoice.pagos,
@@ -260,6 +266,12 @@ class HaciendaService {
       if (data.success) {
         // 202: Hacienda recibió el comprobante; la validación es asíncrona. Consultamos el resultado real.
         this.updateInvoiceStatus(invoice.clave50Digitos, 'PROCESANDO', data.signedXmlBase64);
+        if (invoice.sustituyeClave) {
+          this.invoices = this.invoices.map(inv => inv.clave50Digitos === invoice.sustituyeClave
+            ? { ...inv, sustituidoPorClave: invoice.clave50Digitos }
+            : inv);
+          this.persist();
+        }
         if (onStatusChange) onStatusChange('PROCESANDO', 'Recibido por Hacienda. Esperando validación...');
         this.pollStatus(invoice.clave50Digitos, credentials, onStatusChange);
       } else {
@@ -319,13 +331,93 @@ class HaciendaService {
   }
 
   public resendInvoice(clave: string, onStatusChange?: (status: string, message?: string) => void) {
-    this.updateInvoiceStatus(clave, 'PROCESANDO');
-    if (onStatusChange) onStatusChange('PROCESANDO');
+    // Compatibilidad con llamadas antiguas: nunca se reenvía una clave rechazada,
+    // porque Hacienda exige un comprobante nuevo que indique la sustitución.
+    return this.replaceRejectedInvoice(clave, onStatusChange);
+  }
 
-    const inv = this.invoices.find(i => i.clave50Digitos === clave);
-    if (inv) {
-      this.emitInvoice(inv, onStatusChange);
+  /**
+   * Sustituye un comprobante rechazado por Hacienda.
+   * El original permanece inalterado como RECHAZADO y el nuevo documento recibe
+   * una clave/consecutivo propios y referencia TipoDocIR 10.
+   */
+  public replaceRejectedInvoice(
+    clave: string,
+    onStatusChange?: (status: string, message?: string) => void,
+    tenant?: TenantInfo
+  ): ElectronicInvoiceCR | null {
+    const original = this.invoices.find(i => i.clave50Digitos === clave);
+    if (!original) {
+      onStatusChange?.('RECHAZADO', 'No se encontró el comprobante original para sustituir.');
+      return null;
     }
+    if (original.estadoHacienda !== 'RECHAZADO') {
+      onStatusChange?.(original.estadoHacienda, 'Solo se pueden sustituir comprobantes con rechazo definitivo de Hacienda.');
+      return null;
+    }
+    if (original.sustituidoPorClave) {
+      onStatusChange?.('PROCESANDO', `Este comprobante ya tiene un sustituto: ${original.sustituidoPorClave}.`);
+      return null;
+    }
+
+    const cfg = this.getConfig();
+    const activeTenant: TenantInfo = tenant || {
+      id: 'current',
+      name: original.emisor.nombre,
+      cedulaJuridica: original.emisor.cedulaJuridica,
+      email: original.emisor.correo,
+      phone: '50622222222',
+      location: 'Costa Rica',
+      plan: 'pro',
+      status: 'ACTIVE',
+      currency: original.moneda,
+      monthlyFee: 0,
+      haciendaConfig: cfg || undefined
+    };
+    if (!cfg && !activeTenant.haciendaConfig) {
+      onStatusChange?.('RECHAZADO', 'Configure Hacienda antes de emitir el comprobante sustitutivo.');
+      return null;
+    }
+
+    const tipoDocumento: 'FE' | 'TE' = original.tipoDocumento === 'FE' ? 'FE' : 'TE';
+    const branch = original.emisor.sucursal || cfg?.sucursal || activeTenant.haciendaConfig?.sucursal || '001';
+    const terminal = original.emisor.terminal || cfg?.terminal || activeTenant.haciendaConfig?.terminal || '00001';
+    const fechaEmision = new Date();
+    const numero = reserveConsecutivoNumber(branch, terminal, tipoDocumento);
+    const built = buildClaveYConsecutivo({
+      cedula: original.emisor.cedulaJuridica,
+      branchCode: branch,
+      terminalCode: terminal,
+      tipo: tipoDocumento,
+      numero,
+      fecha: fechaEmision
+    });
+
+    const sustituto: ElectronicInvoiceCR = {
+      ...original,
+      clave50Digitos: built.clave,
+      consecutivo: built.consecutivo,
+      tipoDocumento,
+      fechaEmision: fechaEmision.toISOString(),
+      estadoHacienda: 'PROCESANDO',
+      errorMensaje: undefined,
+      sustituyeClave: original.clave50Digitos,
+      sustituidoPorClave: undefined,
+      referencia: {
+        clave: original.clave50Digitos,
+        fechaEmision: formatHaciendaDate(new Date(original.fechaEmision as any)),
+        tipoDoc: tipoDocumento,
+        codigo: '10',
+        razon: `Sustitución de comprobante rechazado por el Ministerio de Hacienda${original.errorMensaje ? `: ${original.errorMensaje.slice(0, 220)}` : ''}`
+      }
+    };
+    sustituto.xmlContent = generateHaciendaXmlV44(sustituto, activeTenant);
+
+    this.invoices = [sustituto, ...this.invoices.map(i => i.clave50Digitos === original.clave50Digitos ? original : i)];
+    this.persist();
+    onStatusChange?.('PROCESANDO', `Emitiendo comprobante sustitutivo ${sustituto.clave50Digitos}.`);
+    this.emitInvoice(sustituto, onStatusChange, activeTenant.haciendaConfig || cfg || undefined);
+    return sustituto;
   }
 
   public async voidInvoice(
@@ -334,10 +426,13 @@ class HaciendaService {
     tenant?: TenantInfo
   ) {
     const inv = this.invoices.find(i => i.clave50Digitos === clave);
+    if (!inv) return;
+    if (inv.estadoHacienda !== 'ACEPTADO') {
+      if (onStatusChange) onStatusChange(inv.estadoHacienda, 'Solo un comprobante aceptado puede anularse mediante Nota de Crédito. Un comprobante rechazado debe sustituirse.');
+      return;
+    }
     this.updateInvoiceStatus(clave, 'ANULADO');
     if (onStatusChange) onStatusChange('ANULADO', 'Factura marcada como anulada.');
-
-    if (!inv) return;
 
     // Emisión oficial de Nota de Crédito Electrónica v4.4 a Hacienda
     const cfg = this.getConfig();
@@ -414,6 +509,15 @@ class HaciendaService {
       }
       return inv;
     });
+    if (status === 'RECHAZADO') {
+      const rejectedReplacement = this.invoices.find(inv => inv.clave50Digitos === clave);
+      if (rejectedReplacement?.sustituyeClave) {
+        this.invoices = this.invoices.map(inv => inv.clave50Digitos === rejectedReplacement.sustituyeClave
+          && inv.sustituidoPorClave === clave
+          ? { ...inv, sustituidoPorClave: undefined }
+          : inv);
+      }
+    }
     this.persist();
 
     // Envío automático del comprobante y XML al correo del cliente mediante Resend

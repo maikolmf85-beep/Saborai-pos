@@ -129,7 +129,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       receptor,
       codigoActividadReceptor,
       condicionVenta,
+      plazoCredito,
       medioPago,
+      referencia,
       moneda,
       tipoCambio,
       pagos,
@@ -394,7 +396,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       total: Number(total || 0),
       codigoActividadReceptor,
       condicionVenta,
+      plazoCredito: Number(plazoCredito || 0) || undefined,
       medioPago,
+      referencia: referencia || undefined,
       moneda,
       tipoCambio,
       pagos,
@@ -447,9 +451,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           xml_content: rawXml || null,
           signed_xml_content: finalXmlBase64,
           hacienda_reception_location: receptionLocation || null,
+          sustituye_clave: referencia?.codigo === '10' ? String(referencia.clave || '').slice(0, 50) : null,
           submitted_at: new Date().toISOString()
         }, { onConflict: 'tenant_id,clave' });
         if (invoiceRecord.error) console.warn('[Hacienda] No se pudo persistir el comprobante:', invoiceRecord.error.message);
+        if (!invoiceRecord.error && referencia?.codigo === '10' && referencia?.clave) {
+          await supabaseAdmin.from('pos_invoices')
+            .update({ sustituido_por_clave: clave })
+            .eq('tenant_id', tenantId)
+            .eq('clave', String(referencia.clave));
+        }
       }
       return res.status(200).json({ 
         success: true,

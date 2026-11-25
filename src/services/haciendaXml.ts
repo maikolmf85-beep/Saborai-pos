@@ -167,6 +167,14 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
   if ((invoice.tipoDocumento === 'NC' || invoice.tipoDocumento === 'ND') && !invoice.referencia?.clave) {
     return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
   }
+  if (invoice.sustituyeClave || invoice.referencia?.codigo === '10') {
+    if (!/^\d{50}$/.test(invoice.sustituyeClave || invoice.referencia?.clave || '')) {
+      return 'El comprobante sustitutivo debe referenciar la clave de 50 dígitos del comprobante rechazado.';
+    }
+    if (invoice.referencia?.codigo !== '10') {
+      return 'El comprobante sustitutivo debe usar el código de referencia 10 de comprobante rechazado por Hacienda.';
+    }
+  }
   if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
   if (invoice.condicionVenta === '04-Credito' && (!Number.isFinite(invoice.plazoCredito) || (invoice.plazoCredito || 0) <= 0)) {
     return 'Las ventas a crédito requieren un plazo de crédito mayor que cero días.';

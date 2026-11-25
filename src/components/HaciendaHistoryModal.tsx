@@ -87,8 +87,18 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
     }
   };
 
-  const handleResend = (clave: string) => {
-    haciendaService.resendInvoice(clave);
+  const handleReplace = (clave: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: '¿Emitir comprobante sustitutivo?',
+      message: 'El comprobante rechazado no tiene validez. Se conservará como rechazado y se emitirá un nuevo documento con otra clave, consecutivo y referencia oficial código 10. No se generará una nota de crédito. ¿Deseas continuar?',
+      confirmLabel: 'Sí, emitir sustitutivo',
+      type: 'warning',
+      onConfirm: () => {
+        haciendaService.replaceRejectedInvoice(clave, undefined, tenant);
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleAnular = (clave: string) => {
@@ -195,6 +205,16 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                         Motivo DGT: {inv.errorMensaje}
                       </div>
                     )}
+                    {inv.sustituyeClave && (
+                      <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1 break-all">
+                        Sustituye comprobante rechazado: {inv.sustituyeClave}
+                      </div>
+                    )}
+                    {inv.sustituidoPorClave && (
+                      <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 break-all">
+                        Sustituido por: {inv.sustituidoPorClave}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
@@ -205,7 +225,7 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                     >
                       <Printer className="w-3.5 h-3.5" />
                     </button>
-                    {inv.tipoDocumento !== 'NC' && inv.estadoHacienda !== 'ANULADO' && (
+                    {inv.tipoDocumento !== 'NC' && inv.estadoHacienda === 'ACEPTADO' && (
                       <button
                         onClick={() => handleAnular(inv.clave50Digitos)}
                         className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold"
@@ -225,13 +245,13 @@ export const HaciendaHistoryModal: React.FC<HaciendaHistoryModalProps> = ({ isOp
                       </button>
                     )}
                     
-                    {inv.estadoHacienda === 'RECHAZADO' && (
+                    {inv.estadoHacienda === 'RECHAZADO' && !inv.sustituidoPorClave && (
                       <button
-                        onClick={() => handleResend(inv.clave50Digitos)}
+                        onClick={() => handleReplace(inv.clave50Digitos)}
                         className="px-3 py-2 bg-stone-900 text-white hover:bg-stone-800 rounded-xl transition-colors flex items-center gap-1.5 text-xs font-bold shadow-xs"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Reenviar a DGT</span>
+                        <span>Emitir sustitutivo</span>
                       </button>
                     )}
                   </div>

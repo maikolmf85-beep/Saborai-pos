@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 250) : 100;
   const { data, error } = await supabaseAdmin
     .from('pos_invoices')
-    .select('id, clave, consecutivo, document_type, hacienda_status, total, invoice_data, xml_content, signed_xml_content, error_message, submitted_at, accepted_at, created_at')
+    .select('id, clave, consecutivo, document_type, hacienda_status, total, invoice_data, xml_content, signed_xml_content, error_message, submitted_at, accepted_at, hacienda_reception_location, sustituye_clave, sustituido_por_clave, created_at')
     .eq('tenant_id', auth.tenantId)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -41,6 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       errorMessage: row.error_message || undefined,
       submittedAt: row.submitted_at || undefined,
       acceptedAt: row.accepted_at || undefined,
+      receptionLocation: row.hacienda_reception_location || undefined,
+      sustituyeClave: row.sustituye_clave || undefined,
+      sustituidoPorClave: row.sustituido_por_clave || undefined,
       createdAt: row.created_at
     }))
   });
