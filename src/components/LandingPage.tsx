@@ -126,6 +126,16 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+  useEffect(() => {
+    const iconLink = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+    if (!iconLink) return;
+    const previousHref = iconLink.getAttribute('href');
+    iconLink.setAttribute('href', '/assets/landing-restore-20261120/favicon.png');
+    return () => {
+      if (previousHref === null) iconLink.removeAttribute('href');
+      else iconLink.setAttribute('href', previousHref);
+    };
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setActiveFeature(f => (f + 1) % 8), 4000);
@@ -411,7 +421,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
   };
 
   return (
-    <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden">
+    <div className="min-h-screen bg-[#fcfeff] text-[#3b3733] font-['Inter',sans-serif] overflow-x-hidden" style={{ fontFamily: 'sans-serif' }}>
       <style>{`
         @keyframes floatY { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
         @keyframes glowPulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
@@ -491,7 +501,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
       >
         <nav aria-label="Navegación principal" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
           <a href="#" aria-label="Saborai POS - Inicio">
-            <BrandLogo variant="full" size="sm" tone="web" />
+            <BrandLogo variant="full" size="sm" tone="web" srcOverride="/assets/landing-restore-20261120/NewLogoPrincipal.png" />
           </a>
           <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-[#6b686d]">
             {[['#features','Funciones'],['#usage','Cómo funciona'],['#pricing','Precios'],['#faq','FAQ']].map(([href,label]) => (
@@ -817,13 +827,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartDemo, onEnterPO
 
       {/* FOOTER */}
       <footer className="py-12 bg-[#fcfeff] border-t border-[#a9b994]/20 text-center text-sm text-[#6b686d]">
-        <BrandLogo variant="full" size="sm" tone="web" />
+        <BrandLogo variant="full" size="sm" tone="web" srcOverride="/assets/landing-restore-20261120/NewLogoPrincipal.png" />
         <p className="mt-4 max-w-md mx-auto">Software de Punto de Venta con IA para Restaurantes en Costa Rica. Facturación Hacienda y Tilopay Integrado.</p>
         <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-bold text-[#588157]">
           <a href="/privacy-policy" className="hover:underline">Política de Privacidad</a>
           <a href="/terms-of-service" className="hover:underline">Condiciones de Servicio</a>
         </div>
         <p className="mt-8 text-xs text-[#a9b994]">© 2026 Saborai POS Costa Rica. Todos los derechos reservados.</p>
+        <p className="mt-2 text-xs text-[#a9b994]">Propiedad de Maikol Rafael Matamoros Fernández</p>
       </footer>
       
       {/* MODAL TILOPAY DIRECTO */}
