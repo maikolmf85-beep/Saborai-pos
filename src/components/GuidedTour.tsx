@@ -1,14 +1,16 @@
 import { useEffect } from 'react';
 import { driver } from 'driver.js';
 import 'driver.js/dist/driver.css';
+import { scheduleGuidedTour } from '../services/guidedTourScheduler';
 
 export function GuidedTour() {
   useEffect(() => {
     const tourSeen = localStorage.getItem('saborai_tour_seen');
     if (tourSeen) return;
 
-    // Ensure the DOM is fully loaded before starting the tour
-    setTimeout(() => {
+    // Ensure the DOM is fully loaded before starting the tour. Returning the
+    // cleanup cancels this pending start during StrictMode's dev remount.
+    return scheduleGuidedTour(() => {
       const driverObj = driver({
         showProgress: true,
         animate: true,
@@ -71,7 +73,7 @@ export function GuidedTour() {
       });
 
       driverObj.drive();
-    }, 1500); // Wait 1.5s to ensure everything renders (like tables, auth, etc.)
+    });
   }, []);
 
   return null;
