@@ -942,7 +942,7 @@ export const CashShiftModal: React.FC<CashShiftModalProps> = ({
                   className="w-full py-3.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 text-sm"
                 >
                   <CheckCircle2 className="w-4 h-4 text-[#a9b994]" />
-                  <span>Confirmar y Abrir Turno de Caja</span>
+                  <span>Abrir turno</span>
                 </button>
 
               </form>
