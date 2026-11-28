@@ -7,17 +7,20 @@ interface LogoProps {
   tone?: 'default' | 'light' | 'mono' | 'web';
 }
 
-export const BrandLogo: React.FC<LogoProps> = ({ 
-  className = '', 
+const BRAND_ASSETS = '/assets/logos/brand-refresh';
+const ISOTYPE_URL = `${BRAND_ASSETS}/NewIsotipoprincipal.png`;
+const LIGHT_ISOTYPE_URL = `${BRAND_ASSETS}/NewIsotiposecundario.png`;
+const FULL_LOGO_URL = `${BRAND_ASSETS}/NewLogoPrincipal.png`;
+const WHITE_LOGO_URL = `${BRAND_ASSETS}/NewLogoversionblanco.png`;
+const MONO_LOGO_URL = `${BRAND_ASSETS}/NewLogoaunasolatinta.png`;
+const STACKED_LOGO_URL = `${BRAND_ASSETS}/NewVersionSAIPOS.png`;
+
+export const BrandLogo: React.FC<LogoProps> = ({
+  className = '',
   variant = 'full',
   size = 'md',
   tone = 'default'
 }) => {
-  const logoUrl = '/assets/logos/finales/Isotipo.png';
-  const fullLogoUrl = '/assets/logos/finales/Logotipocompleto.png';
-  const webLogoUrl = '/assets/logos/finales/Logotipoweb.png';
-  const monoLogoUrl = '/assets/logos/finales/Logotipoparafondosclaros.png';
-
   const iconSizes = {
     sm: 'w-8 h-8',
     md: 'w-10 h-10',
@@ -25,27 +28,28 @@ export const BrandLogo: React.FC<LogoProps> = ({
     xl: 'w-20 h-20'
   };
 
-  const textSizes = {
-    sm: 'text-base',
-    md: 'text-lg sm:text-xl',
-    lg: 'text-2xl sm:text-3xl',
-    xl: 'text-4xl'
+  const fullLogoSizes = {
+    sm: 'w-32 sm:w-40',
+    md: 'w-44 sm:w-56',
+    lg: 'w-56 sm:w-72',
+    xl: 'w-72 sm:w-96'
   };
 
-  const badgeSizes = {
-    sm: 'text-[8px] px-1 py-0.2',
-    md: 'text-[9px] px-1.5 py-0.5',
-    lg: 'text-[11px] px-2 py-0.5',
-    xl: 'text-xs px-2.5 py-1'
+  const stackedLogoSizes = {
+    sm: 'w-20 sm:w-24',
+    md: 'w-28 sm:w-36',
+    lg: 'w-36 sm:w-44',
+    xl: 'w-48 sm:w-56'
   };
 
-  // 1. Isotipo (Solo el icono estilizado oficial "S" verde y carbón)
+  const logoAlt = 'Saborai POS';
+
   if (variant === 'isotype') {
     return (
       <div className={`relative inline-flex items-center justify-center ${iconSizes[size]} ${className}`}>
-        <img 
-          src={logoUrl}
-          alt="SaborAI Logo"
+        <img
+          src={tone === 'light' ? LIGHT_ISOTYPE_URL : ISOTYPE_URL}
+          alt={logoAlt}
           className="w-full h-full object-contain drop-shadow-xs select-none transition-transform duration-200"
           loading="eager"
         />
@@ -53,73 +57,45 @@ export const BrandLogo: React.FC<LogoProps> = ({
     );
   }
 
-  // 2. Stacked (Icono arriba, texto abajo)
   if (variant === 'stacked') {
     return (
-      <div className={`inline-flex flex-col items-center select-none gap-2 ${className}`}>
-        <img 
-          src={logoUrl}
-          alt="SaborAI Logo"
-          className={`${iconSizes[size]} object-contain drop-shadow-xs transition-transform duration-200`}
-          loading="eager"
-        />
-        <div className="flex items-center gap-1.5">
-          <span className={`font-black tracking-tight text-stone-900 ${textSizes[size]}`}>
-            Sabor<span className="text-[#588157]">AI</span>
-          </span>
-          <span className={`rounded-md bg-stone-900 text-[#a9b994] font-black uppercase tracking-wider ${badgeSizes[size]}`}>
-            POS
-          </span>
-        </div>
-      </div>
+      <img
+        src={STACKED_LOGO_URL}
+        alt={logoAlt}
+        className={`${stackedLogoSizes[size]} h-auto max-w-full object-contain select-none ${className}`}
+        loading="eager"
+      />
     );
   }
 
-  // 3. Full / Wordmark: logotipo completo entregado por la marca.
   if (variant === 'full' || variant === 'wordmark') {
-    const fullLogoSizes = {
-      sm: 'w-32 sm:w-40',
-      md: 'w-44 sm:w-56',
-      lg: 'w-56 sm:w-72',
-      xl: 'w-72 sm:w-96'
-    };
-
+    const logoUrl = tone === 'light' ? WHITE_LOGO_URL : tone === 'mono' ? MONO_LOGO_URL : FULL_LOGO_URL;
     return (
       <img
-        src={tone === 'mono' ? monoLogoUrl : tone === 'web' ? webLogoUrl : fullLogoUrl}
-        alt="SaborAI POS"
+        src={logoUrl}
+        alt={logoAlt}
         className={`${fullLogoSizes[size]} h-auto max-w-full object-contain select-none ${className}`}
         loading="eager"
       />
     );
   }
 
-  // 4. Fallback compacto para variantes no horizontales.
   return (
     <div className={`inline-flex items-center select-none gap-2.5 ${className}`}>
       <div className={`relative flex items-center justify-center ${iconSizes[size]} shrink-0`}>
-        <img 
-          src={logoUrl}
-          alt="SaborAI Logo"
+        <img
+          src={ISOTYPE_URL}
+          alt={logoAlt}
           className="w-full h-full object-contain drop-shadow-xs transition-transform duration-200"
           loading="eager"
         />
       </div>
-      <div className="flex flex-col text-left leading-tight">
-        <div className="flex items-center gap-1.5">
-          <span className={`font-black tracking-tight text-stone-900 ${textSizes[size]}`}>
-            Sabor<span className="text-[#588157]">AI</span>
-          </span>
-          <span className={`rounded-md bg-stone-900 text-[#a9b994] font-black uppercase tracking-wider ${badgeSizes[size]}`}>
-            POS
-          </span>
-        </div>
-        {size !== 'sm' && (
-          <span className="text-[10px] font-semibold text-stone-400 tracking-wide uppercase">
-            Gastronomía Inteligente
-          </span>
-        )}
-      </div>
+      <img
+        src={tone === 'light' ? WHITE_LOGO_URL : tone === 'mono' ? MONO_LOGO_URL : FULL_LOGO_URL}
+        alt={logoAlt}
+        className="w-32 sm:w-40 h-auto object-contain select-none"
+        loading="eager"
+      />
     </div>
   );
 };
