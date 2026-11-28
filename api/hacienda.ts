@@ -4,6 +4,7 @@ import { createRequire } from 'module';
 import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js';
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
+import { HACIENDA_P12_PIN_FORMAT_ERROR, isValidHaciendaP12Pin } from '../src/utils/haciendaP12Pin.js';
 
 const require = createRequire(import.meta.url);
 
@@ -52,7 +53,7 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   const cleanBase64 = p12Base64.includes(',') ? p12Base64.split(',')[1].replace(/\s+/g, '') : p12Base64.replace(/\s+/g, '');
   const der = forge.util.decode64(cleanBase64);
   const asn = forge.asn1.fromDer(der);
-  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin.trim());
+  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin);
   
   // Buscar certificado en certBag
   let cert: any = null;
@@ -153,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const atvUsername = (reqAtvUser || process.env.HACIENDA_USER || '').trim(); 
     const atvPassword = (reqAtvPass || process.env.HACIENDA_PASSWORD || '').trim();
     const rawP12 = reqP12 || process.env.HACIENDA_P12_BASE64;
-    const p12Pin = (reqPin || process.env.HACIENDA_PIN || '').trim();
+    const p12Pin = reqPin || process.env.HACIENDA_PIN || '';
     const environment: 'sandbox' | 'production' = (reqEnv === 'production' || process.env.HACIENDA_ENV === 'production') ? 'production' : 'sandbox';
     const endpoints = HACIENDA_ENV[environment];
 
@@ -170,6 +171,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } = { tokenOk: false, certOk: false };
 
       // 1. Validar Llave Criptográfica (.p12) y PIN si se proporcionaron
+      if ((p12Pin && !isValidHaciendaP12Pin(p12Pin)) || (rawP12 && !isValidHaciendaP12Pin(p12Pin))) {
+        return res.status(400).json({ success: false, error: HACIENDA_P12_PIN_FORMAT_ERROR });
+      }
       if (rawP12 && p12Pin) {
         try {
           const certValidation = parseAndVerifyP12(rawP12, p12Pin);
@@ -320,6 +324,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    if (rawP12 && rawXml && !isValidHaciendaP12Pin(p12Pin)) {
+      return res.status(400).json({ error: HACIENDA_P12_PIN_FORMAT_ERROR });
+    }
+
     // 1. FIRMA DIGITAL XAdES-EPES CON LA LLAVE .P12
     if (rawP12 && p12Pin && rawXml) {
       try {
@@ -340,7 +348,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         console.log('=== [HACIENDA v4.4 API] XML RECIBIDO PREVIO A FIRMA XAdES-EPES ===\n' + rawXml);
         // signer.sign devuelve el XML firmado convertido directamente a Base64
-        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin.trim());
+        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin);
       } catch (signError: any) {
         console.error('Error firmando XML XAdES-EPES:', signError);
         return res.status(400).json({
