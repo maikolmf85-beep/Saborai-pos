@@ -67,7 +67,8 @@ export function prepareBulkTableReservationInputs(
   date: string,
   tables: Table[],
   reservations: TableReservation[],
-  durationMinutes = 90
+  durationMinutes = 90,
+  zoneFilter = ''
 ): { inputs: TableReservationInput[]; error?: never } | { inputs: []; error: string } {
   if (!rows.length) return { inputs: [], error: 'Agrega al menos una reserva a la lista.' };
 
@@ -87,17 +88,30 @@ export function prepareBulkTableReservationInputs(
       return { inputs: [], error: `Indica entre 1 y 100 personas para la reserva ${index + 1}.` };
     }
 
-    const candidates = row.tableId
-      ? tables.filter(table => table.id === row.tableId)
-      : [...tables].sort((a, b) => a.seats - b.seats || a.number - b.number);
-    if (!candidates.length) return { inputs: [], error: `La mesa seleccionada para la reserva ${index + 1} ya no existe.` };
+    const salonTables = zoneFilter ? tables.filter(table => table.zone === zoneFilter) : tables;
+    const manuallySelectedTable = row.tableId ? tables.find(table => table.id === row.tableId) : undefined;
+    if (row.tableId && !manuallySelectedTable) {
+      return { inputs: [], error: `La mesa seleccionada para la reserva ${index + 1} ya no existe.` };
+    }
+    if (manuallySelectedTable && zoneFilter && manuallySelectedTable.zone !== zoneFilter) {
+      return { inputs: [], error: `La mesa seleccionada para la reserva ${index + 1} no pertenece al salón ${zoneFilter}.` };
+    }
+
+    const candidates = manuallySelectedTable
+      ? [manuallySelectedTable]
+      : [...salonTables].sort((a, b) => a.seats - b.seats || a.number - b.number);
+    if (!candidates.length) {
+      return { inputs: [], error: zoneFilter
+        ? `No hay mesas configuradas en el salón ${zoneFilter}.`
+        : `La mesa seleccionada para la reserva ${index + 1} ya no existe.` };
+    }
 
     const table = candidates.find(candidate => candidate.seats >= partySize
       && !hasTableReservationTimeConflict(conflictPool, candidate.id, reservedAt, durationMinutes));
     if (!table) {
       return {
         inputs: [],
-        error: `No hay una mesa libre con capacidad para ${customerName} a las ${row.time}. Cambia la hora o elige otra mesa.`
+        error: `No hay una mesa libre con capacidad para ${customerName} a las ${row.time}${zoneFilter ? ` en el salón ${zoneFilter}` : ''}. Cambia la hora o elige otra mesa.`
       };
     }
 
