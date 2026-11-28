@@ -11,7 +11,7 @@ import {
 
 export interface PosNotification {
   id: string;
-  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'HACIENDA_UPDATE' | 'INVENTORY_LOW' | 'SYNC_ERROR';
+  type: 'NEW_ORDER' | 'ORDER_READY' | 'TABLE_UPDATE' | 'RESERVATION_REMINDER' | 'HACIENDA_UPDATE' | 'INVENTORY_LOW' | 'SYNC_ERROR';
   title: string;
   message: string;
   station?: 'Cocina' | 'Bar' | 'General';
@@ -38,7 +38,7 @@ export const NotificationToastContainer: React.FC<NotificationToastProps> = ({
   return (
     <aside aria-label="Notificaciones del sistema" className="fixed top-20 right-4 sm:right-6 z-50 flex flex-col gap-2.5 max-w-sm w-full pointer-events-none">
       {notifications.map((notif) => {
-        const isReady = notif.type === 'ORDER_READY';
+        const isReady = notif.type === 'ORDER_READY' || notif.type === 'RESERVATION_REMINDER';
         const isSyncError = notif.type === 'SYNC_ERROR';
 
         return (

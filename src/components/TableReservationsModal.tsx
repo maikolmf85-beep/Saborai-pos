@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle, CalendarDays, Check, Clock3, Edit3, LoaderCircle, MapPin,
-  Plus, RefreshCw, Search, Users, Utensils, Wifi, WifiOff, X
+  ListPlus, Plus, RefreshCw, Search, Trash2, Users, Utensils, Wifi, WifiOff, X
 } from 'lucide-react';
 import type { Table, TenantInfo, UserProfile } from '../types';
 import {
   createTableReservation, hasPendingTableReservationSync, loadTableReservations, subscribeToTableReservations,
   updateTableReservation
 } from '../services/tableReservationService';
+import { prepareBulkTableReservationInputs, hasTableReservationTimeConflict, type BulkReservationDraft } from '../services/tableReservationLogic';
 import type {
   TableReservation, TableReservationInput, TableReservationStatus
 } from '../types/tableReservation';
@@ -20,6 +21,7 @@ export interface TableReservationsModalProps {
   onOpenTable: (table: Table) => void;
   canOpenTable?: (table: Table) => boolean;
   currentUser?: UserProfile | null;
+  initialReservationToEdit?: TableReservation | null;
 }
 
 type StatusFilter = 'ALL' | TableReservationStatus;
@@ -56,7 +58,8 @@ interface ReservationForm {
   customerEmail: string;
   zone: string;
   tableId: string;
-  reservedAtLocal: string;
+  reservedDateLocal: string;
+  reservedTimeLocal: string;
   durationMinutes: string;
   partySize: string;
   notes: string;
@@ -81,6 +84,11 @@ function toLocalInputValue(iso: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function localDateTimeParts(iso: string): { date: string; time: string } {
+  const [date = '', time = ''] = toLocalInputValue(iso).split('T');
+  return { date, time };
+}
+
 function defaultLocalReservationTime(): string {
   const now = new Date();
   now.setMinutes(Math.ceil((now.getMinutes() + 1) / 15) * 15, 0, 0);
@@ -102,35 +110,35 @@ function displayDate(iso: string): string {
 }
 
 function makeBlankForm(table?: Table): ReservationForm {
+  const { date, time } = localDateTimeParts(defaultLocalReservationTime());
   return {
     customerName: '',
     customerPhone: '',
     customerEmail: '',
     zone: table?.zone || '',
     tableId: table?.id || '',
-    reservedAtLocal: defaultLocalReservationTime(),
+    reservedDateLocal: date,
+    reservedTimeLocal: time,
     durationMinutes: '90',
     partySize: '2',
     notes: ''
   };
 }
 
-function hasTimeConflict(
-  reservations: TableReservation[],
-  tableId: string,
-  reservedAtIso: string,
-  durationMinutes: number,
-  ignoreId?: string
-): TableReservation | undefined {
-  const start = new Date(reservedAtIso).getTime();
-  const end = start + durationMinutes * 60_000;
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
-  return reservations.find(item => {
-    if (item.id === ignoreId || item.tableId !== tableId || !['CONFIRMED', 'ARRIVED', 'SEATED'].includes(item.status)) return false;
-    const otherStart = new Date(item.reservedAt).getTime();
-    const otherEnd = otherStart + item.durationMinutes * 60_000;
-    return Number.isFinite(otherStart) && start < otherEnd && otherStart < end;
-  });
+function makeFormFromReservation(reservation: TableReservation): ReservationForm {
+  const localDateTime = localDateTimeParts(reservation.reservedAt);
+  return {
+    customerName: reservation.customerName,
+    customerPhone: reservation.customerPhone,
+    customerEmail: reservation.customerEmail || '',
+    zone: reservation.zone,
+    tableId: reservation.tableId,
+    reservedDateLocal: localDateTime.date,
+    reservedTimeLocal: localDateTime.time,
+    durationMinutes: String(reservation.durationMinutes),
+    partySize: String(reservation.partySize),
+    notes: reservation.notes || ''
+  };
 }
 
 export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
@@ -140,15 +148,23 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
   tables,
   onOpenTable,
   canOpenTable,
-  currentUser
+  currentUser,
+  initialReservationToEdit = null
 }) => {
   const [reservations, setReservations] = useState<TableReservation[]>([]);
-  const [selectedDate, setSelectedDate] = useState(localDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => initialReservationToEdit
+    ? localDateKey(new Date(initialReservationToEdit.reservedAt))
+    : localDateKey(new Date()));
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState<TableReservation | null>(null);
-  const [form, setForm] = useState<ReservationForm>(() => makeBlankForm());
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editing, setEditing] = useState<TableReservation | null>(() => initialReservationToEdit);
+  const [form, setForm] = useState<ReservationForm>(() => initialReservationToEdit
+    ? makeFormFromReservation(initialReservationToEdit)
+    : makeBlankForm());
+  const [isFormOpen, setIsFormOpen] = useState(() => Boolean(initialReservationToEdit));
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkDate, setBulkDate] = useState(localDateKey(new Date()));
+  const [bulkRows, setBulkRows] = useState<BulkReservationDraft[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' || navigator.onLine);
@@ -206,13 +222,16 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
     [tables, form.zone]
   );
   const selectedTable = tables.find(table => table.id === form.tableId);
-  const reservedAtIso = form.reservedAtLocal && !Number.isNaN(new Date(form.reservedAtLocal).getTime())
-    ? new Date(form.reservedAtLocal).toISOString()
+  const reservedAtLocal = form.reservedDateLocal && form.reservedTimeLocal
+    ? `${form.reservedDateLocal}T${form.reservedTimeLocal}:00`
+    : '';
+  const reservedAtIso = reservedAtLocal && !Number.isNaN(new Date(reservedAtLocal).getTime())
+    ? new Date(reservedAtLocal).toISOString()
     : '';
   const durationNumber = Number(form.durationMinutes);
   const partyNumber = Number(form.partySize);
   const conflict = selectedTable && reservedAtIso && durationNumber > 0
-    ? hasTimeConflict(reservations, selectedTable.id, reservedAtIso, durationNumber, editing?.id)
+    ? hasTableReservationTimeConflict(reservations, selectedTable.id, reservedAtIso, durationNumber, editing?.id)
     : undefined;
   const exceedsCapacity = Boolean(selectedTable && partyNumber > selectedTable.seats);
 
@@ -231,28 +250,44 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
   const closeForm = () => {
     setIsFormOpen(false);
     setEditing(null);
+    setIsBulkMode(false);
+    setBulkRows([]);
     setForm(makeBlankForm());
     setConfirmCapacity(false);
   };
 
   const startNew = (table?: Table) => {
     setEditing(null);
+    setIsBulkMode(false);
+    setBulkRows([]);
     setForm(makeBlankForm(table));
     setConfirmCapacity(false);
     setMessage('');
     setIsFormOpen(true);
   };
 
+  const startBulk = () => {
+    setEditing(null);
+    setIsBulkMode(true);
+    setBulkDate(selectedDate);
+    setBulkRows([{ customerName: '', customerPhone: '', time: '', partySize: '2', tableId: '' }]);
+    setMessage('');
+    setIsFormOpen(true);
+  };
+
   const startEdit = (reservation: TableReservation) => {
     if (!['CONFIRMED', 'ARRIVED'].includes(reservation.status)) return;
+    const localDateTime = localDateTimeParts(reservation.reservedAt);
     setEditing(reservation);
+    setIsBulkMode(false);
     setForm({
       customerName: reservation.customerName,
       customerPhone: reservation.customerPhone,
       customerEmail: reservation.customerEmail || '',
       zone: reservation.zone,
       tableId: reservation.tableId,
-      reservedAtLocal: toLocalInputValue(reservation.reservedAt),
+      reservedDateLocal: localDateTime.date,
+      reservedTimeLocal: localDateTime.time,
       durationMinutes: String(reservation.durationMinutes),
       partySize: String(reservation.partySize),
       notes: reservation.notes || ''
@@ -321,6 +356,40 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
       closeForm();
     } catch {
       setMessage('No se pudo guardar la reserva. Inténtalo de nuevo.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveBulkReservations = async () => {
+    const prepared = prepareBulkTableReservationInputs(bulkRows, bulkDate, tables, reservations);
+    if ('error' in prepared) {
+      setMessage(prepared.error);
+      return;
+    }
+
+    setMessage('');
+    setIsSaving(true);
+    const created: TableReservation[] = [];
+    try {
+      for (const input of prepared.inputs) {
+        created.push(await createTableReservation(tenant.id, input));
+      }
+      setReservations(previous => [...previous, ...created].sort((a, b) => a.reservedAt.localeCompare(b.reservedAt)));
+      setSelectedDate(bulkDate);
+      setMessage(hasPendingTableReservationSync(tenant.id)
+        ? `${created.length} reservas guardadas en este dispositivo; quedan pendientes de sincronización.`
+        : `${created.length} reservas guardadas y sincronizadas.`);
+      setIsFormOpen(false);
+      setIsBulkMode(false);
+      setBulkRows([]);
+    } catch {
+      setReservations(previous => [...previous, ...created].sort((a, b) => a.reservedAt.localeCompare(b.reservedAt)));
+      setSelectedDate(bulkDate);
+      setMessage(`Se guardaron ${created.length} de ${prepared.inputs.length} reservas. Revisa la agenda antes de volver a intentarlo.`);
+      setIsFormOpen(false);
+      setIsBulkMode(false);
+      setBulkRows([]);
     } finally {
       setIsSaving(false);
     }
@@ -439,6 +508,7 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
                   <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar cliente o mesa" className="w-full rounded-xl border border-stone-200 bg-white py-2.5 pl-9 pr-3 text-xs outline-none focus:border-[#7d9b75]" />
                 </label>
                 <button type="button" onClick={() => void refresh()} disabled={isLoading} title="Actualizar agenda" className="rounded-xl border border-stone-200 bg-white p-2.5 text-stone-600 hover:bg-stone-100 disabled:opacity-50"><RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} /></button>
+                <button type="button" onClick={startBulk} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#a9b994] bg-[#f1f5ed] px-3 py-2.5 text-xs font-black text-[#3b5b3b] hover:bg-[#e7eee2]"><ListPlus size={15} /> Varias</button>
                 <button type="button" onClick={() => startNew()} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[#588157] px-3.5 py-2.5 text-xs font-black text-white shadow-sm hover:bg-[#476946]"><Plus size={16} /> Nueva</button>
               </div>
             </div>
@@ -514,7 +584,64 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
                     <div className="flex justify-between"><span>Mesas configuradas</span><strong>{tables.length}</strong></div>
                   </div>
                 </div>
-                <button type="button" onClick={() => startNew()} className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-stone-900 px-4 py-3 text-sm font-black text-white hover:bg-stone-800"><Plus size={17} /> Crear reserva</button>
+                <div className="mt-6 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={startBulk} className="flex items-center justify-center gap-1.5 rounded-xl border border-[#a9b994] bg-[#f1f5ed] px-2 py-3 text-xs font-black text-[#3b5b3b] hover:bg-[#e7eee2]"><ListPlus size={16} /> Varias</button>
+                  <button type="button" onClick={() => startNew()} className="flex items-center justify-center gap-2 rounded-xl bg-stone-900 px-3 py-3 text-xs font-black text-white hover:bg-stone-800"><Plus size={16} /> Nueva</button>
+                </div>
+              </div>
+            ) : isBulkMode ? (
+              <div className="rounded-2xl border border-stone-200 bg-white shadow-sm">
+                <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3.5">
+                  <div>
+                    <h3 className="font-black text-stone-900">Agregar varias reservas</h3>
+                    <p className="mt-0.5 text-[11px] text-stone-500">Una fecha común; cada fila tiene su hora y cliente.</p>
+                  </div>
+                  <button type="button" onClick={closeForm} aria-label="Cerrar alta múltiple" className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100"><X size={17} /></button>
+                </div>
+                <form className="space-y-3 p-4" onSubmit={event => { event.preventDefault(); void saveBulkReservations(); }}>
+                  <label className="block text-xs font-bold text-stone-600">Día de las reservas *
+                    <input type="date" value={bulkDate} onChange={event => setBulkDate(event.target.value)} required className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]" />
+                  </label>
+                  <p className="rounded-lg bg-[#f1f5ed] px-3 py-2 text-[11px] leading-relaxed text-[#476946]">La mesa se asigna según capacidad y horario; puedes escoger otra mesa en cada fila.</p>
+                  <div className="max-h-[46vh] space-y-2 overflow-y-auto pr-1">
+                    {bulkRows.map((row, index) => (
+                      <article key={index} className="space-y-2 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-black uppercase tracking-wide text-stone-500">Reserva {index + 1}</span>
+                          <button type="button" disabled={bulkRows.length === 1} onClick={() => setBulkRows(previous => previous.filter((_, rowIndex) => rowIndex !== index))} aria-label={`Quitar reserva ${index + 1}`} className="rounded-lg p-1.5 text-stone-400 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-30"><Trash2 size={15} /></button>
+                        </div>
+                        <label className="block text-[11px] font-bold text-stone-600">Nombre *
+                          <input value={row.customerName} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, customerName: event.target.value } : item))} maxLength={120} required placeholder="Nombre del cliente" className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-[#7d9b75]" />
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block text-[11px] font-bold text-stone-600">Teléfono *
+                            <input type="tel" value={row.customerPhone} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, customerPhone: event.target.value } : item))} maxLength={40} required placeholder="8888-8888" className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-[#7d9b75]" />
+                          </label>
+                          <label className="block text-[11px] font-bold text-stone-600">Hora *
+                            <input type="time" value={row.time} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, time: event.target.value } : item))} required className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-[#7d9b75]" />
+                          </label>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="block text-[11px] font-bold text-stone-600">Personas *
+                            <input type="number" min={1} max={100} step={1} value={row.partySize} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, partySize: event.target.value } : item))} required className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-sm text-stone-900 outline-none focus:border-[#7d9b75]" />
+                          </label>
+                          <label className="block text-[11px] font-bold text-stone-600">Mesa
+                            <select value={row.tableId} onChange={event => setBulkRows(previous => previous.map((item, rowIndex) => rowIndex === index ? { ...item, tableId: event.target.value } : item))} className="mt-1 block w-full rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-900 outline-none focus:border-[#7d9b75]">
+                              <option value="">Automática</option>
+                              {tables.map(table => <option key={table.id} value={table.id}>{table.name || `Mesa ${table.number}`} · {table.seats} puestos</option>)}
+                            </select>
+                          </label>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                  <button type="button" onClick={() => setBulkRows(previous => [...previous, { customerName: '', customerPhone: '', time: '', partySize: '2', tableId: '' }])} className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-stone-300 px-3 py-2.5 text-xs font-bold text-stone-600 hover:border-[#a9b994] hover:bg-[#f1f5ed]"><Plus size={15} /> Agregar otra fila</button>
+                  {message && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">{message}</p>}
+                  <div className="flex gap-2 border-t border-stone-100 pt-3">
+                    <button type="button" onClick={closeForm} className="flex-1 rounded-xl border border-stone-200 px-3 py-2.5 text-xs font-bold text-stone-600 hover:bg-stone-50">Cerrar</button>
+                    <button type="submit" disabled={isSaving || bulkRows.length === 0} className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-[#588157] px-3 py-2.5 text-xs font-black text-white hover:bg-[#476946] disabled:cursor-not-allowed disabled:opacity-50">{isSaving ? <LoaderCircle size={15} className="animate-spin" /> : <Check size={15} />}{isSaving ? 'Guardando…' : `Agregar ${bulkRows.length} reservas`}</button>
+                  </div>
+                </form>
               </div>
             ) : (
               <div className="rounded-2xl border border-stone-200 bg-white shadow-sm">
@@ -554,10 +681,15 @@ export const TableReservationsModal: React.FC<TableReservationsModalProps> = ({
                   </div>
                   {selectedTable && <div className="flex items-center justify-between rounded-lg bg-stone-50 px-3 py-2 text-[11px] text-stone-600"><span className="inline-flex items-center gap-1.5"><MapPin size={13} /> {selectedTable.zone || form.zone || 'General'} · capacidad {selectedTable.seats}</span><span>{form.partySize || 0} personas</span></div>}
 
-                  <label className="block text-xs font-bold text-stone-600">Fecha y hora local *
-                    <input type="datetime-local" value={form.reservedAtLocal} onChange={event => setForm(prev => ({ ...prev, reservedAtLocal: event.target.value }))} required className="mt-1 block w-full rounded-xl border border-stone-200 px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]" />
-                    <span className="mt-1 block text-[10px] font-normal text-stone-400">La hora del dispositivo se guardará con zona horaria en ISO.</span>
-                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <label className="text-xs font-bold text-stone-600">Día de la reserva *
+                      <input type="date" value={form.reservedDateLocal} onChange={event => setForm(prev => ({ ...prev, reservedDateLocal: event.target.value }))} required className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]" />
+                    </label>
+                    <label className="text-xs font-bold text-stone-600">Hora *
+                      <input type="time" value={form.reservedTimeLocal} onChange={event => setForm(prev => ({ ...prev, reservedTimeLocal: event.target.value }))} required className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]" />
+                    </label>
+                  </div>
+                  <span className="-mt-2 block text-[10px] font-normal text-stone-400">Se guarda con la zona horaria local del dispositivo.</span>
                   <div className="grid grid-cols-2 gap-2.5">
                     <label className="text-xs font-bold text-stone-600">Duración *
                       <select value={form.durationMinutes} onChange={event => setForm(prev => ({ ...prev, durationMinutes: event.target.value }))} className="mt-1 block w-full rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 outline-none focus:border-[#7d9b75]">
