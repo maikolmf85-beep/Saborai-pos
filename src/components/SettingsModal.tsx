@@ -676,7 +676,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-stone-700 mb-1">Cédula Jurídica / Cédula Física</label>
+                      <label className="block font-semibold text-stone-700 mb-1">Identificación fiscal (cédula física o jurídica)</label>
                       <input
                         type="text"
                         value={cedulaJuridica}

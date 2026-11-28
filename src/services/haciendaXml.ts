@@ -1,6 +1,8 @@
 import { ElectronicInvoiceCR, ElectronicInvoiceItem, TenantInfo } from '../types';
 import { resolveRestaurantCabys, isValidCabys } from './cabysService';
 import { getStoredTenantId, getTenantItem } from './tenantStorage';
+import { isValidFiscalClave, normalizeFiscalIdentification } from '../utils/fiscalIdentifiers';
+import { isValidReferenceReasonCode, normalizeReferenceDocumentCode } from '../utils/haciendaReferenceCodes';
 
 /* ------------------------------------------------------------------ */
 /*  Utilidades de fecha / clave / consecutivo (Hacienda CR)           */
@@ -77,13 +79,11 @@ export function randomSecurityCode(): string {
 }
 
 /**
- * Normaliza la cédula del emisor a solo dígitos como la espera Hacienda.
- * Persona física: 9 dígitos (04-0188-0588 → 401880588). Jurídica: 10 dígitos (3-101-xxxxxx).
- * Un valor de 10 dígitos que empieza en 0 solo puede ser una física escrita con cero de provincia.
+ * Normaliza la identificación del emisor como la espera Hacienda.
+ * Conserva letras en cédulas jurídicas alfanuméricas comunicadas por Registro Nacional.
  */
 export function normalizeCedula(raw: string): string {
-  const d = (raw || '').replace(/[^0-9]/g, '');
-  return d.length === 10 && d.startsWith('0') ? d.slice(1) : d;
+  return normalizeFiscalIdentification(raw);
 }
 
 /**
@@ -98,7 +98,7 @@ export function normalizeActividad(raw: string): string {
 }
 
 /**
- * Construye Clave (50 dígitos) y Número Consecutivo (20 dígitos) válidos.
+ * Construye Clave (50 posiciones) y Número Consecutivo (20 dígitos) válidos.
  * Clave = 506 + DDMMYY + cédula(12) + consecutivo(20) + situación(1) + código seguridad(8)
  * Consecutivo = sucursal(3) + terminal(5) + tipoDoc(2) + número(10)
  */
@@ -121,7 +121,7 @@ export function buildClaveYConsecutivo(opts: {
   const clave =
     '506' +
     p.d + p.m + p.y.slice(-2) +
-    normalizeCedula(opts.cedula).padStart(12, '0').slice(-12) +
+    normalizeCedula(opts.cedula).padStart(12, '0') +
     consecutivo +
     '1' +
     (opts.securityCode || randomSecurityCode());
@@ -133,7 +133,19 @@ export function buildClaveYConsecutivo(opts: {
 /* ------------------------------------------------------------------ */
 
 export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?: TenantInfo): string | null {
-  if (!/^\d{50}$/.test(invoice.clave50Digitos)) return 'La clave generada no tiene 50 dígitos numéricos.';
+  const issuerId = normalizeCedula(invoice.emisor?.cedulaJuridica || '');
+  if (!issuerId) return 'Falta la identificación del emisor.';
+  if (issuerId.length > 12) return 'La identificación del emisor no cabe en las 12 posiciones de la Clave fiscal.';
+  let savedHaciendaConfig: any = null;
+  try {
+    savedHaciendaConfig = getTenantItem<any>('hacienda_config', tenant?.id || getStoredTenantId());
+  } catch {}
+  const providerId = normalizeCedula(savedHaciendaConfig?.proveedorSistemas || tenant?.haciendaConfig?.proveedorSistemas || issuerId);
+  if (providerId.length > 20) return 'La identificación del proveedor de sistemas supera las 20 posiciones permitidas por Hacienda.';
+  if (!isValidFiscalClave(invoice.clave50Digitos)) return 'La clave generada no tiene 50 posiciones o su estructura no es válida.';
+  if (invoice.clave50Digitos.slice(9, 21) !== issuerId.padStart(12, '0')) {
+    return 'La identificación del emisor no coincide con la que se codificó en la Clave fiscal.';
+  }
   if (!/^\d{20}$/.test(invoice.consecutivo)) return 'El número consecutivo no tiene 20 dígitos.';
   if (!invoice.items || invoice.items.length === 0) return 'El documento no tiene líneas de detalle.';
   
@@ -150,7 +162,7 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
 
   // Validación de receptor si es Factura Electrónica (FE)
   if (invoice.tipoDocumento === 'FE') {
-    const recId = (invoice.receptor?.identificacion || '').replace(/\D/g, '');
+    const recId = normalizeCedula(invoice.receptor?.identificacion || '');
     if (!recId) {
       return 'Para Factura Electrónica (FE) se requiere la cédula del cliente (física o jurídica). Si es consumidor final, emita un Tiquete Electrónico (TE).';
     }
@@ -160,7 +172,17 @@ export function validateInvoiceForHacienda(invoice: ElectronicInvoiceCR, tenant?
   }
 
   if ((invoice.tipoDocumento === 'NC' || invoice.tipoDocumento === 'ND') && !invoice.referencia?.clave) {
-    return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 dígitos).';
+    return 'La nota de crédito o débito requiere la referencia del documento original (clave de 50 posiciones).';
+  }
+  if (invoice.referencia) {
+    if (!normalizeReferenceDocumentCode(invoice.referencia.tipoDoc)) {
+      return 'El tipo de documento de referencia no existe en la tabla vigente de Hacienda (nota 10).';
+    }
+    if (!isValidReferenceReasonCode(invoice.referencia.codigo, invoice.tipoDocumento)) {
+      return invoice.referencia.codigo === '17'
+        ? 'El código de referencia 17 es exclusivo del Recibo Electrónico de Pago, documento que este flujo aún no emite.'
+        : 'El código de referencia no existe en la tabla vigente de Hacienda (nota 9).';
+    }
   }
   if (tenant && !tenant.cedulaJuridica) return 'Falta la cédula del emisor.';
   const act = tenant?.haciendaConfig?.codigoActividad;
@@ -214,7 +236,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const fecha = invoice.fechaEmision ? new Date(invoice.fechaEmision as any) : new Date();
   const fechaEmision = formatHaciendaDate(isNaN(fecha.getTime()) ? new Date() : fecha);
 
-  const hasReceptorId = !!(invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
+  const hasReceptorId = !!normalizeCedula(invoice.receptor?.identificacion || '');
   let tipoDoc: TipoDocumentoCR = invoice.tipoDocumento || (hasReceptorId ? 'FE' : 'TE');
   
   // Salvaguarda: Si solicitaron Factura (FE) pero no se suministró identificación de receptor,
@@ -312,7 +334,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   const emisorCedula = normalizeCedula(hc?.cedulaEmisor || tenant.haciendaConfig?.cedulaEmisor || tenant.cedulaJuridica || '');
   const emisorTipoId = hc?.tipoIdentificacion || tenant.haciendaConfig?.tipoIdentificacion || '02';
   const codigoActividad = normalizeActividad(savedHc?.codigoActividad || tenant.haciendaConfig?.codigoActividad || '561001');
-  const proveedor = (hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || '402220888' || emisorCedula).replace(/[^0-9]/g, '').slice(0, 20) || '402220888';
+  const proveedor = normalizeCedula(hc?.proveedorSistemas || tenant.haciendaConfig?.proveedorSistemas || emisorCedula);
 
   // Ubicación del emisor (debe coincidir con ATV): provincia 1 dígito, cantón 2, distrito 2
   const provincia = String(parseInt((hc?.provincia || '1').replace(/\D/g, '') || '1', 10)).slice(0, 1);
@@ -359,7 +381,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   // Receptor según tipo de documento (Obligatorio en FE, opcional en TE)
   const receptorNombre = (invoice.receptor?.nombre || '').trim();
   const receptorTipo = (invoice.receptor?.tipoIdentificacion || '01-Fisica').split('-')[0];
-  const receptorIdNum = (invoice.receptor?.identificacion || '').replace(/[^0-9]/g, '');
+  const receptorIdNum = normalizeCedula(invoice.receptor?.identificacion || '');
   const rawEmail = (invoice.receptor?.correo || '').trim();
   const validEmail = rawEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : '';
 
@@ -402,7 +424,7 @@ export function generateHaciendaXmlV44(invoice: ElectronicInvoiceCR, tenant: Ten
   // Información de referencia en formato oficial v4.4 (<TipoDocIR>, <FechaEmisionIR>)
   let referenciaXml = '';
   if (invoice.referencia) {
-    const refTipoDoc = invoice.referencia.tipoDoc === 'FE' ? '01' : (invoice.referencia.tipoDoc === 'TE' ? '04' : '01');
+    const refTipoDoc = normalizeReferenceDocumentCode(invoice.referencia.tipoDoc) || '';
     const refDate = invoice.referencia.fechaEmision ? new Date(invoice.referencia.fechaEmision) : new Date();
     const refFechaIso = formatHaciendaDate(isNaN(refDate.getTime()) ? new Date() : refDate);
     referenciaXml = `

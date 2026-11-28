@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { Table, TableItem, TenantInfo, ElectronicInvoiceCR, SubAccount, UserProfile } from '../types';
 import { toFiscalInvoiceItems } from '../utils/fiscalInvoiceItems';
+import { normalizeFiscalIdentification } from '../utils/fiscalIdentifiers';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, peekConsecutivoNumber, reserveConsecutivoNumber, randomSecurityCode } from '../services/haciendaXml';
 import { cashShiftService } from '../services/cashShiftService';
 import { haciendaService } from '../services/haciendaService';
@@ -177,8 +178,9 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
   const consecutivo = claveInfo.consecutivo;
 
   const handleSearchHacienda = async () => {
-    if (!customerCedula || customerCedula.length < 9) {
-      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Cédula inválida', message: 'Ingrese una cédula válida (ej. 101230456 o 3101123456)', timestamp: new Date() });
+    const normalizedCustomerId = normalizeFiscalIdentification(customerCedula);
+    if (!normalizedCustomerId || normalizedCustomerId.length > 20) {
+      if (onNotify) onNotify({ id: Date.now().toString(), type: 'HACIENDA_UPDATE', title: 'Identificación inválida', message: 'Ingrese una identificación de hasta 20 caracteres; puede incluir letras si es una cédula jurídica alfanumérica.', timestamp: new Date() });
       return;
     }
     setIsSearchingHacienda(true);
@@ -186,7 +188,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       // Check local saved customers first
       const customers = getTenantItem<Array<{ cedula: string; name: string; email?: string; activityCode?: string }>>('customers', tenant.id) || [];
       if (customers.length > 0) {
-        const found = customers.find((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
+        const found = customers.find((c: any) => normalizeFiscalIdentification(c.cedula) === normalizedCustomerId);
         if (found) {
           setCustomerName(found.name || '');
           setCustomerEmail(found.email || '');
@@ -198,7 +200,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
       }
 
       // Fetch from Hacienda
-      const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${customerCedula.replace(/[-]/g, '')}`);
+      const res = await fetch(`https://api.hacienda.go.cr/fe/ae?identificacion=${encodeURIComponent(normalizedCustomerId)}`);
       if (!res.ok) throw new Error('Not found');
       const data = await res.json();
       
@@ -209,7 +211,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
 
       // Guardar en la caché local para modo offline resiliente
       try {
-        const cleanCed = customerCedula.replace(/[-]/g, '');
+        const cleanCed = normalizedCustomerId;
         const updatedList = [
           {
             cedula: cleanCed,
@@ -217,7 +219,7 @@ export const BillingHacienda: React.FC<BillingHaciendaProps> = ({
             email: customerEmail || '',
             activityCode: fetchedActivity
           },
-          ...savedCustomers.filter(c => c.cedula !== cleanCed)
+          ...savedCustomers.filter(c => normalizeFiscalIdentification(c.cedula) !== cleanCed)
         ].slice(0, 30);
         setSavedCustomers(updatedList);
         setTenantItem('customers', updatedList, tenant.id);
@@ -430,7 +432,7 @@ Medio de Pago: ${paymentMethod}
           email: customerEmail,
           activityCode: customerActivityCode
         };
-        const existingIdx = customers.findIndex((c: any) => c.cedula.replace(/[-]/g, '') === customerCedula.replace(/[-]/g, ''));
+        const existingIdx = customers.findIndex((c: any) => normalizeFiscalIdentification(c.cedula) === normalizeFiscalIdentification(customerCedula));
         if (existingIdx >= 0) {
           customers[existingIdx] = newCustomer;
         } else {
@@ -1030,7 +1032,7 @@ Medio de Pago: ${paymentMethod}
                       type="text"
                       value={customerCedula}
                       onChange={(e) => setCustomerCedula(e.target.value)}
-                      placeholder="Ej. 101230456"
+                      placeholder="Ej. 101230456 o AB12345678"
                       className="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#588157]/40"
                     />
                     <button

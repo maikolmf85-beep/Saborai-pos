@@ -5,6 +5,8 @@ import { handleOptions, requireAuth, setCorsHeaders } from './_utils/security.js
 import { supabaseAdmin } from './_utils/supabase.js';
 import { ROLE_PERMISSIONS } from './_utils/rolePermissions.js';
 import { sanitizeFiscalInvoiceData } from '../src/utils/fiscalInvoiceItems.js';
+import { isValidP12Pin } from '../src/utils/haciendaPin.js';
+import { normalizeFiscalIdentification } from '../src/utils/fiscalIdentifiers.js';
 
 const require = createRequire(import.meta.url);
 
@@ -53,7 +55,7 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   const cleanBase64 = p12Base64.includes(',') ? p12Base64.split(',')[1].replace(/\s+/g, '') : p12Base64.replace(/\s+/g, '');
   const der = forge.util.decode64(cleanBase64);
   const asn = forge.asn1.fromDer(der);
-  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin.trim());
+  const p12 = forge.pkcs12.pkcs12FromAsn1(asn, true, pin);
   
   // Buscar certificado en certBag
   let cert: any = null;
@@ -88,14 +90,16 @@ function parseAndVerifyP12(p12Base64: string, pin: string) {
   }
 
   const subjectAttrs: string[] = (cert.subject?.attributes || []).map((a: any) => String(a.value || ''));
-  const subjectDigits = subjectAttrs.map(v => v.replace(/\D/g, '').replace(/^0+/, '')).filter(Boolean);
+  const subjectIdentifiers = subjectAttrs.flatMap(value =>
+    (value.match(/[A-Z0-9]{6,20}/gi) || []).map(normalizeFiscalIdentification).filter(Boolean)
+  );
   const subjectText = (cert.subject?.attributes || []).map((a: any) => `${a.shortName || a.name}=${a.value}`).join(', ');
 
   return {
     isValid: true,
     expiresOn,
     cleanBase64,
-    subjectDigits,
+    subjectIdentifiers,
     subjectText
   };
 }
@@ -152,7 +156,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const atvUsername = (reqAtvUser || process.env.HACIENDA_USER || '').trim(); 
     const atvPassword = (reqAtvPass || process.env.HACIENDA_PASSWORD || '').trim();
     const rawP12 = reqP12 || process.env.HACIENDA_P12_BASE64;
-    const p12Pin = (reqPin || process.env.HACIENDA_PIN || '').trim();
+    const p12Pin = typeof reqPin === 'string' ? reqPin : (process.env.HACIENDA_PIN || '');
     const environment: 'sandbox' | 'production' = (reqEnv === 'production' || process.env.HACIENDA_ENV === 'production') ? 'production' : 'sandbox';
     const endpoints = HACIENDA_ENV[environment];
 
@@ -169,6 +173,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } = { tokenOk: false, certOk: false };
 
       // 1. Validar Llave Criptográfica (.p12) y PIN si se proporcionaron
+      if (rawP12 && !isValidP12Pin(p12Pin)) {
+        return res.status(400).json({
+          success: false,
+          error: 'El PIN de la llave debe ser de 4 dígitos numéricos (formato legado) o tener exactamente 14 caracteres.'
+        });
+      }
       if (rawP12 && p12Pin) {
         try {
           const certValidation = parseAndVerifyP12(rawP12, p12Pin);
@@ -177,8 +187,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             results.expiresOn = certValidation.expiresOn;
           }
         } catch (certErr: any) {
-          const msg = certErr.message?.includes('MAC could not be verified') 
-            ? 'El PIN de 4 dígitos es incorrecto para este archivo .p12'
+          const msg = certErr.message?.includes('MAC could not be verified')
+            ? 'El PIN es incorrecto para este archivo .p12'
             : certErr.message || 'Error procesando certificado .p12';
           return res.status(400).json({ 
             success: false, 
@@ -320,15 +330,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 1. FIRMA DIGITAL XAdES-EPES CON LA LLAVE .P12
+    if (rawP12 && rawXml && !isValidP12Pin(p12Pin)) {
+      return res.status(400).json({
+        error: 'El PIN de la llave debe ser de 4 dígitos numéricos (formato legado) o tener exactamente 14 caracteres.'
+      });
+    }
     if (rawP12 && p12Pin && rawXml) {
       try {
         const cleanP12 = rawP12.includes(',') ? rawP12.split(',')[1].replace(/\s+/g, '') : rawP12.replace(/\s+/g, '');
         // Verificar que el certificado pertenezca al emisor (evita error -60 de Hacienda)
         try {
           const info = parseAndVerifyP12(rawP12, p12Pin);
-          const emisorId = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/\D/g, '').replace(/^0+/, '');
+          const emisorId = normalizeFiscalIdentification(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '');
           console.log('Certificado .p12 sujeto:', info.subjectText, '| Emisor:', emisorId);
-          const matches = !emisorId || info.subjectDigits.some((d: string) => d.length >= 6 && (d === emisorId || d.endsWith(emisorId) || emisorId.endsWith(d)));
+          const matches = !emisorId || info.subjectIdentifiers.some((id: string) => id.length >= 6 && (id === emisorId || id.endsWith(emisorId) || emisorId.endsWith(id)));
           if (!matches) {
             return res.status(400).json({
               error: `El certificado .p12 no pertenece al emisor (cédula ${emisorId}). Sujeto del certificado: ${info.subjectText}. Suba el .p12 correcto de esa cédula en Configuración.`
@@ -339,7 +354,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         console.log('=== [HACIENDA v4.4 API] XML RECIBIDO PREVIO A FIRMA XAdES-EPES ===\n' + rawXml);
         // signer.sign devuelve el XML firmado convertido directamente a Base64
-        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin.trim());
+        finalXmlBase64 = await signer.sign(rawXml, cleanP12, p12Pin);
       } catch (signError: any) {
         console.error('Error firmando XML XAdES-EPES:', signError);
         return res.status(400).json({
@@ -364,7 +379,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const accessToken = await getHaciendaToken(endpoints.token, endpoints.clientId, atvUsername, atvPassword);
 
     // 3. Preparar Payload oficial para Recepción
-    const emisorIdRaw = String(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '').replace(/[^0-9]/g, '');
+    const emisorIdRaw = normalizeFiscalIdentification(emisor?.cedulaJuridica || emisor?.numeroIdentificacion || '');
     if (!emisorIdRaw) {
       return res.status(400).json({
         error: 'Falta la cédula del emisor. Configúrela en Configuración → Hacienda → "Cédula del Emisor".'
@@ -375,7 +390,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fecha: fecha || getCostaRicaIsoDate(),
       emisor: {
         tipoIdentificacion: String(emisor.tipoIdentificacion || '02').substring(0, 2),
-        numeroIdentificacion: (() => { const d = String(emisor.cedulaJuridica || emisor.numeroIdentificacion).replace(/[^0-9]/g, ''); return d.length === 10 && d.startsWith('0') ? d.slice(1) : d; })()
+        numeroIdentificacion: normalizeFiscalIdentification(emisor.cedulaJuridica || emisor.numeroIdentificacion)
       },
       comprobanteXml: finalXmlBase64
     };
@@ -383,7 +398,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (receptor && (receptor.identificacion || receptor.numeroIdentificacion)) {
       payload.receptor = {
         tipoIdentificacion: String(receptor.tipoIdentificacion || '01').substring(0, 2),
-        numeroIdentificacion: String(receptor.identificacion || receptor.numeroIdentificacion).replace(/[^0-9]/g, '')
+        numeroIdentificacion: normalizeFiscalIdentification(receptor.identificacion || receptor.numeroIdentificacion)
       };
     }
 

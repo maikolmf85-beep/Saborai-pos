@@ -22,6 +22,7 @@ import { TenantInfo, HaciendaConfig, ElectronicInvoiceCR } from '../types';
 import { haciendaService } from '../services/haciendaService';
 import { generateHaciendaXmlV44, downloadXmlFile, buildClaveYConsecutivo, normalizeCedula } from '../services/haciendaXml';
 import { getTenantItem } from '../services/tenantStorage';
+import { isValidP12Pin } from '../utils/haciendaPin';
 
 interface HaciendaSettingsProps {
   tenant: TenantInfo;
@@ -115,7 +116,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       environment,
       atvUsername: atvUsername.trim(),
       atvPassword: atvPassword.trim(),
-      pinP12: pinP12.trim(),
+      pinP12,
       p12FileName,
       p12Base64,
       cedulaEmisor: cedulaEmisor.trim(),
@@ -228,6 +229,14 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       return;
     }
 
+    if (p12Base64 && !isValidP12Pin(pinP12)) {
+      setTestResult({
+        success: false,
+        message: 'El PIN debe tener 4 dígitos numéricos (formato legado) o exactamente 14 caracteres. Se conserva tal como se escribe.'
+      });
+      return;
+    }
+
     setIsTesting(true);
     setTestResult(null);
 
@@ -235,7 +244,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
       environment,
       atvUsername: trimmedUser,
       atvPassword: trimmedPass,
-      pinP12: pinP12.trim(),
+      pinP12,
       p12FileName,
       p12Base64,
       tipoIdentificacion,
@@ -359,11 +368,11 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
           {/* Barra de Cumplimiento 100% Hacienda v4.4 */}
           {(() => {
-            const hasEmisor = !!cedulaEmisor.replace(/\D/g, '');
+            const hasEmisor = !!normalizeCedula(cedulaEmisor);
             const hasAct = /^\d{6}$/.test(codigoActividad.trim());
             const hasUbi = !!(provincia && canton && distrito);
             const hasCred = !!(atvUsername.trim() && atvPassword.trim());
-            const hasCert = !!(p12Base64 && pinP12.trim());
+            const hasCert = !!(p12Base64 && isValidP12Pin(pinP12));
             const hasTerm = !!(sucursal && terminal);
 
             const checks = [
@@ -603,7 +612,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 bg-white"
                 >
                   <option value="01">01 - Física (9 dígitos)</option>
-                  <option value="02">02 - Jurídica (10 dígitos)</option>
+                  <option value="02">02 - Jurídica (10 caracteres)</option>
                   <option value="03">03 - DIMEX (11-12 dígitos)</option>
                   <option value="04">04 - NITE (10 dígitos)</option>
                 </select>
@@ -634,10 +643,10 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                       handleLookupActividades(cedulaEmisor);
                     }
                   }}
-                  placeholder={tipoIdentificacion === '01' ? '4-0188-0588' : '3-101-123456'}
+                  placeholder={tipoIdentificacion === '01' ? '4-0188-0588' : '3-101-123456 o AB12345678'}
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
-                <span className="text-[11px] text-stone-400">Física: 9 dígitos (ej. 4-0188-0588). Jurídica: 10 dígitos (ej. 3-101-123456). Debe ser la misma del .p12 y del usuario ATV.</span>
+                <span className="text-[11px] text-stone-400">Física: 9 dígitos. Jurídica: hasta 10 caracteres, incluidos letras y números cuando así lo comunique el Registro Nacional. Debe corresponder a la del .p12 y del usuario ATV.</span>
                 <div className="mt-2">
                   <button
                     type="button"
@@ -741,17 +750,17 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                 />
               </div>
               <div className="col-span-2">
-                <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (12 dígitos numéricos - v4.4)</label>
+                <label className="text-xs font-semibold text-stone-700">Proveedor de Sistemas (identificación fiscal, hasta 20 caracteres)</label>
                 <input
                   type="text"
-                  maxLength={12}
+                  maxLength={20}
                   value={proveedorSistemas}
-                  onChange={(e) => setProveedorSistemas(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setProveedorSistemas(e.target.value)}
                   onBlur={() => persistConfig()}
-                  placeholder={cedulaEmisor.replace(/\D/g, '').padStart(12, '0') || '310100000000'}
+                  placeholder={normalizeCedula(cedulaEmisor) || 'Identificación del proveedor'}
                   className="w-full mt-1 px-3 py-2 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono"
                 />
-                <span className="text-[11px] text-stone-400">En v4.4 es obligatorio informar el proveedor de software (12 dígitos con ceros). Si se deja vacío se usará la cédula del emisor.</span>
+                <span className="text-[11px] text-stone-400">En v4.4 se informa la identificación del proveedor de software según su tipo fiscal. Si se deja vacío se usará la cédula del emisor.</span>
               </div>
             </div>
           </div>
@@ -818,18 +827,17 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
 
               {/* PIN de la llave */}
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-stone-700">PIN de 4 dígitos del Certificado</label>
+                <label className="text-xs font-semibold text-stone-700">PIN de la llave (.p12)</label>
                 <div className="relative">
                   <input
                     type={showPin ? 'text' : 'password'}
-                    maxLength={8}
                     value={pinP12}
                     onChange={(e) => {
                       setPinP12(e.target.value);
                       setIsValidated(false);
                     }}
                     onBlur={() => persistConfig()}
-                    placeholder="1234"
+                    placeholder="4 dígitos o 14 caracteres"
                     className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-stone-900 font-mono tracking-widest"
                   />
                   <button
@@ -840,7 +848,7 @@ export const HaciendaSettings: React.FC<HaciendaSettingsProps> = ({ tenant, onUp
                     {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <span className="text-[11px] text-stone-400">PIN de 4 dígitos definido al descargar la llave en ATV.</span>
+                <span className="text-[11px] text-stone-400">Se acepta el PIN legado de 4 dígitos o uno nuevo de exactamente 14 caracteres. Letras, números, símbolos y espacios se conservan exactamente como se escriben.</span>
               </div>
             </div>
 
